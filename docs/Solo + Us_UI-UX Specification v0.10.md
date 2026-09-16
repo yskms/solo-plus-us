@@ -1,10 +1,10 @@
-# Solo + Us — UI/UX Specification v0.9
+# Solo + Us — UI/UX Specification v0.10
 
 **App Name:** Solo + Us  
 **Tagline:** *Your intimate life, over time.*
 
 改訂：2026-09-16  
-関連：要件定義書 v0.9 / 基本設計 v0.9 / **設計判断記録 v0.9**
+関連：要件定義書 v0.10 / 基本設計 v0.10 / **設計判断記録 v0.10**
 
 > **本文と図版が矛盾する場合は本文を正とする。**
 > `docs/old/` は検討履歴であり仕様ではない。
