@@ -2,17 +2,23 @@
 .DS_Store
 .AppleDouble
 .LSOverride
+*.pem
 
-# Node / Expo（今後の実装用に先行して記載）
+# dependencies
 node_modules/
+
+# Expo
 .expo/
 dist/
 web-build/
-*.tsbuildinfo
+expo-env.d.ts
+.metro-health-check*
 
-# Native builds
-ios/
-android/
+# Native (regenerated via `expo prebuild`)
+/ios
+/android
+.kotlin/
+*.orig.*
 *.jks
 *.p8
 *.p12
@@ -23,15 +29,21 @@ android/
 .env
 .env.*
 !.env.example
+!.env*.local.example
 
 # ログ
 npm-debug.*
+yarn-debug.*
 yarn-error.*
-*.log
 
 # エディタ
-.vscode/
 .idea/
+
+# TypeScript
+*.tsbuildinfo
+
+# テストカバレッジ
+coverage/
 
 # ローカルデータ（Activity は絶対にコミットしない）
 *.db

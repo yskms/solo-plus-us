@@ -1,0 +1,53 @@
+/**
+ * 基本設計 v0.11 §12 — builds the JSON backup file.
+ *
+ * `health_sync` / `health_sync_jobs` are deliberately not exported (§12.2:
+ * device-specific sync state, meaningless on another device/reinstall).
+ * `settings` is limited to `EXPORTABLE_SETTING_KEYS` (D-42) — see
+ * `types/Settings.ts` for why the rest (App Lock, Health Connect state)
+ * stays out.
+ */
+import type { Transactor } from '../database/SqlExecutor';
+import { findAllActivities } from '../repositories/ActivityRepository';
+import { getSetting } from './SettingsRepository';
+import { CURRENT_EXPORT_VERSION, type ExportFileV1 } from '../types/Export';
+import { EXPORTABLE_SETTING_KEYS } from '../types/Settings';
+import { nowUtcIso } from '../lib/datetime';
+
+export async function buildExportPayload(db: Transactor): Promise<ExportFileV1> {
+  const activities = await findAllActivities(db);
+
+  const settingsEntries = await Promise.all(
+    EXPORTABLE_SETTING_KEYS.map(async (key) => [key, await getSetting(db, key)] as const),
+  );
+
+  return {
+    version: CURRENT_EXPORT_VERSION,
+    exportedAt: nowUtcIso(),
+    settings: Object.fromEntries(settingsEntries) as ExportFileV1['settings'],
+    activities: activities.map((activity) => ({
+      id: activity.id,
+      context: activity.context,
+      occurredAtUtc: activity.occurredAtUtc,
+      occurredLocalDate: activity.occurredLocalDate,
+      occurredLocalTime: activity.occurredLocalTime,
+      timezoneOffsetMinutes: activity.timezoneOffsetMinutes,
+      timezoneId: activity.timezoneId,
+      orgasm: activity.orgasm,
+      ejaculation: activity.ejaculation,
+      protectionUsed: activity.protectionUsed,
+      durationSeconds: activity.durationSeconds,
+      moodBefore: activity.moodBefore,
+      moodAfter: activity.moodAfter,
+      note: activity.note,
+      syncVersion: activity.syncVersion,
+      createdAt: activity.createdAt,
+      updatedAt: activity.updatedAt,
+    })),
+  };
+}
+
+/** Pretty-printed — this file is meant to be human-inspectable, not just machine-readable (it's someone's only backup). */
+export function serializeExportFile(file: ExportFileV1): string {
+  return JSON.stringify(file, null, 2);
+}
