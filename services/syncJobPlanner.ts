@@ -38,13 +38,25 @@ export function planForRecord(): SyncJobPlan {
  * nothing to change on the job row itself (§9.2 "ジョブはペイロードを
  * 持たない").
  *
- * Gap filled here: §9.3's table has no row for "no job AND no mapping"
- * under 編集 — that combination isn't reachable when a provider has been
- * active since the Activity was first recorded (record always inserts a
- * `create` job). It *is* reachable if the provider became active only
- * after the Activity existed (never queued for this provider at all).
- * Treated the same as a first-time record for this provider: insert
- * `create`.
+ * "No job AND no mapping" under 編集 is deliberately a no-op, not an
+ * insert. §9.3's table has no row for this combination, and it's reached
+ * by more than one path with different intent:
+ *  - the provider became active only after the Activity existed (never
+ *    queued for this provider at all) — inserting `create` here would be
+ *    the "backfill" an earlier version of this function assumed,
+ *  - the person explicitly declined to sync this record (D-35 "この記録を
+ *    Health Connect へ同期しない") — inserting `create` here would silently
+ *    re-enable syncing something they opted out of,
+ *  - a replace-restore (D-10) wiped every job/mapping — inserting a plain
+ *    `create` here could race a still-present, higher-`clientRecordVersion`
+ *    external record and be silently ignored (D-34's exact problem;
+ *    fixing that case for real needs `recreate`, not `create`).
+ *
+ * Distinguishing these needs a persisted "declined to sync" concept that
+ * doesn't exist yet — a Phase 4 design decision, not something to guess at
+ * here. Until then, editing never opportunistically starts syncing a
+ * previously-unsynced-for-this-provider Activity; only a fresh record, or
+ * an explicit future "sync now" action, does.
  */
 export function planForEdit(current: CurrentJobState | null, mappingExists: boolean): SyncJobPlan {
   if (current) {
@@ -55,7 +67,7 @@ export function planForEdit(current: CurrentJobState | null, mappingExists: bool
   if (mappingExists) {
     return { action: 'insert', operation: 'update' };
   }
-  return { action: 'insert', operation: 'create' }; // gap fill, see docstring
+  return { action: 'noop' }; // see docstring — no backfill-on-edit
 }
 
 /**

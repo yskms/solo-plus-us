@@ -9,6 +9,10 @@
  *    as done.
  *  - Forward-only. A migration whose version is <= the current
  *    `user_version` is never re-run; there is no down-migration (§7.1).
+ *  - If `user_version` is *higher* than any migration this build knows
+ *    about, the app was downgraded onto data written by a newer version.
+ *    §7.1 requires refusing to open rather than guessing — this throws
+ *    `SchemaTooNewError` before touching the DB any further.
  *  - Before running any migration against a database that already holds
  *    data (`user_version > 0`), the caller-supplied `backup` hooks are
  *    used to snapshot first. §7.2 explicitly forbids a plain file copy
@@ -17,6 +21,7 @@
  *    concern, so it's injected rather than implemented here — see
  *    `database/connection.ts`.
  */
+import { SchemaTooNewError } from '../../lib/errors';
 
 export interface MigrationExecutor {
   execute: (query: string, params?: (string | number | boolean | null)[]) => Promise<unknown>;
@@ -55,6 +60,11 @@ export async function runMigrations(
   options: RunMigrationsOptions,
 ): Promise<number[]> {
   const currentVersion = await options.getUserVersion();
+
+  const maxKnownVersion = migrations.reduce((max, m) => Math.max(max, m.version), 0);
+  if (currentVersion > maxKnownVersion) {
+    throw new SchemaTooNewError(currentVersion, maxKnownVersion);
+  }
 
   const pending = migrations
     .filter((m) => m.version > currentVersion)

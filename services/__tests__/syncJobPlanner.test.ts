@@ -22,8 +22,8 @@ describe('planForEdit (§9.3 編集 rows)', () => {
     expect(planForEdit(null, true)).toEqual({ action: 'insert', operation: 'update' });
   });
 
-  it('inserts create when neither a job nor a mapping exists (provider activated after first record — gap fill)', () => {
-    expect(planForEdit(null, false)).toEqual({ action: 'insert', operation: 'create' });
+  it('does nothing when neither a job nor a mapping exists — no backfill-on-edit (avoids resurrecting a D-35 decline or racing a stale D-34 create)', () => {
+    expect(planForEdit(null, false)).toEqual({ action: 'noop' });
   });
 });
 

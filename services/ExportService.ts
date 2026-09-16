@@ -15,11 +15,20 @@ import { EXPORTABLE_SETTING_KEYS } from '../types/Settings';
 import { nowUtcIso } from '../lib/datetime';
 
 export async function buildExportPayload(db: Transactor): Promise<ExportFileV1> {
-  const activities = await findAllActivities(db);
+  let activities: Awaited<ReturnType<typeof findAllActivities>> = [];
+  let settingsEntries: readonly (readonly [string, unknown])[] = [];
 
-  const settingsEntries = await Promise.all(
-    EXPORTABLE_SETTING_KEYS.map(async (key) => [key, await getSetting(db, key)] as const),
-  );
+  // Reading Activities and settings as two separate, un-transacted calls
+  // would let a write that happens in between produce an inconsistent
+  // snapshot (activities from one moment, settings from another). Wrapping
+  // the reads in a transaction — even though nothing is written — pins
+  // both to one consistent point in time.
+  await db.transaction(async (tx) => {
+    activities = await findAllActivities(tx);
+    settingsEntries = await Promise.all(
+      EXPORTABLE_SETTING_KEYS.map(async (key) => [key, await getSetting(tx, key)] as const),
+    );
+  });
 
   return {
     version: CURRENT_EXPORT_VERSION,

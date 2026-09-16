@@ -15,6 +15,7 @@ import {
   isLocalDateTimeConsistent,
   isValidLocalDate,
   isValidLocalTime,
+  isValidOccurredAtUtc,
   isValidUtcIso,
 } from '../lib/datetime';
 import { isUuidV4 } from '../lib/id';
@@ -105,8 +106,11 @@ function validateActivity(raw: unknown, index: number, seenIds: Set<string>, err
   }
 
   const occurredAtUtc = raw.occurredAtUtc;
-  if (!isValidUtcIso(occurredAtUtc)) {
-    errors.push({ path: `${path}.occurredAtUtc`, message: 'not a valid UTC instant (YYYY-MM-DDTHH:MM:SSZ)' });
+  if (!isValidOccurredAtUtc(occurredAtUtc)) {
+    errors.push({
+      path: `${path}.occurredAtUtc`,
+      message: 'not a valid UTC instant with :00 seconds (YYYY-MM-DDTHH:MM:00Z, §4.2)',
+    });
   }
 
   const occurredLocalDate = raw.occurredLocalDate;
@@ -127,7 +131,7 @@ function validateActivity(raw: unknown, index: number, seenIds: Set<string>, err
 
   if (
     offsetValid &&
-    isValidUtcIso(occurredAtUtc) &&
+    isValidOccurredAtUtc(occurredAtUtc) &&
     isValidLocalDate(occurredLocalDate) &&
     isValidLocalTime(occurredLocalTime) &&
     !isLocalDateTimeConsistent(occurredAtUtc as string, offset as number, occurredLocalDate as string, occurredLocalTime as string)

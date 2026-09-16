@@ -114,6 +114,13 @@ export default function ActivityDetailScreen() {
   const [moodBefore, setMoodBefore] = useState<number | null>(null);
   const [moodAfter, setMoodAfter] = useState<number | null>(null);
   const [durationMinutes, setDurationMinutes] = useState<string>('');
+  // Whether the person has actually edited the duration field this visit.
+  // Without this, re-saving an untouched duration would round-trip through
+  // whole minutes and silently corrupt it: 20s displays as "0" and saves
+  // back as null; 90s displays as "2" and saves back as 120. Tracking
+  // "touched" lets an unedited field pass the exact original value through
+  // unchanged instead of the lossy rounded-then-reparsed one.
+  const [durationTouched, setDurationTouched] = useState(false);
   const [note, setNote] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
@@ -128,6 +135,7 @@ export default function ActivityDetailScreen() {
       setMoodBefore(found.moodBefore);
       setMoodAfter(found.moodAfter);
       setDurationMinutes(found.durationSeconds ? String(Math.round(found.durationSeconds / 60)) : '');
+      setDurationTouched(false);
       setNote(found.note ?? '');
     }
   }, [db, id]);
@@ -147,19 +155,39 @@ export default function ActivityDetailScreen() {
   }
 
   const save = async () => {
+    let durationSeconds: number | null;
+    if (!durationTouched) {
+      // Field was never edited this visit — pass the exact original value
+      // through. Recomputing from the rounded-to-minutes display value
+      // would silently corrupt any duration that isn't a whole number of
+      // minutes (see `durationTouched` doc comment above).
+      durationSeconds = activity.durationSeconds;
+    } else if (durationMinutes.trim() === '') {
+      durationSeconds = null; // explicitly cleared
+    } else {
+      const parsedMinutes = Number(durationMinutes);
+      if (!Number.isFinite(parsedMinutes) || parsedMinutes <= 0) {
+        Alert.alert('Invalid duration', 'Enter a duration in minutes, or leave it blank.');
+        return;
+      }
+      durationSeconds = Math.round(parsedMinutes * 60);
+    }
+
     setSaving(true);
     try {
-      const parsedMinutes = durationMinutes.trim() === '' ? null : Number(durationMinutes);
       await ActivityService.updateActivity(db, activity.id, {
         orgasm,
         ejaculation,
         protectionUsed,
         moodBefore,
         moodAfter,
-        durationSeconds: parsedMinutes != null && Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? Math.round(parsedMinutes * 60) : null,
+        durationSeconds,
         note: note.trim() === '' ? null : note,
       });
       router.back();
+    } catch (error) {
+      Alert.alert('Could not save', 'Your changes were not saved. Please try again.');
+      console.error('updateActivity failed', error);
     } finally {
       setSaving(false);
     }
@@ -172,8 +200,13 @@ export default function ActivityDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await ActivityService.deleteActivity(db, activity.id);
-          router.back();
+          try {
+            await ActivityService.deleteActivity(db, activity.id);
+            router.back();
+          } catch (error) {
+            Alert.alert('Could not delete', 'Please try again.');
+            console.error('deleteActivity failed', error);
+          }
         },
       },
     ]);
@@ -197,7 +230,10 @@ export default function ActivityDetailScreen() {
           <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Duration (minutes)</Text>
           <TextInput
             value={durationMinutes}
-            onChangeText={setDurationMinutes}
+            onChangeText={(value) => {
+              setDurationMinutes(value);
+              setDurationTouched(true);
+            }}
             keyboardType="number-pad"
             placeholder="Not recorded"
             placeholderTextColor={colors.textTertiary}

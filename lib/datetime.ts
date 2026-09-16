@@ -214,14 +214,24 @@ export function isLocalDateTimeConsistent(
   return derived.localDate === occurredLocalDate && derived.localTime === occurredLocalTime;
 }
 
-/** For job scheduling (`not_before`), e.g. "record time + 5s" (D-15/D-44). */
+/** For job scheduling (`not_before`), e.g. "record time + 5s" (D-15/D-44). `created_at`/`updated_at`/job timestamps keep real seconds, so this accepts any valid instant. */
 export function addSecondsIso(iso: string, seconds: number): string {
-  const date = parseStrictUtcIsoAnySeconds(iso);
+  const date = parseStrictUtcIso(iso);
   return formatUtcIso(new Date(date.getTime() + seconds * 1000));
 }
 
-// created_at/updated_at/job timestamps keep real seconds, so this parser
-// (unlike parseStrictUtcIso used for occurred_at_utc) doesn't reject them.
-function parseStrictUtcIsoAnySeconds(value: string): Date {
-  return parseStrictUtcIso(value);
+/**
+ * §4.2: `occurred_at_utc` specifically must always have `:00` seconds —
+ * unlike `created_at`/`updated_at`, which keep real second precision.
+ * `parseStrictUtcIso` alone only checks the format is well-formed; this is
+ * the additional, narrower check that's only correct to apply to
+ * `occurred_at_utc`.
+ */
+export function hasZeroSeconds(utcIso: string): boolean {
+  return utcIso.slice(17, 19) === '00';
+}
+
+/** Combines format validation with the `occurred_at_utc`-specific seconds rule (§4.2/§13.4). */
+export function isValidOccurredAtUtc(value: unknown): value is string {
+  return isValidUtcIso(value) && hasZeroSeconds(value);
 }

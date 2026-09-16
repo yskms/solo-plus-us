@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import 'react-native-reanimated';
 
 import { DatabaseProvider, useNeedsOnboarding } from '../contexts/DatabaseContext';
+import { DataRevisionProvider } from '../contexts/DataRevision';
 import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
 import { UndoSnackbar } from '../components/UndoSnackbar';
 
@@ -47,21 +48,23 @@ export default function RootLayout() {
 
   return (
     <DatabaseProvider>
-      <RecordFeedbackProvider>
-        <View style={{ flex: 1 }}>
-          <OnboardingRedirect />
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen
-              name="record"
-              options={{ presentation: 'modal', headerShown: false }}
-            />
-            <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
-          </Stack>
-          <UndoSnackbar />
-        </View>
-      </RecordFeedbackProvider>
+      <DataRevisionProvider>
+        <RecordFeedbackProvider>
+          <View style={{ flex: 1 }}>
+            <OnboardingRedirect />
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
+              <Stack.Screen
+                name="record"
+                options={{ presentation: 'modal', headerShown: false }}
+              />
+              <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
+            </Stack>
+            <UndoSnackbar />
+          </View>
+        </RecordFeedbackProvider>
+      </DataRevisionProvider>
     </DatabaseProvider>
   );
 }

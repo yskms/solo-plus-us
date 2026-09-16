@@ -11,7 +11,7 @@
  * `db.transaction()` for §10.2's all-or-nothing delete.
  */
 import { generateId, isUuidV4 } from '../lib/id';
-import { isValidLocalDate, isValidLocalTime, isLocalDateTimeConsistent, nowUtcIso, parseStrictUtcIso } from '../lib/datetime';
+import { isValidLocalDate, isValidLocalTime, isLocalDateTimeConsistent, hasZeroSeconds, nowUtcIso, parseStrictUtcIso } from '../lib/datetime';
 import { ValidationError, NotFoundError } from '../lib/errors';
 import type { SqlExecutor } from '../database/SqlExecutor';
 import type {
@@ -83,6 +83,9 @@ function assertValidOccurredFields(input: {
   timezoneOffsetMinutes: number;
 }): void {
   parseStrictUtcIso(input.occurredAtUtc); // throws ValidationError if malformed
+  if (!hasZeroSeconds(input.occurredAtUtc)) {
+    throw new ValidationError(`occurredAtUtc must have :00 seconds (§4.2): ${input.occurredAtUtc}`);
+  }
   if (!isValidLocalDate(input.occurredLocalDate)) {
     throw new ValidationError(`Invalid occurredLocalDate: ${input.occurredLocalDate}`);
   }

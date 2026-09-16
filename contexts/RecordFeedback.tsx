@@ -16,6 +16,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as ActivityService from '../services/ActivityService';
 import { useDatabase } from './DatabaseContext';
+import { useDataRevision } from './DataRevision';
 import type { Activity } from '../types/Activity';
 
 const VISIBLE_MS = 5000;
@@ -35,6 +36,7 @@ const RecordFeedbackContext = createContext<RecordFeedbackContextValue | null>(n
 
 export function RecordFeedbackProvider({ children }: { children: ReactNode }) {
   const db = useDatabase();
+  const { bump } = useDataRevision();
   const [state, setState] = useState<FeedbackState | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -52,12 +54,26 @@ export function RecordFeedbackProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /**
+   * Undo runs *on* Today (no navigation happens), so nothing else would
+   * tell Today to reload — `bump()` is that signal. Deliberately only
+   * dismisses the Snackbar and bumps the revision *after* the delete
+   * actually succeeds: dismissing first (as an earlier version of this
+   * function did) means a failed Undo silently leaves the Activity in
+   * place while looking, to the user, exactly like Undo worked.
+   */
   const undo = useCallback(async () => {
     if (!state) return;
     const { activity } = state;
-    dismiss();
-    await ActivityService.undoLastRecord(db, activity.id);
-  }, [state, dismiss, db]);
+    try {
+      await ActivityService.undoLastRecord(db, activity.id);
+      dismiss();
+      bump();
+    } catch (error) {
+      dismiss(); // don't leave a Snackbar whose Undo button just failed sitting there forever
+      console.error('Undo failed', error);
+    }
+  }, [state, dismiss, bump, db]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 

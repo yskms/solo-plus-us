@@ -1,4 +1,5 @@
 import { runMigrations, type Migration, type MigrationExecutor, type MigrationTransactor } from '../index';
+import { SchemaTooNewError } from '../../../lib/errors';
 
 /**
  * A fake DB that behaves like op-sqlite closely enough to test the
@@ -147,5 +148,27 @@ describe('runMigrations', () => {
     expect(createBackup).toHaveBeenCalledTimes(1);
     expect(restoreBackup).toHaveBeenCalledTimes(1);
     expect(deleteBackup).not.toHaveBeenCalled();
+  });
+});
+
+describe('runMigrations — §7.1 downgrade detection', () => {
+  it('refuses to open when user_version is newer than any known migration', async () => {
+    const fake = makeFakeDb(5); // e.g. the app was downgraded onto data written by a newer build
+    await expect(
+      runMigrations(fake.db, [migration(1, 'CREATE TABLE a (id TEXT)')], {
+        getUserVersion: fake.getUserVersion,
+      }),
+    ).rejects.toThrow(SchemaTooNewError);
+
+    expect(fake.executedStatements).toHaveLength(0); // never touches the DB
+  });
+
+  it('does not throw when user_version exactly matches the highest known migration', async () => {
+    const fake = makeFakeDb(1);
+    await expect(
+      runMigrations(fake.db, [migration(1, 'CREATE TABLE a (id TEXT)')], {
+        getUserVersion: fake.getUserVersion,
+      }),
+    ).resolves.toEqual([]);
   });
 });

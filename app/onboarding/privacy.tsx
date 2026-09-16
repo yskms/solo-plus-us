@@ -4,7 +4,7 @@
  * screen with Today — no back button into onboarding after that.
  */
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '../../constants/theme';
@@ -27,8 +27,14 @@ export default function PrivacyIntroScreen() {
   const onContinue = async () => {
     if (continuing) return;
     setContinuing(true);
-    await markPrivacyIntroSeen(db);
-    router.replace('/(tabs)');
+    try {
+      await markPrivacyIntroSeen(db);
+      router.replace('/(tabs)');
+    } catch (error) {
+      setContinuing(false);
+      Alert.alert('Something went wrong', 'Please try again.');
+      console.error('markPrivacyIntroSeen failed', error);
+    }
   };
 
   return (

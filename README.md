@@ -63,7 +63,7 @@ DB 設計には影響しないため Phase 1 は着手できる。
 
 ## Phase 1 実装状況
 
-`phase1/foundation` ブランチ。117 件のテストが通り、`tsc --noEmit` はエラーなし。
+`phase1/foundation` ブランチ。131 件のテストが通り、`tsc --noEmit` はエラーなし。
 
 ### ビルド構成
 
@@ -71,46 +71,83 @@ DB 設計には影響しないため Phase 1 は着手できる。
 - `@op-engineering/op-sqlite`（`package.json` の `"op-sqlite": {"sqlcipher": true}` で SQLCipher 有効化。
   `pod install` で `OpenSSL-Universal` が解決されることを確認済み — SQLCipher 配線は実機ビルド一歩手前まで検証済み）
 - Android は `plugins/withAndroidNoBackup.js`（自作 config plugin）で `allowBackup="false"` /
-  `fullBackupContent="false"` を注入。`expo prebuild --platform android` で生成される
-  AndroidManifest.xml に反映されることを確認済み（D-07 の Android 側）
+  `fullBackupContent="false"` に加えて **`android:dataExtractionRules`**（Android 12+ の
+  device-to-device 転送を個別に無効化する XML リソースを自動生成）を注入。`expo prebuild --platform
+  android` で生成される AndroidManifest.xml とリソースファイル双方で反映を確認済み（D-07 Android 側）
+- `expo-localization` を追加。`preferences.firstDayOfWeek`/`timeFormat` の既定値は OS の実際のカレンダー
+  設定（`getCalendars()`）から解決する（Hermes の `Intl.Locale` 実装状況に依存しない）
 - `expo prebuild`（iOS / Android とも）・`pod install` は実行・成功済み。`[OP-SQLITE] using SQLCipher`
-  → `OpenSSL-Universal` 解決までログで確認しており、SQLCipher の配線は実機ビルド一歩手前まで検証済み
-- **iOS シミュレータでの起動は未検証**：`expo run:ios` を試したが、このマシンの Xcode 16.2 が既定で
-  要求する iOS 18.2 プラットフォームが未インストールで、インストール済みの Simulator ランタイム
-  （iOS 17.0 / 17.2）が `xcodebuild -showdestinations` に一切出てこない状態だった
-  （`xcodebuild: error: ... iOS 18.2 is not installed`）。Simulator.app を明示的に起動しても解消せず。
-  **Xcode > Settings > Platforms から iOS 18.2 Simulator をインストールすれば解消する見込み**（未実施 —
-  数 GB のダウンロードを伴うため無断では実行していない）。Android 側の実機 / エミュレータ起動も未実施
+  → `OpenSSL-Universal` 解決までログで確認済み
+- **iOS シミュレータでの起動は Xcode のツールチェーンでブロック中**：宛先解決の問題（ディスク容量
+  不足・iOS シミュレータランタイム未導入）はユーザー協力のもと解消したが、`ExpoModulesJSI`
+  （Expo SDK 57 の基盤モジュール）が `Package.swift` で **Swift tools version 6.2.0** を要求する一方、
+  この Mac の Xcode 16.2 は Swift 6.0.3 まで。ユーザーの判断でアップデートは保留中。
+  実機（iPhone 8 等）でも同じコンパイル段階で同じエラーになるため回避不可。Android 側の実機 /
+  エミュレータ起動も未実施
 
 ### 実装済み
 
 | 層 | 内容 |
 |---|---|
-| `database/` | `schema.ts`（v1 DDL）、`key.ts`（SecureStore 鍵管理、D-06）、`connection.ts`（PRAGMA・§7.2 バックアップ付き migration 起動）、`migrations/`（runner + 初期 migration） |
+| `database/` | `schema.ts`（v1 DDL）、`key.ts`（SecureStore 鍵管理、D-06。DB ファイルの有無を鍵生成前に確認し、既存 DB に対する鍵の誤生成を防止）、`connection.ts`（PRAGMA・§7.2 バックアップ付き migration 起動。復元時は接続を閉じてから `-wal`/`-shm` ごと削除し、再オープンして継続）、`migrations/`（runner + 初期 migration + ダウングレード検出） |
 | `repositories/` | `ActivityRepository` / `HealthSyncRepository` / `HealthSyncJobRepository`。§9.5 の claim/finalize、§10.1 の削除分岐を含む |
-| `services/` | `syncJobPlanner`（§9.3/§10.1 を純粋関数化）、`ActivityService`（record/update/delete/undo の transaction 統括）、`SettingsRepository`、`ExportService` / `ImportService`（JSON schema v1、strict restore） |
-| `lib/` | `datetime.ts`（UTC 固定長表記、DST を考慮した offset 解決）、`id.ts`（UUID v4）、`relativeDate.ts` |
-| UI | Onboarding（Privacy Intro）、Today（月次集計・直近履歴・FAB）、Add Activity（Solo/Partnered 即記録）、Undo Snackbar（D-15 の2段タイマー）、Activity Detail（編集・削除） |
+| `services/` | `syncJobPlanner`（§9.3/§10.1 を純粋関数化）、`ActivityService`（record/update/delete/undo の transaction 統括）、`SettingsRepository`、`ExportService`（読み出しをトランザクションで一貫させる） / `ImportService`（JSON schema v1、strict restore） |
+| `lib/` | `datetime.ts`（UTC 固定長表記、DST を考慮した offset 解決、`occurredAtUtc` の秒 `:00` 不変条件）、`id.ts`（UUID v4）、`relativeDate.ts` |
+| `contexts/` | `DatabaseContext`（鍵喪失時に専用の見出しを表示）、`DataRevision`（画面遷移を伴わない Undo でも Today を再読込させる）、`RecordFeedback`（Undo 失敗時にエラーを握り潰さない） |
+| UI | Onboarding（Privacy Intro）、Today（月次集計・直近履歴・FAB、Undo 後に再読込）、Add Activity（Solo/Partnered 即記録・失敗時にアラート）、Undo Snackbar、Activity Detail（編集・削除・失敗時にアラート、duration の丸め誤差による黙った改変を防止） |
 
 ### テスト
 
 `better-sqlite3` を devDependency として使い、**実際の SQLite に対して**スキーマの CHECK/FK 制約、
 `ActivityService` の同期ジョブ分岐（§9.3/§10.1 の全パターン）、Export → Import の全件往復
-（基本設計 §13.5 の完成条件そのもの）を検証している（`test/support/sqliteTestDb.ts`）。
-SQLCipher 固有の挙動そのものは対象外（別の SQLite バインディングのため）。
+（基本設計 §13.5 の完成条件そのもの）、`attachExternalIdToDeleteJob` の revision 非依存の挙動、
+`occurredAtUtc` の秒 `:00` 不変条件、鍵喪失時の分岐を検証している（`test/support/sqliteTestDb.ts`）。
+SQLCipher 固有の挙動（`VACUUM INTO` の暗号化・実際の復元フロー）そのものは対象外（別の SQLite
+バインディングかつ native module 依存のため、引き続き実機検証が必要）。
 
 ```
-lib/__tests__/               datetime, relativeDate
-services/__tests__/          syncJobPlanner, importValidation
-database/migrations/__tests__/ runner のシーケンス・バックアップ呼び出し
-test/__tests__/              schema・ActivityService・Export/Import（better-sqlite3 統合）
+lib/__tests__/                    datetime, relativeDate
+database/__tests__/               key（鍵の有無 × DB ファイルの有無の分岐）
+database/migrations/__tests__/    runner のシーケンス・バックアップ呼び出し・ダウングレード検出
+services/__tests__/               syncJobPlanner, importValidation
+test/__tests__/                   schema・ActivityRepository・ActivityService・HealthSyncJobRepository・
+                                   Export/Import（better-sqlite3 統合）
 ```
+
+### 直近のレビューで見つかり、修正したもの
+
+1. **Android 12+ の端末間転送**（D-07 違反）：`allowBackup=false` だけでは D2D 転送を防げないため、
+   `dataExtractionRules` で明示的に無効化
+2. **鍵の誤生成**：DB ファイルが既にあるのに鍵が読めない場合、新しい鍵を生成せず
+   `DatabaseKeyUnavailableError` を投げるよう変更（既存 DB の鍵を上書きする事故を防止）
+3. **Migration 復元の安全性とダウングレード検出**：復元前に接続を閉じ `-wal`/`-shm` も削除。
+   `user_version` が既知の最大 migration より新しい場合は開かずエラーにする（§7.1）
+4. **Undo 後に Today が更新されない**：`DataRevisionContext` を追加し、画面遷移なしの Undo でも
+   再読込されるようにした。Undo 失敗時にエラーを飲み込まないよう修正
+5. **詳細画面の duration が黙って壊れる**：分単位への丸め往復で 20 秒→null、90 秒→120 秒に
+   化けていたのを、未編集フィールドは元の値をそのまま保持するよう修正
+6. `ensureLocaleDefaultsPersisted` を起動時に呼び出すよう配線。`Intl.Locale` 依存をやめ
+   `expo-localization` に変更
+7. `occurredAtUtc` の秒が `:00` であることを Repository と Import の両方で検証するよう追加
+8. `VACUUM INTO` の出力が万一平文だった場合に検知して失敗させる安全弁を追加（実機での最終確認は
+   引き続き必要）
+9. `attachExternalIdIfRevisionMatches` の revision 一致条件が、想定シナリオでは常に失敗する
+   設計になっていたのを、状態（`operation='delete' AND external_record_id IS NULL`）で判定するよう修正
+10. `planForEdit` の「ジョブもマッピングも無ければ create を挿入する」補完処理が、D-35 で明示的に
+    同期を拒否した記録を再度同期してしまう等の問題があったため削除。この場合の正しい挙動
+    （バックフィルするか）は Phase 4 の設計判断として保留
+11. 記録・保存・削除・オンボーディングの各操作にエラー処理を追加。`getDatabase()` は失敗を
+    永続化せず、次回呼び出しで再試行できるよう修正
 
 ### Known gaps（意図的に未実装）
 
-- **iOS のバックアップ除外**（D-07 の後半）：Android の `allowBackup=false` は実装済みだが、iOS の
-  `NSURLIsExcludedFromBackupKey` は expo-file-system の API に無く、小さなネイティブモジュールが要る。
-  未実装（DB は現状 Documents 配下に置かれ、iOS 側は iCloud/iTunes バックアップに含まれる）
+- **iOS のバックアップ除外**（D-07 の後半）：Android の `allowBackup=false` + `dataExtractionRules` は
+  実装済みだが、iOS の `NSURLIsExcludedFromBackupKey` は expo-file-system の API に無く、小さな
+  ネイティブモジュールが要る。未実装（DB は現状 Documents 配下に置かれ、iOS 側は iCloud/iTunes
+  バックアップに含まれる）。**この状態で TestFlight 等の外部配布はしないこと**
+- **iOS の DB 配置**：Documents ではなく Library/Application Support の方が用途に適しているという
+  指摘は妥当だが、expo-file-system に対応する高レベル API が無く、プラットフォーム間で安全に
+  パスを組み立てる手段が未確認のため、バックアップ除外の実装と合わせて Phase 3 で対応する
 - **日時編集 UI**：過去日時への記録・編集（§12/§4.4）は未実装。ネイティブの日時ピッカーを追加する前に
   まず SQLCipher 配線を実機で確認したかったため、意図的に後回し
 - **Settings 画面一式**：Activity Details カスタマイズ、App Lock、Health Connect、Data(Export/Import UI)
@@ -119,7 +156,12 @@ test/__tests__/              schema・ActivityService・Export/Import（better-s
 - **Health Connect 同期の実行部分**：`HealthConnectService` / `SyncWorker` は未実装（Phase 4）。
   ジョブのキューイング自体（`ActivityService` → `health_sync_jobs`）は実装・テスト済みで、
   `healthConnect.enabled` が既定 `false` のため実際には空のまま動く
-- **App Lock / Recovery 画面**：DB を開けなかった場合、`DatabaseContext` は素朴なエラー画面を
-  出すのみ。§8.8 の Recovery bootstrap（別鍵での一時 DB 作成・検証・差し替え）は未実装
-- **実機 / シミュレータでの起動確認**：`pod install` の成功までは確認済み。`expo run:ios` /
-  `expo run:android` によるビルド・起動、Android 側の Gradle ビルド（SQLCipher 分岐の実行）は未実施
+- **App Lock / Recovery 画面**：DB を開けなかった場合、`DatabaseContext` は鍵喪失かどうかで見出しを
+  出し分ける簡易画面を出すのみ。§8.8 の Recovery bootstrap（別鍵での一時 DB 作成・検証・差し替え）は
+  未実装
+- **`connection.ts` の実機検証**：`VACUUM INTO` によるバックアップの暗号化確認、復元フローの
+  ファイル操作、実際の migration ダウングレード時の挙動は、op-sqlite が native module のため
+  Jest では検証できず、実機（またはシミュレータ）でのみ確認できる
+- **実機 / シミュレータでの起動確認**：`pod install` の成功までは確認済み。Xcode の Swift
+  ツールチェーンが古く（上記参照）、`expo run:ios` によるビルド・起動は未実施。Android 側の
+  実機 / エミュレータ起動、Gradle ビルド（SQLCipher 分岐の実行）も未実施

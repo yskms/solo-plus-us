@@ -48,7 +48,8 @@
           "faceIDPermission": "Solo + Us uses Face ID to unlock the app so your records stay private."
         }
       ],
-      "./plugins/withAndroidNoBackup.js"
+      "./plugins/withAndroidNoBackup.js",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

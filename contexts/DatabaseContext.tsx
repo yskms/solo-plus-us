@@ -14,6 +14,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { getDatabase } from '../database/connection';
 import { clearAllClaims } from '../repositories/HealthSyncJobRepository';
 import { hasSeenPrivacyIntro } from '../lib/onboarding';
+import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
+import { DatabaseKeyUnavailableError } from '../lib/errors';
 import { useTheme } from '../constants/theme';
 
 type DatabaseState =
@@ -33,6 +35,9 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       try {
         const db = await getDatabase();
         await clearAllClaims(db);
+        // §5.5/D-42: resolved once, from the OS's actual settings, and
+        // persisted — never re-derived from locale on every read.
+        await ensureLocaleDefaultsPersisted(db);
         const needsOnboarding = !(await hasSeenPrivacyIntro(db));
         if (!cancelled) setState({ status: 'ready', db, needsOnboarding });
       } catch (error) {
@@ -56,12 +61,16 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     // Full Recovery bootstrap (§8.5/§8.8, D-26) is Phase 3 — this is a
     // deliberately plain fallback so a decrypt/open failure never renders
     // a blank screen or a native crash, without yet offering the actual
-    // restore-or-reset choice.
+    // restore-or-reset choice. The two known error types get a headline
+    // that names what's actually true (key lost vs. downgraded), rather
+    // than one generic message for every cause.
+    const isKeyUnavailable = state.error instanceof DatabaseKeyUnavailableError;
+    const headline = isKeyUnavailable
+      ? 'Solo + Us can’t unlock the records on this device.'
+      : 'Solo + Us couldn’t open its database on this device.';
     return (
       <View style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 24 }]}>
-        <Text style={{ color: colors.textPrimary, fontSize: 16, textAlign: 'center' }}>
-          Solo + Us couldn&apos;t open its database on this device.
-        </Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 16, textAlign: 'center' }}>{headline}</Text>
         <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 8 }}>
           {String((state.error as Error)?.message ?? state.error)}
         </Text>

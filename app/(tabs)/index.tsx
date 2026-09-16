@@ -4,12 +4,13 @@
  * the single most important control in the app — the Record FAB
  * (§7.1 "基本記録は2タップ以内を目標とする").
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
+import { useDataRevision } from '../../contexts/DataRevision';
 import { countActivitiesByDateRange, findRecentActivities, type ActivityCounts } from '../../repositories/ActivityRepository';
 import { formatRelativeLocalDate } from '../../lib/relativeDate';
 import { contextLabel } from '../../lib/labels';
@@ -38,6 +39,7 @@ function weekdayHeader(): string {
 export default function TodayScreen() {
   const { colors } = useTheme();
   const db = useDatabase();
+  const { revision } = useDataRevision();
   const [counts, setCounts] = useState<ActivityCounts>({ total: 0, solo: 0, partnered: 0 });
   const [recent, setRecent] = useState<Activity[]>([]);
   const [lastActivity, setLastActivity] = useState<Activity | null>(null);
@@ -59,6 +61,13 @@ export default function TodayScreen() {
       reload();
     }, [reload]),
   );
+
+  // Undo runs on this screen without any navigation happening, so
+  // `useFocusEffect` above never re-fires for it — `revision` is the
+  // explicit signal for that case (contexts/DataRevision.tsx).
+  useEffect(() => {
+    reload();
+  }, [revision, reload]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>

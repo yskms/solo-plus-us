@@ -198,17 +198,29 @@ export async function deleteJobIfRevisionMatches(
   return (result.rowsAffected ?? 0) > 0;
 }
 
-/** §9.5.1 "else" branch — Activity was deleted mid-flight; the job (now `delete`) needs the external id to address the record for real. Only applies if revision still matches (nothing replaced it again since claim). */
-export async function attachExternalIdIfRevisionMatches(
+/**
+ * §9.5.1 "else" branch — the Activity was deleted mid-flight, so §10.1's
+ * `replaceJob` has already turned this job into `delete`; it needs the
+ * external id the just-finished `create` obtained, so the eventual delete
+ * can address the real record.
+ *
+ * Deliberately does *not* gate on the revision captured at claim time —
+ * `replaceJob` (called to make the delete happen in the first place)
+ * always bumps `revision`, so a revision-equality check here would never
+ * match in exactly the case this function exists for. Gates on state
+ * instead: only attach when the row is still a `delete` with no id yet,
+ * which is idempotent and safe even if something else touches the row
+ * between the check and the update.
+ */
+export async function attachExternalIdToDeleteJob(
   executor: SqlExecutor,
   jobId: string,
-  revisionAtClaim: number,
   externalRecordId: string,
 ): Promise<boolean> {
   const result = await executor.execute(
     `UPDATE health_sync_jobs SET external_record_id = ?, revision = revision + 1
-     WHERE id = ? AND revision = ?`,
-    [externalRecordId, jobId, revisionAtClaim],
+     WHERE id = ? AND operation = 'delete' AND external_record_id IS NULL`,
+    [externalRecordId, jobId],
   );
   return (result.rowsAffected ?? 0) > 0;
 }

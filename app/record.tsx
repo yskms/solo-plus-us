@@ -7,7 +7,7 @@
  * not gated by an extra tap).
  */
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
@@ -29,6 +29,9 @@ export default function RecordScreen() {
       const activity = await ActivityService.recordActivity(db, { context, instantUtc: new Date() });
       router.back();
       announceRecorded(activity);
+    } catch (error) {
+      Alert.alert('Could not record', 'Please try again.');
+      console.error('recordActivity failed', error);
     } finally {
       setSaving(false);
     }

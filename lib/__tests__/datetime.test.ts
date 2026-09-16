@@ -1,4 +1,6 @@
 import {
+  hasZeroSeconds,
+  isValidOccurredAtUtc,
   addSecondsIso,
   buildOccurredAtFields,
   deriveLocalDateTime,
@@ -161,5 +163,22 @@ describe('nowUtcIso', () => {
   it('produces the fixed 20-character format', () => {
     expect(nowUtcIso()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     expect(nowUtcIso()).toHaveLength(20);
+  });
+});
+
+describe('hasZeroSeconds / isValidOccurredAtUtc (§4.2 occurred_at_utc invariant)', () => {
+  it('accepts an instant with :00 seconds', () => {
+    expect(hasZeroSeconds('2026-09-14T14:42:00Z')).toBe(true);
+    expect(isValidOccurredAtUtc('2026-09-14T14:42:00Z')).toBe(true);
+  });
+
+  it('rejects a well-formed instant whose seconds are not zero', () => {
+    expect(hasZeroSeconds('2026-09-14T14:42:37Z')).toBe(false);
+    expect(isValidOccurredAtUtc('2026-09-14T14:42:37Z')).toBe(false);
+  });
+
+  it('isValidOccurredAtUtc still rejects malformed strings entirely', () => {
+    expect(isValidOccurredAtUtc('not-a-date')).toBe(false);
+    expect(isValidOccurredAtUtc(123)).toBe(false);
   });
 });

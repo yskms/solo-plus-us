@@ -5,6 +5,7 @@
  * the TEXT column (`value`) and what its default is. UI code and other
  * services import from here, never touch `app_settings` via raw SQL.
  */
+import { getCalendars } from 'expo-localization';
 import { nowUtcIso } from '../lib/datetime';
 import type { SqlExecutor } from '../database/SqlExecutor';
 import { STATIC_DEFAULTS, type SettingKey, type SettingsMap } from '../types/Settings';
@@ -22,23 +23,26 @@ function decode<K extends SettingKey>(key: K, raw: string): SettingsMap[K] {
   return raw as SettingsMap[K];
 }
 
-/** Resolves `firstDayOfWeek`/`timeFormat` from locale *once* — never stored as the literal string `'locale'` (§5.5: a later locale change must not reorder existing history). */
+/**
+ * Resolves `firstDayOfWeek`/`timeFormat` from locale *once* — never stored
+ * as the literal string `'locale'` (§5.5: a later locale change must not
+ * reorder existing history).
+ *
+ * Uses `expo-localization`'s `getCalendars()`, which reads the OS's actual
+ * calendar/region settings natively, rather than JS's `Intl.Locale` —
+ * Hermes's `Intl` support has historically been partial, and specifically
+ * `Intl.Locale`/`weekInfo` are not guaranteed to be present. A silent
+ * `Intl.Locale` failure here wouldn't just misfire once: whatever it
+ * resolves to gets persisted as this device's permanent default via
+ * `ensureLocaleDefaultsPersisted`.
+ */
 function resolveLocaleDefaults(): Pick<SettingsMap, 'preferences.firstDayOfWeek' | 'preferences.timeFormat'> {
-  let region: string | undefined;
-  let hourCycle: string | undefined;
-  try {
-    const resolved = new Intl.DateTimeFormat().resolvedOptions();
-    region = new Intl.Locale(resolved.locale).maximize().region;
-    hourCycle = resolved.hourCycle;
-  } catch {
-    // Intl.Locale unsupported/region unavailable — fall through to defaults below.
-  }
+  const calendar = getCalendars()[0];
 
-  // Countries where Monday is the conventional first day of the week are the
-  // majority globally; Sunday-first is the narrower exception.
-  const sundayFirstRegions = new Set(['US', 'CA', 'MX', 'JP', 'KR', 'BR', 'PH', 'TW', 'HK', 'IL']);
-  const firstDayOfWeek = region && sundayFirstRegions.has(region) ? 'sunday' : 'monday';
-  const timeFormat = hourCycle === 'h11' || hourCycle === 'h12' ? '12h' : '24h';
+  // expo-localization's Weekday enum: SUNDAY = 1. Any other value (or null,
+  // e.g. unsupported on web) defaults to Monday, the more common convention.
+  const firstDayOfWeek = calendar.firstWeekday === 1 ? 'sunday' : 'monday';
+  const timeFormat = calendar.uses24hourClock === false ? '12h' : '24h';
 
   return { 'preferences.firstDayOfWeek': firstDayOfWeek, 'preferences.timeFormat': timeFormat };
 }
