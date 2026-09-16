@@ -1,7 +1,14 @@
-# Solo + Us — UI/UX Specification v0.1
+# Solo + Us — UI/UX Specification v0.2
 
 **App Name:** Solo + Us  
 **Tagline:** *Your intimate life, over time.*
+
+改訂：2026-09-16  
+関連：要件定義書 v0.2 / 基本設計 v0.2 / **設計判断記録 v0.2**
+
+> **本文と図版が矛盾する場合は本文を正とする。**
+> `docs/old/` は検討履歴であり仕様ではない。
+> 記録の確認表現は Snackbar が正であり、専用の「記録完了画面」は不採用。
 
 ---
 
@@ -101,6 +108,33 @@ Partnered activity.
 **Solo/Partneredの判別を色だけに依存しないこと。**
 
 必ずラベルまたはアイコンを併用する。
+
+---
+
+## Dark Palette
+
+Settings に Appearance があり、App Icon にも Dark 版があるため、トークンも両テーマ分を定義する。
+
+```ts
+export const darkColors = {
+  solo: '#4FA890',
+  partnered: '#F0B2A6',
+  intersection: '#7FB3A6',
+
+  background: '#121615',
+  surface: '#1B211F',
+
+  textPrimary: '#F2F4F3',
+  textSecondary: '#A8B0AD',
+  textTertiary: '#79827F',
+
+  border: '#2C3532',
+  destructive: '#E0827F',
+};
+```
+
+Dark では彩度を落として明度を上げる。Light の値をそのまま暗い背景に載せない。
+コントラスト比は §23 の受け入れ基準で検証する。
 
 ---
 
@@ -325,11 +359,22 @@ Health Connectの成功を待たない。
 
 約5秒表示。
 
-Undo：
+## Undo の仕様
 
-- SQLite record削除
-- Health sync済みならexternal recordも削除対象
-- pending syncならqueueから除外
+**同期遅延と Snackbar 表示を分離する。**
+
+| | 値 | 根拠 |
+|---|---|---|
+| 同期遅延 | **記録時刻 + 5秒固定** | 永続キューの時刻列で表現するため、アプリが kill されても失われない |
+| Undo 可能期間 | **Snackbar 表示中** | 画面遷移で Snackbar が消えたら Undo も終了する。同期遅延は変更しない |
+
+- Undo 対象は直前の1件のみ。冪等に実装する
+- Undo 実行時は SQLite から物理削除し、未送信の同期ジョブを削除する
+- Snackbar が消えてから同期開始までの数秒は「Undo できないが未同期」になるが、無害である
+
+タイマーで同期をキャンセルする方式は採らない。アプリが即座に kill されると遅延が失われ、同期されてしまう。
+
+5秒以内に詳細画面で編集された場合も、ジョブを2つに分けず最終状態を1回で送る。
 
 ---
 
@@ -404,7 +449,10 @@ Duration
 Custom
 ```
 
-最終的にはsecondsで保存。
+最終的には seconds で保存。
+
+**日時の入力・表示精度は分単位とし、記録時刻の秒は常に `00` に正規化する。**
+秒を扱う UI を設けない。
 
 ## Orgasm
 
@@ -561,6 +609,23 @@ Most common time
 
 ---
 
+## 表示規則
+
+計算方法は基本設計 §14 に従う。UI 側で守るべき点は以下。
+
+| 項目 | 規則 |
+|---|---|
+| Average interval | 2件未満は `—` を表示する |
+| Most common day | 10件未満は `—`。同率首位が2つなら `Sunday and Friday` と併記。3つ以上なら `—` |
+| Most common time | **1時間刻みの循環3時間ウィンドウ**の最大値。`10 PM – 1 AM` のような日跨ぎ表記を許す |
+| 件数不足 | 空欄にせず `—` を出し、評価的な代替文言（「まだ足りません」等）を出さない |
+
+固定3時間バケット（`21–24` / `0–3`）では `10 PM – 1 AM` を原理的に表示できないため、循環ウィンドウを用いる。
+
+同率首位を隠さず併記するのは、**件数が十分あるうえでの同率は事実**であり、事実は記述してよいため。評価はしない。
+
+---
+
 # 15. Insights — Period Selector
 
 ```text
@@ -666,9 +731,9 @@ Health Connect
 
 SYNC TO HEALTH CONNECT
 
-Sex / Partnered             ON
+Partnered                   ON
 
-Masturbation / Solo         ON
+Solo                        ON
 
 
 ────────────────────────────
@@ -686,11 +751,44 @@ the app.
 
 Last synced
 Today · 10:24 AM
+
+
+Unsynced changes            3
+[ Retry now ]
 ```
 
 重要：
 
-Health Connect上でSolo / Partneredの区別が維持されると誤解させない。
+Health Connect 上で Solo / Partnered の区別が維持されると誤解させない。
+
+---
+
+## 未同期の変更
+
+同期エラーはこの画面にのみ表示する。**Today や Insights には出さない。**
+記録画面に外部同期の失敗を持ち込まない。
+
+---
+
+## 接続を OFF にするとき
+
+未反映の削除が残っている場合は必ず警告する。
+
+```text
+Health Connect に未反映の削除が
+2 件あります。
+
+切断すると、これらの記録は
+Health Connect 上に残ります。
+
+[ 先に処理する ]   [ このまま切断する ]
+```
+
+---
+
+## 既知の制限
+
+Health Connect 側でユーザーが手動削除しても、v1 は Health Connect を読まないため検知できない。
 
 ---
 
@@ -703,10 +801,10 @@ App Lock
 Use App Lock                    ON
 
 
-LOCK WITH
+UNLOCK WITH
 
-Biometrics                       ✓
-Device PIN
+Device authentication            ✓
+（生体認証、利用できない場合は端末パスコード）
 
 
 LOCK
@@ -726,10 +824,39 @@ After 5 minutes
 
              🔒
 
-           Unlock
+      Unlock with device
+        authentication
 ```
 
-ロック画面にはactivity count等を表示しない。
+ロック画面には activity count 等を表示しない。
+
+---
+
+## アプリ独自の PIN を実装しない
+
+文言は「Device PIN」ではなく **「端末の認証 / Device authentication」** とする。
+OS ごとの解除手段の差をアプリ側で説明しすぎない。
+
+独自 PIN を持つと「PIN 忘れ時の復旧」が必要になり、
+復旧手段を用意すればロックは形骸化し、用意しなければ利用者は自分のデータに二度と触れられない。
+
+---
+
+## App Lock と DB 暗号鍵は別物
+
+```text
+App Lock     : 画面を表示してよいか
+DB 暗号鍵    : データが読めるか（生体認証と結合しない）
+```
+
+生体情報の変更で DB が復号できなくなる実装にしない。
+
+---
+
+## 受け入れ条件
+
+- 生体認証を無効にしている端末でも、端末パスコード等で解除できること（実機で確認する）
+- バックグラウンド移行時に内容がマスクされること
 
 ---
 
@@ -767,7 +894,46 @@ JSONにはschema versionを必ず含める。
 
 ---
 
-# 21. Interaction Rules
+# 21. Screen 11 — Recovery（復号できない場合）
+
+「DB は存在するが暗号鍵が読み出せない」状態は、端末移行や OS バックアップからの復元で現実に起こりうる。
+**このときアプリはクラッシュせず、専用画面を出す。**
+
+```text
+              +
+
+        Solo + Us
+
+
+  このデバイスでは記録データを
+  復号できませんでした。
+
+
+  端末の移行や復元によって、
+  暗号鍵が失われた可能性があります。
+
+
+  ┌────────────────────────────────┐
+  │  バックアップから復元する       │
+  └────────────────────────────────┘
+
+  ┌────────────────────────────────┐
+  │  データを削除してやり直す       │
+  └────────────────────────────────┘
+```
+
+- 「バックアップから復元する」→ Import 画面へ
+- 「データを削除してやり直す」→ 確認のうえ DB を破棄して初期化
+
+## 文言のルール
+
+- 利用者の操作ミスとして書かない（実際にほとんどの場合そうではない）
+- 何が起きたかを事実として述べ、選べる操作を2つだけ出す
+- 復旧できない可能性を隠さない
+
+---
+
+# 22. Interaction Rules
 
 ## Quick Record
 
@@ -801,7 +967,7 @@ Details
 
 ---
 
-# 22. Motion
+# 23. Motion
 
 Animationは控えめ。
 
@@ -821,21 +987,29 @@ Confetti、fire、celebration animationは使用しない。
 
 ---
 
-# 23. Accessibility
+# 24. Accessibility
 
-最低限：
+「対応する」ではなく、**検証できる受け入れ基準**として定義する。
 
-- Dynamic Type対応
-- Screen Reader labels
-- Solo / Partneredを色だけで区別しない
-- 44pt以上のtouch target
-- sufficient contrast
-- Reduce Motion対応
-- chartにはtext summaryを提供
+| # | 受け入れ基準 |
+|---|---|
+| A1 | 最大 Dynamic Type でも記録フローが完結し、要素が切れない |
+| A2 | VoiceOver / TalkBack だけで Quick Record ができる |
+| A3 | Solo / Partnered を色覚に依存せず識別できる（ラベルまたはアイコン併用） |
+| A4 | グラフと同じ情報をテキストでも取得できる |
+| A5 | すべての操作対象が 44pt 以上 |
+| A6 | Light / Dark の両テーマでコントラスト比を満たす |
+| A7 | Reduce Motion 有効時にトランジションが無効化される |
+| A8 | **記録フローが片手の親指到達域で完結する**（FAB → シートのカードが画面下半分に収まる） |
+
+A8 は、このアプリが片手・短時間・人目を気にする状況で使われる前提によるもので、
+利便性ではなく機能要件に近い性質を持つ。
+
+検証は画面幅 320dp でも行う。
 
 ---
 
-# 24. Component Structure
+# 25. Component Structure
 
 ```text
 components/
@@ -854,12 +1028,19 @@ components/
 ├─ EmptyState
 ├─ SettingsRow
 ├─ AppLockOverlay
+├─ SyncStatusRow        -- 未同期の変更と再試行
+├─ ImportPreview        -- 件数プレビュー（確定前）
+├─ DestructiveConfirm   -- 置換復元・全削除の確認
+├─ RecoveryPanel        -- 復号できない場合の選択肢
 └─ IntersectPlus
 ```
 
+v0.2 で追加した4つは、いずれも**失敗・破壊的操作を利用者に見せるための部品**である。
+これらを装飾的にしない。
+
 ---
 
-# 25. Suggested Routes
+# 26. Suggested Routes
 
 ```text
 app/
@@ -877,6 +1058,8 @@ app/
 │
 ├─ record.tsx
 │
+├─ recovery.tsx
+│
 ├─ onboarding/
 │  ├─ index.tsx
 │  └─ privacy.tsx
@@ -891,39 +1074,38 @@ app/
 
 ---
 
-# 26. MVP UI Priority
+# 27. MVP UI Priority
+
+基本設計 §18 の開発順序と対応する。
+v0.1 から順序を変更し、**暗号化と復元可能性を Phase 1 に置いた**（後付けできないため）。
 
 ### Phase 1 — Core
 
-Today  
-Quick Record  
-Activity Detail  
-Edit / Delete  
-SQLite
+暗号化 DB 接続 / Migration runner / スキーマ  
+Today / Quick Record / Undo  
+Activity Detail / Edit / Delete  
+Export・Import の schema 定義と往復テスト
 
 ### Phase 2 — History
 
-Calendar  
-Monthly statistics  
-Recent history
+Calendar / 月次統計 / Recent history  
+詳細項目の入力 UI
 
-### Phase 3 — Insights
+### Phase 3 — Privacy & Data
 
-Year statistics  
-Intervals  
-Weekday / time patterns  
-All-time history
+App Lock / **Recovery 画面** / Recents protection  
+Export / Import の UI  
+Insights（合計・内訳・平均間隔）
 
-### Phase 4 — Privacy / Health
+### Phase 4 — Health & Release
 
-App Lock  
-Recents protection  
-Health Connect  
-Export / Import
+Health Connect（clientRecordId 確認 → 同期 → リトライ → 削除同期）  
+Health apps declaration 提出 / ストア申請  
+Insights（年次・曜日・時間帯・All Time）
 
 ---
 
-# 27. Do Not Build Yet
+# 28. Do Not Build Yet
 
 v1では以下を入れない。
 
@@ -942,10 +1124,13 @@ v1では以下を入れない。
 - complicated sexual detail diary
 - pornography tracking
 - abstinence tracking
+- 独自 PIN
+- 双方向同期 / 自動マージ
+- 行単位スキップ付きの Import
 
 ---
 
-# 28. Core UX Test
+# 29. Core UX Test
 
 新機能を追加するときは必ず問う。
 
@@ -957,7 +1142,7 @@ NOなら原則追加しない。
 
 ---
 
-# 29. Final Product Identity
+# 30. Final Product Identity
 
 Solo + Usは、
 
