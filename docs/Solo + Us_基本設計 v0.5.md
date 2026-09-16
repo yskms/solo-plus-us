@@ -1,8 +1,8 @@
-# Solo + Us 基本設計 v0.4
+# Solo + Us 基本設計 v0.5
 
 作成日：2026-09-16  
-前提：要件定義書 v0.4 / 設計判断記録 v0.4  
-v0.1 からの変更点と理由は **設計判断記録 v0.4** を参照する。
+前提：要件定義書 v0.5 / 設計判断記録 v0.5  
+v0.1 からの変更点と理由は **設計判断記録 v0.5** を参照する。
 
 > 本文と図版が矛盾する場合は本文を正とする。`docs/old/` は検討履歴であり仕様ではない。
 
@@ -359,10 +359,13 @@ ejaculation = 0     →  「なかった」と記録した
 | provider | 意味 |
 |---|---|
 | `health_connect` | **null 可。** clientRecordId（= `activity_id`）でアドレッシングするため必須ではない |
-| `healthkit` | **必須。** clientRecordId 相当の概念がないため、外部 ID を保持しないと削除・更新ができない |
+| `healthkit` | **保持する。** SyncIdentifier で upsert はできるが、READ 権限に依存せず確実に削除するため、保存時に得た外部 UUID も持つ |
 
 「mapping 行が存在する = 外部にレコードが存在すると考えてよい」という点は両者共通だが、
 **何を使って引くかは provider ごとに違う。**
+
+HealthKit でメタデータ述語による削除が書き込み権限のみで可能かは、
+**HealthKit 実装時に検証する**。可能であれば `external_record_id` への依存を減らせる。
 
 ## 5.5 設定を暗号化 DB の中に置く
 
@@ -397,10 +400,45 @@ healthConnect.lastSyncedAt
 First Day of Week / Time Format / Appearance / App Lock は既に v1.0 の設定項目であり、
 保存先の設計は元々必要だった。Activity Details が追加するのは **boolean 6個のキー**だけである。
 
+### 型・既定値・Export 対象
+
+| Key | 型 | 既定値 | Export |
+|---|---|---|:---:|
+| `activityDetails.orgasm` | boolean | `true` | ● |
+| `activityDetails.ejaculation` | boolean | `false` | ● |
+| `activityDetails.protection` | boolean | `false` | ● |
+| `activityDetails.duration` | boolean | `false` | ● |
+| `activityDetails.mood` | boolean | `false` | ● |
+| `activityDetails.note` | boolean | `true` | ● |
+| `preferences.firstDayOfWeek` | enum(`monday`/`sunday`) | 初回に locale から解決した具体値 | ● |
+| `preferences.timeFormat` | enum(`12h`/`24h`) | 初回に locale から解決した具体値 | ● |
+| `preferences.appearance` | enum(`system`/`light`/`dark`) | `system` | ● |
+| `appLock.enabled` | boolean | `false` | — |
+| `appLock.timing` | enum(`immediately`/`1m`/`5m`) | `immediately` | — |
+| `healthConnect.enabled` | boolean | `false` | — |
+| `healthConnect.lastSyncedAt` | ISO8601 \| null | `null` | — |
+
+### `firstDayOfWeek` に `locale` という値を保存しない
+
+**初回起動時に解決した具体値（`monday` / `sunday`）を保存する。**
+
+`locale` を値として持つと、端末のロケール変更でカレンダーの並びが黙って変わる。
+10年単位のログでは、表示が安定している方が分かりやすい。
+設定画面には常に具体値を表示するため、利用者は現在の設定を確認できる。
+
 ### 型安全性
 
 key-value は型が弱いため、**SettingsRepository でキーごとの型を持つ薄いラッパーを被せる**。
 UI から `app_settings` を直接読み書きしない。
+
+### `last_synced_at` と `healthConnect.lastSyncedAt` は別物
+
+| | 単位 | 用途 |
+|---|---|---|
+| `health_sync.last_synced_at` | **Activity ごと** | その記録が最後に同期された時刻 |
+| `healthConnect.lastSyncedAt` | **全体で1つ** | 設定画面の「Last synced」表示用 |
+
+前者は同期の正しさに関わり、後者は表示のためだけに存在する。混同しない。
 
 ### App Lock 設定との循環に注意
 
@@ -674,14 +712,48 @@ delete ジョブ成功 → create ジョブ登録、という2段構えにする
 CHECK は列制約なので、後から値を増やすと D-11 のもとでテーブル再構築が必要になる。
 使う予定がある以上、**今なら無料、後からは有料**である。
 
+### provider は DB 制約で縛らない
+
+> v1 では Health Connect にのみ `recreate` を生成する。
+> HealthKit での使用可否は HealthKit 実装時に決定する。**DB 制約では縛らない。**
+
+`CHECK (operation != 'recreate' OR provider = 'health_connect')` を書きたくなるが、追加しない。
+
+HealthKit にも SyncIdentifier / SyncVersion があるため（§9.4）、
+**同じ recreate 戦略が HealthKit でも必要になる可能性が高い。**
+ここで縛ると HealthKit 実装時に制約を緩めることになり、テーブル再構築が要る。
+
+`recreate` を今のうちに enum へ入れた理由と同じ論理が、**この制約を追加しない理由**にもなる。
+
+### 状態遷移（クラッシュ時の扱い）
+
+内部的には delete → create の二段階だが、**永続的な substate を持たない。**
+
+| 規則 |
+|---|
+| `recreate` は**常に先頭（delete）から再実行する** |
+| 「delete 済み」を表す永続状態を持たない |
+| delete の NOT_FOUND は成功として create へ進む |
+| create 成功後・ジョブ削除前にクラッシュした場合も、次回は delete からやり直して収束する |
+| delete 成功後・create 失敗の場合も、次回は delete から始める |
+
+実装者が「delete 済みフラグ」を追加したくなる箇所なので、**持たないことを明記する。**
+NOT_FOUND が成功扱いである以上、先頭からの再実行は常に安全である。
+
 ## 9.4 冪等性（clientRecordId と clientRecordVersion）
 
 Health Connect の `Metadata.clientRecordId` に `activity.id` を設定する。削除も clientRecordId で引く。
 
 ```text
-activity.id           ──→  clientRecordId
-activity.sync_version ──→  clientRecordVersion
+Health Connect   activity.id           ──→  clientRecordId
+                 activity.sync_version ──→  clientRecordVersion
+
+HealthKit        activity.id           ──→  HKMetadataKeySyncIdentifier
+                 activity.sync_version ──→  HKMetadataKeySyncVersion
 ```
+
+**両プラットフォームとも「同じ識別子・より大きい version が以前のオブジェクトを置き換える」
+という同一のセマンティクスを持つ。** したがって `sync_version` 1本で両方に対応できる。
 
 同じ clientRecordId で再度 insert された場合、**clientRecordVersion が大きい方が優先される**。
 したがって version の管理規則を定める。
@@ -713,8 +785,11 @@ note や mood の編集頻度は低く、1件あたりの書き込みも小さ�
 必要になれば後から最小同期へ変えられる（スキーマ変更を伴わない）。
 
 **provider 別の version は持たない。**
-HealthKit に `clientRecordVersion` 相当の概念がなく、使う予定のない列を先に作ると意味の分からない列が残る。
-必要になれば HealthKit 実装時に `ALTER TABLE ADD COLUMN` で足す（D-11 が許す種類の変更）。
+両プラットフォームが同じ単調増加セマンティクスを採るため、**1本の `sync_version` が両方に使える。**
+片方が使わないからではなく、**同じ意味で使えるから**共有する。
+
+（v0.4 までは「HealthKit に相当概念がない」と記載していたが、これは誤りだった。
+決定自体は変わらないが、根拠を訂正する。）
 
 > **実装前の確認事項（ゲート）**
 > 1. ラッパーが `clientRecordId` と `clientRecordVersion` を露出しているか
@@ -758,7 +833,7 @@ revision 不一致で mapping が作られないまま再送に回り、
 
 ```text
 BEGIN
-  job      = id で再読込
+  job      = id で再読込          -- 見つからない場合は §9.5.4
   activity = job.activity_id で再読込
 
   IF activity が存在する:
@@ -779,9 +854,10 @@ COMMIT
 ### `else` 側で外部 ID を書き戻す理由
 
 Health Connect は clientRecordId で引けるため delete ジョブに外部 ID は不要だが、
-**HealthKit には clientRecordId 相当がなく `external_record_id` が必須**である（§5.4）。
+**HealthKit では READ 権限に依存せず確実に削除するために外部 UUID が必要になりうる**（§5.4）。
 
-ここで外部 ID を捨てると、**HealthKit では削除できないレコードが残る。**
+ここで外部 ID を捨てると、**HealthKit で削除手段を失うおそれがある。**
+保存時に得られた識別子は、使うかどうかに関わらず捨てない。
 
 ## 9.5.2 `attempts` を claim 時に加算する
 
@@ -806,9 +882,23 @@ not_before      = NULL              → 自動再試行の対象から外す
 `revision` 不一致を伴う。一方こちらは claim 直後・外部呼び出し前に発見される。
 両者を同じエラーとして扱うと、正常な競合を内部不整合として報告してしまう。
 
-**`attempts` は失敗時ではなく claim 時に加算する。**
-これにより `attempts > 0` が「外部呼び出しを開始した ＝ 到達したかもしれない」の判定に使え、
-列を増やさずに §9.3 の分岐が書ける。
+## 9.5.4 確定時にジョブが見つからない場合
+
+§9.6 の guard により **claim 中のジョブは手動操作できない**ため、
+正常系ではこの状態は発生しない（手動破棄が唯一の経路だった）。
+
+したがって発生した場合は §9.5.3 と同じく**内部不整合として扱う**。
+
+```text
+外部呼び出しは成功している可能性がある
+  ↓
+activity が存在するなら health_sync を upsert する（成功の事実は残す）
+  ↓
+開発ビルドでは assert / テスト失敗とする
+```
+
+ジョブが消えていること自体は復旧できないが、**mapping を残すことで
+「外部にあるのにローカルは未同期」という状態を作らない。**
 
 ### 競合が解決される様子
 
@@ -846,6 +936,29 @@ attempts が上限（10）を超えた
 
 手動待ちのジョブには、Settings > Health Connect に **「再試行」と「破棄」** を用意する。
 外部の状態を読めない以上、最終的に人間が打ち切れる経路が必要である。
+
+### claim 中のジョブは手動操作できない
+
+手動操作と実行中のワーカーが競合すると、**外部に作成された記録を取り消す後続ジョブが存在しない**
+状態が生まれる（送信中に利用者が「同期しない」を選んだ場合など）。
+
+```sql
+-- 破棄
+DELETE FROM health_sync_jobs
+ WHERE id = ? AND claimed_at IS NULL;
+
+-- 再試行
+UPDATE health_sync_jobs
+   SET not_before = :now, revision = revision + 1
+ WHERE id = ? AND claimed_at IS NULL;
+```
+
+0件なら **「現在処理中です。完了後にもう一度操作してください」** を表示する。
+
+「今すぐ再試行」も同様に claim 中は二重実行しない。
+
+この guard には副次的な効果がある。**確定処理で「ジョブが見つからない」状態が正常系では
+発生しなくなる**ため、§9.5.4 は内部不整合としてのみ扱えばよくなる。
 
 ### 破棄の文言は operation ごとに変える
 
@@ -889,7 +1002,7 @@ D-12（Manifest から権限を外して審査をクリティカルパスから�
 
 ラッパーが「存在しない」を識別できない場合は、
 **「削除済みだがローカル確定前に落ちると未同期表示が残る」を既知の制限として受け入れ**、
-§9.6 の「解決済みにする」で逃がす。
+§9.6 の operation 別の破棄操作（削除なら「この削除の再試行を停止」）で打ち切る。
 
 ## 9.8 記録と同期の関係
 
@@ -1005,8 +1118,18 @@ COMMIT
 Settings → Health Connect
 
   未同期の変更            3件
-  [ 今すぐ再試行 ]   [ 解決済みにする ]
+
+  Sep 14  Solo
+  この記録を Health Connect へ同期できていません
+  [ 今すぐ再試行 ]   [ 同期しない ]
+
+  Sep 11  Partnered
+  削除を Health Connect へ反映できていません
+  [ 今すぐ再試行 ]   [ 再試行を停止 ]
 ```
+
+**単一のボタンにしない。** 操作名と結果はジョブの operation によって変わる（§9.6）。
+claim 中のジョブは操作を無効化し「処理中」と表示する。
 
 Today や Insights には同期エラーを出さない（記録画面に外部同期の失敗を持ち込まない）。
 
@@ -1143,6 +1266,31 @@ CSV を復元経路に含めると、タイムゾーンや `created_at` の表�
 - **設定の不整合で Activity の復元を失敗させない**（設定は復元の本質ではない）
 - 未知のキーは無視する。既知のキーで値が不正なら既定値を使う
 
+### allowlist で明示する
+
+**すべての設定を Export しない。** 端末固有の状態を復元すると、実態と食い違う表示になる。
+
+```text
+Export する
+    activityDetails.*
+    preferences.firstDayOfWeek
+    preferences.timeFormat
+    preferences.appearance
+
+Export しない
+    healthConnect.*       端末ごとの権限状態と一致しない
+    healthKit.*           同上
+    appLock.*             新しい端末で突然ロックが有効になるのを避ける
+    最終同期日時          health_sync が空なのに「同期済み」と表示される
+    一時的な UI 状態
+```
+
+`healthConnect.lastSyncedAt` を復元すると、**`health_sync` が空なのに
+設定画面が「同期済み」と表示する**という実害がある。
+
+`appLock.*` を Export しない理由は、新しい端末で認証の設定も確認もしないうちに
+ロックが有効な状態で起動するためである。App Lock は端末ごとの判断とする。
+
 ## 12.2.2 `syncVersion` を出力する理由と、その限界
 
 `syncVersion` は出力する。ないと、復元後に外部へ同期したときに
@@ -1256,7 +1404,12 @@ Import
      - health_sync を全削除
      - activities を全削除
      - Import 内容を挿入
+     - **allowlist 対象の設定のみ app_settings へ upsert**
+     - **allowlist 対象外（appLock.* / healthConnect.*）は現在値を維持する**
 ```
+
+設定の復元も同じトランザクション内で行うが、**設定の不整合で Activity の投入を失敗させない。**
+未知のキーは無視し、既知のキーで値が不正なら既定値を使う。
 
 **1 が成功しない限り 4 を実行しない。** cache に書いただけの一時ファイルは
 セーフティバックアップとして数えない。

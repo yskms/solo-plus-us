@@ -1,10 +1,10 @@
-# Solo + Us — UI/UX Specification v0.4
+# Solo + Us — UI/UX Specification v0.5
 
 **App Name:** Solo + Us  
 **Tagline:** *Your intimate life, over time.*
 
 改訂：2026-09-16  
-関連：要件定義書 v0.4 / 基本設計 v0.4 / **設計判断記録 v0.4**
+関連：要件定義書 v0.5 / 基本設計 v0.5 / **設計判断記録 v0.5**
 
 > **本文と図版が矛盾する場合は本文を正とする。**
 > `docs/old/` は検討履歴であり仕様ではない。
@@ -917,7 +917,17 @@ Today · 10:24 AM
 
 
 Unsynced changes            3
-[ Retry now ]   [ Discard ]
+
+Sep 14  Solo
+Not synced to Health Connect
+[ Retry now ]   [ Don't sync ]
+
+Sep 11  Partnered
+Deletion not applied
+[ Retry now ]   [ Stop retrying ]
+
+Sep 08  Solo
+Syncing…
 ```
 
 重要：
@@ -951,6 +961,13 @@ Health Connect 上で Solo / Partnered の区別が維持されると誤解さ�
 
 特に記録・更新の同期を黙って破棄すると、
 **利用者はローカルと Health Connect が一致していると誤解する。**
+
+### 処理中のジョブは操作できない
+
+送信中に破棄されると、**外部に作られた記録を取り消す手段がなくなる。**
+
+処理中の行はボタンを無効化し `Syncing…` と表示する。
+操作が競合した場合は「現在処理中です。完了後にもう一度操作してください」を出す。
 
 ---
 

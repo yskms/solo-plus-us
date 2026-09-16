@@ -1,12 +1,13 @@
-# Solo + Us — 設計判断記録 v0.4
+# Solo + Us — 設計判断記録 v0.5
 
 作成日：2026-09-16  
-対象：要件定義書 v0.4 / 基本設計 v0.4 / UI/UX Specification v0.4
+対象：要件定義書 v0.5 / 基本設計 v0.5 / UI/UX Specification v0.5
 
 改訂履歴：
 - v0.2 で D-01〜D-17 を確定
 - v0.3 で D-18〜D-31 を追加し、D-01 / D-04 / D-10 を改訂
 - v0.4 で D-32〜D-38 を追加し、D-18 / D-19 / D-20 を改訂
+- v0.5 で D-39 / D-40 を追加し、D-19 / D-32 / D-34 / D-37 を改訂
 
 ---
 
@@ -343,7 +344,7 @@ Health Connect のデータ型宣言（Health apps declaration）と Play Consol
 
 **決定**
 
-→ 要件定義書 v0.4 §MVP 範囲の表を唯一の基準とする。
+→ 要件定義書 v0.5 §MVP 範囲の表を唯一の基準とする。
 
 - App Lock：**v1.0 必須**
 - Export / Import：**v1.0 必須・無料**
@@ -491,8 +492,8 @@ note や mood の編集頻度は低く、最適化の価値が分岐のコスト
 **却下した案**
 
 - `updated_at` のエポック値を version にする — 端末時計のずれや巻き戻しで単調性が壊れる
-- provider 別 version — HealthKit に相当概念がなく、使う予定のない列が残る。
-  必要になれば `ALTER TABLE ADD COLUMN` で足せる（D-11 が許す変更）
+- provider 別 version — **両プラットフォームが同じ単調増加セマンティクスを採るため、
+  1本の `sync_version` が両方に使える**（D-40）。片方が使わないからではなく、同じ意味で使えるから共有する
 
 ---
 
@@ -796,8 +797,8 @@ v0.3 の手順では、revision 不一致のとき mapping が作られないま
 
 **`else` 側で外部 ID を書き戻す理由**
 
-HC は clientRecordId で引けるが、**HealthKit には相当概念がなく `external_record_id` が必須**。
-ここで外部 ID を捨てると HealthKit では削除できないレコードが残る。
+HC は clientRecordId で引けるが、**HealthKit では READ 権限に依存せず確実に削除するために
+外部 UUID が必要になりうる**（D-40）。保存時に得た識別子は、使うかどうかに関わらず捨てない。
 
 ---
 
@@ -843,6 +844,21 @@ claim を解除するだけだと、同じジョブを何度も拾い続ける�
 **今なら無料、後からは有料**である（D-01 の改名と同じ構図）。
 
 **削除に失敗した場合は作成しない。** 外部に同じ記録を二重に作らない。
+
+**provider を DB 制約で縛らない（v0.5 追記）**
+
+> v1 では Health Connect にのみ生成する。HealthKit での使用可否は HealthKit 実装時に決定する。
+
+`CHECK (operation != 'recreate' OR provider = 'health_connect')` は**追加しない。**
+HealthKit にも SyncIdentifier / SyncVersion があるため（D-40）、同じ戦略が必要になる可能性が高い。
+ここで縛ると HealthKit 実装時に制約を緩めることになり、テーブル再構築が要る。
+`recreate` を今のうちに enum へ入れた理由と同じ論理が、この制約を追加しない理由にもなる。
+
+**永続的な substate を持たない（v0.5 追記）**
+
+`recreate` は常に先頭（delete）から再実行する。「delete 済み」を表す永続状態を持たない。
+NOT_FOUND を成功扱いにしている以上、先頭からの再実行は常に安全である。
+実装者がフラグを追加したくなる箇所なので、持たないことを明記する。
 
 **却下した案**
 
@@ -915,11 +931,21 @@ CREATE TABLE app_settings (
 First Day of Week / Time Format / Appearance / App Lock は既に v1.0 の設定であり、
 保存先の設計は元々必要だった。Activity Details が追加するのは boolean 6個のキーだけである。
 
-**Export での扱い**
+**Export での扱い（v0.5 改訂：allowlist を明示）**
 
 - トップレベルに `settings` として含める
 - **置換復元のときだけ復元**し、追加のみモードでは無視する
 - **設定の不整合で Activity の復元を失敗させない**
+
+```text
+Export する    activityDetails.* / preferences.*
+Export しない  healthConnect.* / healthKit.* / appLock.* / 最終同期日時
+```
+
+**すべてを Export してはいけない。**
+`healthConnect.lastSyncedAt` を復元すると、`health_sync` が空なのに
+設定画面が「同期済み」と表示するという実害がある。
+`appLock.*` は、新しい端末で認証の設定も確認もしないうちにロックが有効になるのを避けるため除外する。
 
 **付随する決定**
 
@@ -944,6 +970,73 @@ App Lock 設定が暗号化 DB 内にあるため、復号できないときは 
 
 ---
 
+## D-39 claim 中のジョブは手動操作できない
+
+**決定**
+
+Settings からの「再試行」「破棄」は、`claimed_at IS NULL` のジョブにのみ適用する。
+
+```sql
+DELETE FROM health_sync_jobs WHERE id = ? AND claimed_at IS NULL;
+```
+
+0件なら「現在処理中です。完了後にもう一度操作してください」を表示する。
+
+**理由**
+
+D-32 は利用者の編集・削除との競合しか扱っていなかった。
+手動破棄と実行中ワーカーが競合すると、
+**外部に作成された記録を取り消す後続ジョブが存在しない**状態が生まれる。
+
+```text
+create を外部送信中
+  ↓ 利用者が「同期しない」で破棄
+外部 create 成功
+  ↓ 確定時にはジョブがない
+外部にレコードが残るが、取り消す手段がない
+```
+
+**副次的な効果**
+
+確定処理で「ジョブが見つからない」状態が正常系では発生しなくなる（手動破棄が唯一の経路だった）。
+このため基本設計 §9.5.4 は内部不整合としてのみ扱えばよくなる。
+
+**却下した案**
+
+- 破棄時に行を削除せず `cancel_requested` に変更し、外部呼び出し完了後に補償処理する —
+  v1 には複雑すぎる。将来バックグラウンド同期を入れる際に再検討する
+
+---
+
+## D-40 HealthKit にも同期識別子と version がある
+
+> **v0.4 までの記述の訂正。** 「HealthKit には clientRecordId 相当の概念がない」は誤りだった。
+
+**事実**
+
+HealthKit には `HKMetadataKeySyncIdentifier` と `HKMetadataKeySyncVersion` がある。
+同じ Sync Identifier を持つデータでは、**より大きい Sync Version のオブジェクトが以前のものを置き換える。**
+
+```text
+Health Connect   activity.id → clientRecordId        / sync_version → clientRecordVersion
+HealthKit        activity.id → SyncIdentifier        / sync_version → SyncVersion
+```
+
+**決定への影響**
+
+| 決定 | 影響 |
+|---|---|
+| D-19（provider 別 version を持たない） | **変わらない。根拠が強くなる。** 両者が同じセマンティクスなので1本で足りる |
+| D-32（delete ジョブへ外部 ID を書き戻す） | **変わらない。** ただし理由は「識別子がないから」ではなく「READ に依存せず確実に削除するため」 |
+| D-34（`recreate` の provider 制約） | **制約を追加しない**根拠になる。HealthKit でも同じ戦略が使える可能性が高い |
+
+**HealthKit 実装時の確認事項**
+
+メタデータ述語による削除が書き込み権限のみで可能か。
+可能であれば `external_record_id` への依存を減らせる。
+
+---
+
 ## 実装着手の前提条件
 
 以下が確定するまで DB を触るコードを書かない。すべて DB ファイル形式かドライバ選定を決めるため。
@@ -959,7 +1052,8 @@ App Lock 設定が暗号化 DB 内にあるため、復号できないときは 
 - [x] D-28 / D-29 Context・Outcome の分離と `protection_used` 列
 - [x] D-32 確定処理の3分岐
 - [x] D-34 `operation` に `recreate` を含める（CHECK 制約は後から変えにくい）
-- [x] D-37 `app_settings` テーブル
+- [x] D-37 `app_settings` テーブル（型・既定値・Export allowlist を含む）
+- [x] D-39 claim 中のジョブの手動操作 guard
 - [ ] **D-04 / D-19 ラッパーが `clientRecordId` と `clientRecordVersion` を露出しているか**
 - [ ] **D-20 削除時の「存在しない」を他のエラーと識別できるか**
 
