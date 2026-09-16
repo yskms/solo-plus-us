@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node / Expo（今後の実装用に先行して記載）
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Native builds
+ios/
+android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# 環境変数・シークレット
+.env
+.env.*
+!.env.example
+
+# ログ
+npm-debug.*
+yarn-error.*
+*.log
+
+# エディタ
+.vscode/
+.idea/
+
+# ローカルデータ（Activity は絶対にコミットしない）
+*.db
+*.sqlite
+*.sqlite3
+exports/
