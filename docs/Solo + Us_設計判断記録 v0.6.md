@@ -1,13 +1,14 @@
-# Solo + Us — 設計判断記録 v0.5
+# Solo + Us — 設計判断記録 v0.6
 
 作成日：2026-09-16  
-対象：要件定義書 v0.5 / 基本設計 v0.5 / UI/UX Specification v0.5
+対象：要件定義書 v0.6 / 基本設計 v0.6 / UI/UX Specification v0.6
 
 改訂履歴：
 - v0.2 で D-01〜D-17 を確定
 - v0.3 で D-18〜D-31 を追加し、D-01 / D-04 / D-10 を改訂
 - v0.4 で D-32〜D-38 を追加し、D-18 / D-19 / D-20 を改訂
 - v0.5 で D-39 / D-40 を追加し、D-19 / D-32 / D-34 / D-37 を改訂
+- v0.6 で D-41〜D-43 を追加し、D-37 / D-39 を改訂
 
 ---
 
@@ -344,7 +345,7 @@ Health Connect のデータ型宣言（Health apps declaration）と Play Consol
 
 **決定**
 
-→ 要件定義書 v0.5 §MVP 範囲の表を唯一の基準とする。
+→ 要件定義書 v0.6 §MVP 範囲の表を唯一の基準とする。
 
 - App Lock：**v1.0 必須**
 - Export / Import：**v1.0 必須・無料**
@@ -942,6 +943,21 @@ Export する    activityDetails.* / preferences.*
 Export しない  healthConnect.* / healthKit.* / appLock.* / 最終同期日時
 ```
 
+**実装は明示的なキー一覧の定数で判定する（v0.6 追記）。**
+`activityDetails.*` という表記は説明上の省略であり、ワイルドカードで判定しない。
+そうしないと、将来 `preferences` 配下に端末固有の項目を足したときに自動的に Export 対象へ入る。
+
+**allowlist 対象外を一律「維持」しない（v0.6 追記）。**
+
+| 設定 | 置換復元時 | Recovery 時 |
+|---|---|---|
+| `appLock.*` / `healthConnect.enabled` | 維持 | 既定値 |
+| `healthConnect.lastSyncedAt` 等の同期状態由来 | **リセット** | 既定値 |
+
+端末そのものに属する設定は維持し、**データの状態から導出される値はリセットする。**
+維持したままだと、`health_sync` が空なのに「同期済み」と表示される
+——allowlist で避けたかった状態そのものが再現する。
+
 **すべてを Export してはいけない。**
 `healthConnect.lastSyncedAt` を復元すると、`health_sync` が空なのに
 設定画面が「同期済み」と表示するという実害がある。
@@ -1001,6 +1017,11 @@ create を外部送信中
 確定処理で「ジョブが見つからない」状態が正常系では発生しなくなる（手動破棄が唯一の経路だった）。
 このため基本設計 §9.5.4 は内部不整合としてのみ扱えばよくなる。
 
+**この guard だけでは足りない（v0.6 追記）**
+
+これは**手動ボタン単位**の guard であり、ジョブをまとめて削除する経路には効かない。
+置換復元・全削除などとの排他は D-41 で扱う。
+
 **却下した案**
 
 - 破棄時に行を削除せず `cancel_requested` に変更し、外部呼び出し完了後に補償処理する —
@@ -1037,6 +1058,89 @@ HealthKit        activity.id → SyncIdentifier        / sync_version → SyncVe
 
 ---
 
+## D-41 破壊的操作と同期ワーカーをプロセス内 mutex で排他する
+
+**決定**
+
+`SyncCoordinator` を設け、次の操作の実行中は新しい claim を止め、実行中の外部呼び出しの完了を待つ。
+
+- 置換復元 / 全 Activity 削除 / Health Connect 切断時のジョブ破棄
+- DB Migration の開始 / Recovery の開始 / アプリ内データの初期化
+
+```text
+suspend() → 実行中の外部呼び出しの完了を待つ → 破壊的操作 → resume()
+```
+
+**理由**
+
+D-39 の guard は手動ボタン単位であり、**ジョブをまとめて削除する経路には効かない。**
+
+```text
+create を claim → 外部呼び出し中 → 置換復元が health_sync_jobs を全削除
+→ Import 投入 → 古い外部 create が成功 → 確定処理がジョブを見つけられない
+```
+
+さらに、Import に同じ Activity ID が含まれていると、
+**古い処理の結果で `health_sync` が作られる。**
+
+**外部呼び出しが終わらない場合**
+
+外部呼び出しに30秒のタイムアウトを設け、`suspend()` はその完了を待つ。
+長引く場合は**破壊的操作の側を待たせ、利用者には中止の選択肢を出す。**
+「待ちきれないから強行する」経路を作らない。破壊的操作はやり直せるが、
+外部に取り残されたレコードは自力で見つけられない。
+
+**前提条件として成立する理由**
+
+v1 はフォアグラウンドの単一 runtime（D-36）なので、プロセス内 mutex で十分である。
+
+**この排他が D-32 の前提になる**
+
+D-39 の guard とこの排他の**両方**があって初めて、
+「確定時にジョブが見つからない = 内部不整合」という前提が成立する。
+
+---
+
+## D-42 Export JSON の設定値は JSON 本来の型で出力する
+
+**決定**
+
+```text
+DB app_settings.value : TEXT
+SettingsRepository    : boolean / enum へ変換
+Export JSON           : JSON 本来の型（true / false / "monday"）
+Import JSON           : JSON の型を厳密に検証してから DB 用 TEXT へ変換
+```
+
+**理由**
+
+DB が TEXT であることと、公開形式が文字列であることは別である。
+`"false"` は JavaScript では truthy であり、公開形式で文字列に潰すと
+他のツールや将来の実装がこの事故を踏む。
+
+Export は外部との契約なので、型情報を落とさない。
+
+---
+
+## D-43 全 Activity 削除は delete ジョブを作る（置換復元とは異なる）
+
+**決定**
+
+| | 外部への反映 |
+|---|---|
+| **全 Activity 削除**（Settings > Delete Data） | **delete ジョブを作る** |
+| 置換復元（D-10） | delete ジョブを作らない |
+
+**理由**
+
+全削除における利用者の意思は「このデータを消す」であり、**外部も対象に含まれる。**
+一方、置換復元は機種変更・復旧が主用途であり、外部の記録を消す意図とは限らない。
+
+同じ「消える」でも外部への影響が違うため、**画面上でも言い分ける。**
+全削除では、外部への反映が非同期であることを実行前に明示する。
+
+---
+
 ## 実装着手の前提条件
 
 以下が確定するまで DB を触るコードを書かない。すべて DB ファイル形式かドライバ選定を決めるため。
@@ -1053,7 +1157,8 @@ HealthKit        activity.id → SyncIdentifier        / sync_version → SyncVe
 - [x] D-32 確定処理の3分岐
 - [x] D-34 `operation` に `recreate` を含める（CHECK 制約は後から変えにくい）
 - [x] D-37 `app_settings` テーブル（型・既定値・Export allowlist を含む）
-- [x] D-39 claim 中のジョブの手動操作 guard
+- [x] D-39 / D-41 claim guard と破壊的操作の排他制御
+- [x] D-42 Export の型境界
 - [ ] **D-04 / D-19 ラッパーが `clientRecordId` と `clientRecordVersion` を露出しているか**
 - [ ] **D-20 削除時の「存在しない」を他のエラーと識別できるか**
 

@@ -1,8 +1,8 @@
-# Solo + Us 基本設計 v0.5
+# Solo + Us 基本設計 v0.6
 
 作成日：2026-09-16  
-前提：要件定義書 v0.5 / 設計判断記録 v0.5  
-v0.1 からの変更点と理由は **設計判断記録 v0.5** を参照する。
+前提：要件定義書 v0.6 / 設計判断記録 v0.6  
+v0.1 からの変更点と理由は **設計判断記録 v0.6** を参照する。
 
 > 本文と図版が矛盾する場合は本文を正とする。`docs/old/` は検討履歴であり仕様ではない。
 
@@ -431,6 +431,9 @@ First Day of Week / Time Format / Appearance / App Lock は既に v1.0 の設定
 key-value は型が弱いため、**SettingsRepository でキーごとの型を持つ薄いラッパーを被せる**。
 UI から `app_settings` を直接読み書きしない。
 
+Export 対象の判定は、この表の `Export = ●` を**明示的なキー一覧の定数**として持つ（§12.2.1）。
+ワイルドカードで判定しない。
+
 ### `last_synced_at` と `healthConnect.lastSyncedAt` は別物
 
 | | 単位 | 用途 |
@@ -699,11 +702,19 @@ Rule 4（過去データとの互換性最優先）のコストを上げる。
 Import 後の明示的な再同期でのみ使う（§13.6）。
 
 ```text
-recreate : clientRecordId で削除（NOT_FOUND は成功扱い）
+recreate : provider 固有の安定識別子で既存レコードを削除
+           （NOT_FOUND は成功扱い）
              ↓
-           新しい sync_version で作成
+           現在の sync_version で再作成
            削除がそれ以外のエラーなら作成しない（外部を二重にしない）
 ```
+
+provider 別の実装：
+
+| provider | 削除に使う識別子 |
+|---|---|
+| `health_connect` | `clientRecordId`（= `activity.id`） |
+| `healthkit` | `SyncIdentifier` または保存済みの `external_record_id`。**実装時に確定する**（§5.4） |
 
 delete ジョブ成功 → create ジョブ登録、という2段構えにすると、
 その間にプロセスが落ちたときに create が失われる。1つのジョブで完結させてこの窓をなくす。
@@ -816,7 +827,8 @@ note や mood の編集頻度は低く、1件あたりの書き込みも小さ�
           -- 0 行なら他の変更が入ったので諦めて次のジョブへ
 
 3. 検証   create / update の場合、activities の存在を確認する
-          存在しなければ中止し、claim を解除する
+          存在しなければ §9.5.3 に従い、自動再試行の対象から外す
+          （claim を解除するだけにしない。同じジョブを拾い続けるため）
 
 4. 外部呼び出し（トランザクション外）
 
@@ -1077,6 +1089,75 @@ Expo の build profile / app config / config plugin で権限の有無を切り�
 
 ---
 
+## 9.12 破壊的操作との排他制御（SyncCoordinator）
+
+§9.6 の guard は**手動ボタン単位**のものであり、ジョブをまとめて削除する経路には効かない。
+
+```text
+同期ワーカーが create を claim
+  ↓
+外部 API 呼び出し中
+  ↓
+利用者が置換復元を実行 → health_sync_jobs を全削除
+  ↓
+Import 内容を投入
+  ↓
+古い外部 create が成功して戻る
+  ↓
+確定処理がジョブを見つけられない
+  （さらに、同じ Activity ID が Import に含まれていると
+    古い処理の結果で health_sync が作られる）
+```
+
+### 対象となる操作
+
+- 置換復元（§13.3）
+- 全 Activity 削除（§10.6）
+- Health Connect 切断時のジョブ破棄（§10.5）
+- DB Migration の開始（§7）
+- Recovery の開始（§8.8）
+- アプリ内データの初期化
+
+### SyncCoordinator
+
+**プロセス内の mutex で、破壊的操作と同期ワーカーを排他する。**
+v1 はフォアグラウンドの単一 runtime（§6.2 / D-36）なので、プロセス内 mutex で十分である。
+
+```text
+破壊的操作の開始
+  ↓
+suspend()        新しい claim を停止する
+  ↓
+現在実行中の外部 API 呼び出しの完了を待つ
+  ↓
+破壊的操作を実行する（単一トランザクション）
+  ↓
+resume()         ワーカーを再開する
+```
+
+### 外部呼び出しが終わらない場合
+
+外部呼び出しにはタイムアウト（30秒）を設ける。`suspend()` はその完了を待つ。
+
+待機が長引く場合は **破壊的操作の側を待たせる**。
+
+```text
+同期の完了を待っています…
+
+[ キャンセル ]      ← 破壊的操作を中止する（同期は中止しない）
+```
+
+**待ちきれないから強行する、という経路を作らない。**
+破壊的操作は後からやり直せるが、外部に取り残されたレコードは自力で見つけられない。
+
+### この排他が §9.5.4 の前提になる
+
+§9.6 の guard とこの排他制御の両方があって初めて、
+**「確定時にジョブが見つからない = 内部不整合」**という前提が成立する。
+どちらか一方だけでは、正常な操作の結果としてジョブが消えうる。
+
+---
+
 # 10. 削除フロー
 
 ## 10.1 同期状態によって分岐する
@@ -1146,6 +1227,39 @@ Health Connect に未反映の削除が 2 件あります。
 ```
 
 黙って切断すると外部に永久に残るため、必ず選択させる。
+
+---
+
+## 10.6 全 Activity 削除
+
+Settings > Delete Data からの全件削除は、**置換復元とは扱いが異なる。**
+
+| | 外部への反映 | 理由 |
+|---|---|---|
+| **全 Activity 削除** | **delete ジョブを作る** | 利用者の意思は「このデータを消す」であり、外部も対象に含まれる |
+| 置換復元（§13.3） | delete ジョブを作らない | 機種変更・復旧が主用途であり、外部の記録を消す意図とは限らない |
+
+```text
+BEGIN
+  1. 同期済みの Activity それぞれについて delete ジョブを作る
+  2. health_sync を全削除
+  3. activities を全削除
+COMMIT
+```
+
+§9.12 の排他制御下で実行する。実行前に、外部への反映が非同期であることを明示する。
+
+```text
+すべての記録を削除しますか？
+
+Health Connect に同期済みの記録は、
+順次削除されます。完了までアプリを
+開いたままにしてください。
+
+[ キャンセル ]        [ 削除 ]
+```
+
+置換復元との違いを画面上でも言い分ける。**同じ「消える」でも外部への影響が違う。**
 
 ---
 
@@ -1254,8 +1368,8 @@ CSV を復元経路に含めると、タイムゾーンや `created_at` の表�
   "version": 1,
   "exportedAt": "...",
   "settings": {
-    "activityDetails.orgasm": "true",
-    "activityDetails.ejaculation": "false",
+    "activityDetails.orgasm": true,
+    "activityDetails.ejaculation": false,
     "preferences.firstDayOfWeek": "monday"
   },
   "activities": []
@@ -1266,23 +1380,52 @@ CSV を復元経路に含めると、タイムゾーンや `created_at` の表�
 - **設定の不整合で Activity の復元を失敗させない**（設定は復元の本質ではない）
 - 未知のキーは無視する。既知のキーで値が不正なら既定値を使う
 
+### 型の境界
+
+**DB が TEXT だからといって、公開する JSON まで文字列にしない。**
+
+```text
+DB app_settings.value : TEXT
+SettingsRepository    : boolean / enum へ変換
+Export JSON           : JSON 本来の型で出力（true / false / "monday"）
+Import JSON           : JSON の型を厳密に検証してから DB 用 TEXT へ変換
+```
+
+`"false"` という文字列は JavaScript では truthy である。
+公開形式で文字列に潰すと、他のツールや将来の実装がこの事故を踏む。
+
 ### allowlist で明示する
 
 **すべての設定を Export しない。** 端末固有の状態を復元すると、実態と食い違う表示になる。
 
-```text
-Export する
-    activityDetails.*
-    preferences.firstDayOfWeek
-    preferences.timeFormat
-    preferences.appearance
+**実装では明示的なキー一覧を定数として持つ。** ワイルドカードで判定しない。
 
-Export しない
-    healthConnect.*       端末ごとの権限状態と一致しない
-    healthKit.*           同上
-    appLock.*             新しい端末で突然ロックが有効になるのを避ける
-    最終同期日時          health_sync が空なのに「同期済み」と表示される
-    一時的な UI 状態
+```ts
+const EXPORTABLE_SETTING_KEYS = [
+  'activityDetails.orgasm',
+  'activityDetails.ejaculation',
+  'activityDetails.protection',
+  'activityDetails.duration',
+  'activityDetails.mood',
+  'activityDetails.note',
+  'preferences.firstDayOfWeek',
+  'preferences.timeFormat',
+  'preferences.appearance',
+] as const;
+```
+
+`activityDetails.*` のような表記は**説明上の省略**であり、実装の判定条件ではない。
+ワイルドカードで判定すると、将来 `preferences` 配下に端末固有の項目を足したときに
+**自動的に Export 対象へ入ってしまう。**
+
+Export しないもの：
+
+```text
+healthConnect.*       端末ごとの権限状態と一致しない
+healthKit.*           同上
+appLock.*             新しい端末で突然ロックが有効になるのを避ける
+最終同期日時          health_sync が空なのに「同期済み」と表示される
+一時的な UI 状態
 ```
 
 `healthConnect.lastSyncedAt` を復元すると、**`health_sync` が空なのに
@@ -1405,11 +1548,39 @@ Import
      - activities を全削除
      - Import 内容を挿入
      - **allowlist 対象の設定のみ app_settings へ upsert**
-     - **allowlist 対象外（appLock.* / healthConnect.*）は現在値を維持する**
+     - **allowlist 対象外は §13.3.1 に従って維持またはリセットする**
 ```
 
 設定の復元も同じトランザクション内で行うが、**設定の不整合で Activity の投入を失敗させない。**
 未知のキーは無視し、既知のキーで値が不正なら既定値を使う。
+
+### 13.3.1 allowlist 対象外の設定を一律維持しない
+
+**「現在値を維持する」だけでは、Export から除外した理由そのものを再現してしまう。**
+
+置換復元後は `health_sync` が空になるため、置換前の `healthConnect.lastSyncedAt` が
+残っていると、設定画面が「同期済み」と表示する。これは allowlist で避けたかった状態そのものである。
+
+| 設定 | 置換復元時 | Recovery 時 |
+|---|---|---|
+| `appLock.enabled` / `appLock.timing` | **維持** | 既定値 |
+| `healthConnect.enabled` | **維持** | 既定値 |
+| `healthConnect.lastSyncedAt` | **`null` にリセット** | 既定値 |
+| `healthKit.lastSyncedAt` | **`null` にリセット** | 既定値 |
+| その他、同期状態から導出される値 | **リセット** | 既定値 |
+
+**判定基準：** 端末そのものに属する設定は維持し、**データの状態から導出される値はリセットする。**
+
+Recovery（§8.8）では旧 DB を読めないため、対象外の設定もすべて既定値になる。
+
+### 13.3.2 `healthConnect.enabled` を維持しても自動再同期はしない
+
+接続が有効なまま維持されても、**Import した Activity を一括で同期ジョブへ入れない。**
+再同期は既定 OFF・明示同意制である（§13.1 / §13.6）。
+
+ただしこれは「以後の編集も同期しない」という意味ではない。
+復元後に Activity を編集すれば、通常どおり同期ジョブが作られる。
+**禁じているのは Import 時の一括投入だけである。**
 
 **1 が成功しない限り 4 を実行しない。** cache に書いただけの一時ファイルは
 セーフティバックアップとして数えない。
@@ -1575,6 +1746,8 @@ services/
 ├─ ActivityService.ts
 ├─ HealthConnectService.ts
 ├─ SyncWorker.ts
+├─ SyncCoordinator.ts     -- 破壊的操作との排他（§9.12）
+├─ SettingsRepository.ts  -- app_settings への型付きアクセス（§5.5）
 ├─ StatisticsService.ts
 ├─ ExportService.ts
 └─ ImportService.ts
@@ -1619,6 +1792,18 @@ SQLite 保存と同期ジョブ登録を1つのトランザクションで束ね
 `not_before` を過ぎたジョブを provider ごとに単一で処理する。UI をブロックしない。
 claim / revision による楽観的並行制御は §9.5 に従う。
 
+## SyncCoordinator
+
+破壊的操作（置換復元・全削除・切断・Migration・Recovery）と SyncWorker を排他する（§9.12）。
+
+```text
+suspend()   新しい claim を止め、実行中の外部呼び出しの完了を待つ
+resume()    ワーカーを再開する
+```
+
+**破壊的操作は必ずこの Coordinator 経由で実行する。**
+Repository や Service から直接 `health_sync_jobs` を全削除しない。
+
 ---
 
 ## 17.3 Repository の必須テスト（不変条件）
@@ -1639,6 +1824,11 @@ claim / revision による楽観的並行制御は §9.5 に従う。
 | I9 | **外部 create 成功後・確定前に編集**しても mapping が作られ、新しいジョブも残る |
 | I10 | 外部 create 成功後・確定前に**削除**すると、delete ジョブに外部 ID が書き戻される |
 | I11 | 設定を OFF にしても、記録済みの値が読み出せる |
+| I12 | **外部呼び出し中は置換復元を開始できない**（§9.12） |
+| I13 | **外部呼び出し中は全データ削除を開始できない** |
+| I14 | **破壊的操作の実行中に新しいジョブを claim しない** |
+| I15 | 置換復元の後、`healthConnect.lastSyncedAt` が `null` になっている |
+| I16 | Export JSON の設定値が文字列ではなく JSON 本来の型で出力される |
 
 I7 は §9.5 の競合表をそのままテストケースにする。
 外部呼び出しをスタブ化し、claim 後・確定前に編集／削除を差し込んで検証する。
