@@ -1,10 +1,10 @@
-# Solo + Us — UI/UX Specification v0.3
+# Solo + Us — UI/UX Specification v0.4
 
 **App Name:** Solo + Us  
 **Tagline:** *Your intimate life, over time.*
 
 改訂：2026-09-16  
-関連：要件定義書 v0.3 / 基本設計 v0.3 / **設計判断記録 v0.3**
+関連：要件定義書 v0.4 / 基本設計 v0.4 / **設計判断記録 v0.4**
 
 > **本文と図版が矛盾する場合は本文を正とする。**
 > `docs/old/` は検討履歴であり仕様ではない。
@@ -529,12 +529,19 @@ Ejaculation
 ## Protection
 
 ```text
+プロテクション
 Protection
 
 ○ Not recorded
 ○ Yes
 ○ No
+
+避妊・感染予防のための保護具を
+使用したかどうか
 ```
+
+**「避妊具」単独の表記を使わない。** 感染予防の目的が抜けて読める。
+行ラベルは短く保ち、目的の説明は補助テキストに置く。
 
 ---
 
@@ -910,7 +917,7 @@ Today · 10:24 AM
 
 
 Unsynced changes            3
-[ Retry now ]   [ Mark as resolved ]
+[ Retry now ]   [ Discard ]
 ```
 
 重要：
@@ -924,12 +931,26 @@ Health Connect 上で Solo / Partnered の区別が維持されると誤解さ�
 同期エラーはこの画面にのみ表示する。**Today や Insights には出さない。**
 記録画面に外部同期の失敗を持ち込まない。
 
-### Mark as resolved が必要な理由
+### 破棄の経路が必要な理由
 
 外部の状態を読む権限を持たないため、「既に削除済みなのか、まだ残っているのか」を
 アプリ側から確認できない場合がある。
 
 永久に消えない未同期表示を残さないために、**最終的に人間が打ち切れる経路**を用意する。
+
+### 「解決済みにする」という語を使わない
+
+外部の状態を確認していないのに、解決したように見えるため。
+**何が起きるかを operation ごとに言い分ける。**
+
+| 対象 | 操作名 | 確認文 |
+|---|---|---|
+| 削除の同期 | この削除の再試行を停止 | この記録は Health Connect 上に残る可能性があります |
+| 記録・更新の同期 | この記録を Health Connect へ同期しない | Solo + Us と Health Connect の内容が一致しなくなります |
+| 内部エラー | この同期エラーを破棄 | — |
+
+特に記録・更新の同期を黙って破棄すると、
+**利用者はローカルと Health Connect が一致していると誤解する。**
 
 ---
 
@@ -1085,8 +1106,15 @@ JSONにはschema versionを必ず含める。
   └────────────────────────────────┘
 ```
 
-- 「バックアップから復元する」→ Import 画面へ
+- 「バックアップから復元する」→ Recovery 専用の復元経路へ（通常の Import 画面ではない）
 - 「データを削除してやり直す」→ 確認のうえ DB を破棄して初期化
+
+## App Lock を経ずに到達する
+
+App Lock の設定は暗号化 DB 内にあるため、**復号できないときは App Lock の要否が分からない。**
+
+したがってこの画面は App Lock を経ずに表示する。
+読めない DB に守るべきデータはないため、これは妥当である。
 
 ## 文言のルール
 
@@ -1231,6 +1259,7 @@ app/
 │
 └─ settings/
    ├─ index.tsx
+   ├─ activity-details.tsx
    ├─ health-connect.tsx
    ├─ app-lock.tsx
    ├─ data.tsx

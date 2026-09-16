@@ -1,8 +1,8 @@
-# Solo + Us 基本設計 v0.3
+# Solo + Us 基本設計 v0.4
 
 作成日：2026-09-16  
-前提：要件定義書 v0.3 / 設計判断記録 v0.3  
-v0.1 からの変更点と理由は **設計判断記録 v0.3** を参照する。
+前提：要件定義書 v0.4 / 設計判断記録 v0.4  
+v0.1 からの変更点と理由は **設計判断記録 v0.4** を参照する。
 
 > 本文と図版が矛盾する場合は本文を正とする。`docs/old/` は検討履歴であり仕様ではない。
 
@@ -295,7 +295,7 @@ CREATE TABLE health_sync_jobs (
     provider           TEXT NOT NULL
                          CHECK (provider IN ('health_connect','healthkit')),
     operation          TEXT NOT NULL
-                         CHECK (operation IN ('create','update','delete')),
+                         CHECK (operation IN ('create','update','delete','recreate')),
     external_record_id TEXT,
 
     -- 楽観的並行制御（§9.5）。行を変更するたびに +1 する
@@ -318,6 +318,14 @@ CREATE UNIQUE INDEX uq_health_sync_jobs
 CREATE INDEX idx_health_sync_jobs_due
   ON health_sync_jobs(provider, not_before)
   WHERE claimed_at IS NULL AND not_before IS NOT NULL;
+
+
+-- アプリ設定。暗号化 DB の中に置く（§5.5）
+CREATE TABLE app_settings (
+    key        TEXT PRIMARY KEY NOT NULL CHECK (length(key) > 0),
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL CHECK (length(updated_at) = 20)
+);
 ```
 
 ## 5.1 CHECK 制約の位置づけ
@@ -356,6 +364,51 @@ ejaculation = 0     →  「なかった」と記録した
 「mapping 行が存在する = 外部にレコードが存在すると考えてよい」という点は両者共通だが、
 **何を使って引くかは provider ごとに違う。**
 
+## 5.5 設定を暗号化 DB の中に置く
+
+アプリ設定は `app_settings` に保存する。**平文の AsyncStorage に置かない。**
+
+保存する設定：
+
+```text
+activityDetails.orgasm          表示 ON/OFF
+activityDetails.ejaculation     表示 ON/OFF
+activityDetails.protection      表示 ON/OFF
+activityDetails.duration        表示 ON/OFF
+activityDetails.mood            表示 ON/OFF
+activityDetails.note            表示 ON/OFF
+
+appLock.enabled
+appLock.timing
+preferences.firstDayOfWeek
+preferences.timeFormat
+preferences.appearance
+
+healthConnect.enabled
+healthConnect.lastSyncedAt
+```
+
+### 理由
+
+**「Ejaculation を表示する」という選択自体がセンシティブである。**
+何を記録対象にしているかは、記録内容そのものに近い情報を漏らす。
+
+これは Activity Details のために増えた設計ではない。
+First Day of Week / Time Format / Appearance / App Lock は既に v1.0 の設定項目であり、
+保存先の設計は元々必要だった。Activity Details が追加するのは **boolean 6個のキー**だけである。
+
+### 型安全性
+
+key-value は型が弱いため、**SettingsRepository でキーごとの型を持つ薄いラッパーを被せる**。
+UI から `app_settings` を直接読み書きしない。
+
+### App Lock 設定との循環に注意
+
+App Lock の設定が暗号化 DB 内にあるため、**復号できないときは App Lock の要否が分からない。**
+
+したがって **Recovery 画面（§8.5 / §8.8）は App Lock を経ずに到達可能とする。**
+読めない DB に守るべきデータはないため、これは妥当である。
+
 ---
 
 # 6. 接続時設定（DDL とは分離する）
@@ -390,6 +443,22 @@ UPDATE health_sync_jobs SET claimed_at = NULL WHERE claimed_at IS NOT NULL;
 
 クラッシュで `claimed_at` が残ったままのジョブを復帰させる。
 `attempts` は claim 時に加算済みなので、「外部へ到達したかもしれない」情報は失われない（§9.5）。
+
+### この一律解除が成立する前提
+
+> **v1 の同期ワーカーは、フォアグラウンドの単一プロセス・単一 runtime 内でのみ動作する。**
+> バックグラウンドタスク（Headless JS / WorkManager / BGTaskScheduler 等）は使用しない。
+
+複数 runtime が並行しうる構成では、**実行中の claim を別 runtime が解除してしまう。**
+
+将来バックグラウンド同期を追加する場合、起動時の一律解除をやめ、**lease 期限方式**へ変更する。
+
+```sql
+-- 将来の方式（v1 では実装しない）
+UPDATE health_sync_jobs
+   SET claimed_at = NULL
+ WHERE claimed_at < :now_minus_lease_timeout;
+```
 
 ## 6.3 `user_version`
 
@@ -505,10 +574,16 @@ SecureStore は Android 側で自動除外されるが、アプリ DB 全体の�
 1. 復号できない DB 接続を閉じる
 2. 新しい暗号鍵と一時 DB を作る
 3. Import を一時 DB へ全件投入し、検証する
-4. 成功した場合にだけ、旧 DB と置き換える
-5. 旧 DB と旧鍵を破棄する
-6. 失敗した場合は旧 DB をそのまま残す（何も壊さない）
+4. 一時 DB を閉じ、新しい鍵で開き直して復号と件数を確認する
+5. 旧 DB を退避する（この時点でも削除しない）
+6. 一時 DB を正式な DB の位置へ切り替える
+7. 正式 DB を開き直して動作を確認する
+8. 新しい鍵を正式な鍵として確定する
+9. **最後に**旧 DB と旧鍵を破棄する
 ```
+
+**7 の確認が終わるまで旧鍵を消さない。**
+切替に失敗したときに旧 DB へ戻れる可能性を、自分から手放さないための順序である。
 
 4 まで成功しなければ旧 DB に一切触れない。読めない DB であっても、
 **将来復号できる可能性がある限り、こちらから消さない。**
@@ -575,9 +650,29 @@ Rule 4（過去データとの互換性最優先）のコストを上げる。
 | `create` | 任意 | 編集 | `create` のまま（送信時に最新値を読む） |
 | `update` | 任意 | 編集 | `update` のまま |
 | `update` | 任意 | 削除 | `delete` へ置換 |
+| `recreate` | 任意 | 編集 | `recreate` のまま |
+| `recreate` | 任意 | 削除 | `delete` へ置換 |
 | `delete` | — | — | 発生しない（Activity が存在しない） |
 
 ジョブ行を変更したときは必ず `revision` を +1 する。
+
+## 9.3.1 `recreate` 操作
+
+Import 後の明示的な再同期でのみ使う（§13.6）。
+
+```text
+recreate : clientRecordId で削除（NOT_FOUND は成功扱い）
+             ↓
+           新しい sync_version で作成
+           削除がそれ以外のエラーなら作成しない（外部を二重にしない）
+```
+
+delete ジョブ成功 → create ジョブ登録、という2段構えにすると、
+その間にプロセスが落ちたときに create が失われる。1つのジョブで完結させてこの窓をなくす。
+
+**この操作を v1 の時点で `operation` の CHECK に含めておく理由：**
+CHECK は列制約なので、後から値を増やすと D-11 のもとでテーブル再構築が必要になる。
+使う予定がある以上、**今なら無料、後からは有料**である。
 
 ## 9.4 冪等性（clientRecordId と clientRecordVersion）
 
@@ -600,6 +695,22 @@ activity.sync_version ──→  clientRecordVersion
 | クラッシュ後 | 永続化済みなので再現できる |
 
 `updated_at` のエポック値を version に使う案は採らない。端末時計のずれや巻き戻しで単調性が壊れる。
+
+### 増加の対象は限定しない（v1）
+
+**どの項目を編集しても `+1` する。** Health Connect へ送られない項目
+（note / mood / duration / orgasm / ejaculation）だけの編集でも version は増え、
+不要な HC update ジョブが発生する。
+
+これは承知の上の選択である。
+
+| 方式 | 外部書き込み | Repository の複雑さ |
+|---|---|---|
+| **単純性優先（v1 で採用）** | note 編集でも update が飛ぶ | 分岐なし |
+| 最小同期 | HC へ送る項目（`occurredAt` / offset / `protectionUsed`）が変わった場合のみ | 項目ごとの差分判定が必要 |
+
+note や mood の編集頻度は低く、1件あたりの書き込みも小さいため、最適化の価値が分岐のコストに見合わない。
+必要になれば後から最小同期へ変えられる（スキーマ変更を伴わない）。
 
 **provider 別の version は持たない。**
 HealthKit に `clientRecordVersion` 相当の概念がなく、使う予定のない列を先に作ると意味の分からない列が残る。
@@ -634,12 +745,66 @@ HealthKit に `clientRecordVersion` 相当の概念がなく、使う予定の�
 
 4. 外部呼び出し（トランザクション外）
 
-5. 確定   BEGIN
-            n = DELETE FROM health_sync_jobs WHERE id = ? AND revision = ?
-            n = 1 かつ operation != 'delete' → health_sync を upsert
-            n = 0                            → 何もしない（後続ジョブに委ねる）
-          COMMIT
+5. 確定   §9.5.1 の3分岐に従う
 ```
+
+## 9.5.1 確定処理は「外部の成功」と「ジョブの完了」を分ける
+
+**外部呼び出しが成功した事実は、ジョブを完了できるかどうかとは独立に記録する。**
+
+これを分けないと、外部 create に成功した直後に利用者が編集した場合、
+revision 不一致で mapping が作られないまま再送に回り、
+その再送が恒久的に失敗すると **「外部にレコードがあるのにローカルは未同期」が永続する。**
+
+```text
+BEGIN
+  job      = id で再読込
+  activity = job.activity_id で再読込
+
+  IF activity が存在する:
+      health_sync を upsert              ← 成功した事実を必ず残す
+      IF job.revision == claim 時の revision:
+          DELETE job                     ← 完了
+      ELSE:
+          job は残す                     ← 新しい内容で再送される
+
+  ELSE:  -- 処理中に削除された
+      mapping は作らない（FK RESTRICT のため作れない）
+      IF job が存在し operation = 'delete':
+          UPDATE job SET external_record_id = <今回得た外部 ID>,
+                         revision = revision + 1
+COMMIT
+```
+
+### `else` 側で外部 ID を書き戻す理由
+
+Health Connect は clientRecordId で引けるため delete ジョブに外部 ID は不要だが、
+**HealthKit には clientRecordId 相当がなく `external_record_id` が必須**である（§5.4）。
+
+ここで外部 ID を捨てると、**HealthKit では削除できないレコードが残る。**
+
+## 9.5.2 `attempts` を claim 時に加算する
+
+**`attempts` は失敗時ではなく claim 時に加算する。**
+これにより `attempts > 0` が「外部呼び出しを開始した ＝ 到達したかもしれない」の判定に使え、
+列を増やさずに §9.3 と §10.1 の分岐が書ける。
+
+## 9.5.3 Activity が存在しない create / update ジョブ（内部不整合）
+
+手順3で create / update の対象 Activity が存在しない場合、**これは一時エラーではなく内部不整合**である。
+claim を解除するだけだと、同じジョブを何度も拾い続ける。
+
+```text
+last_error_code = 'LOCAL_ACTIVITY_NOT_FOUND'
+not_before      = NULL              → 自動再試行の対象から外す
+開発ビルドでは assert / テスト失敗とする
+診断ログは Activity の内容を含まない範囲に限る
+```
+
+**削除との正常な競合と混同しない。**
+正常な削除競合は §9.5.1 の `else` 分岐（確定時点で Activity がない）として現れ、
+`revision` 不一致を伴う。一方こちらは claim 直後・外部呼び出し前に発見される。
+両者を同じエラーとして扱うと、正常な競合を内部不整合として報告してしまう。
 
 **`attempts` は失敗時ではなく claim 時に加算する。**
 これにより `attempts > 0` が「外部呼び出しを開始した ＝ 到達したかもしれない」の判定に使え、
@@ -651,7 +816,7 @@ HealthKit に `clientRecordVersion` 相当の概念がなく、使う予定の�
 |---|---|
 | update 送信中に削除 | ジョブが `delete` へ置換され revision が進む → 確定の DELETE が0行 → **新しい delete ジョブが残る** |
 | create 送信中に削除 | §9.3 により `delete` へ置換 → 確定が0行 → delete ジョブが外部レコードを消す |
-| create 送信中に編集 | ジョブは `create` のまま revision が進む → 確定が0行 → 再度 claim され、大きい sync_version で送り直す |
+| create 送信中に編集 | **mapping は作られる**（§9.5.1）→ ジョブは残り、大きい sync_version で送り直す |
 
 保証できるのは「競合しない」ことではなく、
 **「外部が一時的に余分なレコードを持っても、最終的に収束する」**ことである。
@@ -679,8 +844,21 @@ attempts が上限（10）を超えた
 **`not_before` の sentinel 値（遠い未来の日付）を使わない。**
 `not_before IS NULL` を手動待ちの表現とし、due index を partial index にする（§5）。
 
-手動待ちのジョブには、Settings > Health Connect に **「再試行」と「解決済みにする」** を用意する。
+手動待ちのジョブには、Settings > Health Connect に **「再試行」と「破棄」** を用意する。
 外部の状態を読めない以上、最終的に人間が打ち切れる経路が必要である。
+
+### 破棄の文言は operation ごとに変える
+
+**「解決済みにする」という表現は使わない。** 外部の状態を確認していないのに解決したように見える。
+
+| operation | 操作名 | 確認文 |
+|---|---|---|
+| `delete` | この削除の再試行を停止 | この記録は Health Connect 上に残る可能性があります |
+| `create` / `update` / `recreate` | この記録を Health Connect へ同期しない | Solo + Us と Health Connect の内容が一致しなくなります |
+| 内部不整合（§9.5.3） | この同期エラーを破棄 | — |
+
+create / update を黙って破棄すると、利用者はローカルと Health Connect が
+一致していると誤解する。何が起きるかを operation ごとに言い分ける。
 
 ## 9.7 削除の再実行
 
@@ -740,6 +918,27 @@ Health Connect 同期の失敗で Activity 記録自体を失敗させない。U
 
 `protection_used` は HC が保持できる唯一の詳細項目である。
 外へ出る情報の範囲は設定画面に具体的に明示する（UI/UX §18）。
+
+### 値の変換
+
+ローカルの3値は Health Connect の3値にそのまま対応する。
+
+| Solo + Us | Health Connect |
+|---|---|
+| `true`（1） | `PROTECTION_USED_PROTECTED` |
+| `false`（0） | `PROTECTION_USED_UNPROTECTED` |
+| `null` | `PROTECTION_USED_UNKNOWN` |
+
+**「未記録」を `UNPROTECTED` に潰さない。** §5.3 の NULL と false の区別を外部でも保つ。
+
+### 用語
+
+**「避妊具」単独では感染予防の目的が抜ける。** 行ラベルと説明文を分ける。
+
+```text
+行ラベル    プロテクション          （英語版: Protection）
+説明文      避妊・感染予防のための保護具を使用したかどうか
+```
 
 ## 9.10 v1 の既知の制限
 
@@ -923,8 +1122,41 @@ CSV を復元経路に含めると、タイムゾーンや `created_at` の表�
 
 `health_sync` / `health_sync_jobs` は**エクスポートしない**（端末固有の同期状態であり、復元しても意味がない）。
 
-`syncVersion` は出力する。これがないと、復元後に外部へ同期したときに
-過去より小さい `clientRecordVersion` を送る可能性がある。
+## 12.2.1 `settings` を含める
+
+バックアップである以上、設定も含める。トップレベルに別オブジェクトとして置く。
+
+```json
+{
+  "version": 1,
+  "exportedAt": "...",
+  "settings": {
+    "activityDetails.orgasm": "true",
+    "activityDetails.ejaculation": "false",
+    "preferences.firstDayOfWeek": "monday"
+  },
+  "activities": []
+}
+```
+
+- **置換復元のときだけ復元**し、追加のみモードでは無視する
+- **設定の不整合で Activity の復元を失敗させない**（設定は復元の本質ではない）
+- 未知のキーは無視する。既知のキーで値が不正なら既定値を使う
+
+## 12.2.2 `syncVersion` を出力する理由と、その限界
+
+`syncVersion` は出力する。ないと、復元後に外部へ同期したときに
+以前より小さい `clientRecordVersion` を送ることになる。
+
+**ただし出力するだけでは、古いバックアップの問題は解決しない。**
+
+```text
+Health Connect 上   : clientRecordVersion 8
+復元した古い Export : syncVersion 3
+```
+
+この状態で通常の update を送っても、**HC は大きい version を優先するため反映されない。**
+対処は §13.6 に定める。
 
 ## 12.3 CSV
 
@@ -1052,6 +1284,39 @@ DB の CHECK は既存行に遡及せず形式検証もしないため、**Impor
 **Export → アンインストール → 再インストール → Import で全件・全列が一致すること**を E2E テストとする。
 Export/Import の UI 実装は後回しでよいが、**JSON schema と復元可能性の検証は DB 設計と同時に始める。**
 暗号化を採用した以上、復元手段は製品の安全性の一部である。
+
+---
+
+## 13.6 復元後の Health Connect 再同期
+
+Import 後の HC 再同期は**既定 OFF・明示同意制**である（§13.1）。
+明示的に再同期する場合、通常の `update` ではなく **`recreate`** を使う。
+
+```text
+recreate : clientRecordId で削除（NOT_FOUND は成功扱い）→ 新しい version で作成
+```
+
+### 通常の update を使わない理由
+
+古いバックアップから復元すると、ローカルの `syncVersion` が
+Health Connect 上の `clientRecordVersion` より小さいことがある。
+この状態で update を送っても HC 側は大きい version を優先するため、**復元内容が反映されない。**
+
+削除してから作り直せば、version の大小に関係なく決定的に上書きできる。
+READ 権限を使わずに解決できる点で、D-20（READ を追加しない）とも整合する。
+
+### 削除に失敗した場合
+
+**作成しない。** 外部に同じ記録が二重に存在する状態を作らない。
+ジョブはリトライに回り、上限到達で手動待ちになる（§9.6）。
+
+### 却下した案
+
+| 案 | 却下理由 |
+|---|---|
+| 古いバックアップでは上書きできないことを既知の制限とする | 復元したのに外部が古いまま、という状態が説明しづらい |
+| READ 権限で既存 version を確認する | D-12 / D-20 と衝突し、審査面積が増える |
+| 復元後は新しい clientRecordId を使う | 外部に重複が残り、重複解消の仕組みが別途必要になる |
 
 ---
 
@@ -1218,6 +1483,9 @@ claim / revision による楽観的並行制御は §9.5 に従う。
 | I6 | Activity 削除トランザクションが失敗したとき、全状態が元に戻る |
 | I7 | ワーカーの処理中に編集・削除が入っても、新しいジョブを失わない |
 | I8 | 起動時の claim クリア後、`attempts` が保持されている |
+| I9 | **外部 create 成功後・確定前に編集**しても mapping が作られ、新しいジョブも残る |
+| I10 | 外部 create 成功後・確定前に**削除**すると、delete ジョブに外部 ID が書き戻される |
+| I11 | 設定を OFF にしても、記録済みの値が読み出せる |
 
 I7 は §9.5 の競合表をそのままテストケースにする。
 外部呼び出しをスタブ化し、claim 後・確定前に編集／削除を差し込んで検証する。
@@ -1251,7 +1519,8 @@ Health Connect を最後に置くことで、審査をリリースのクリテ�
 
 アカウント / 独自クラウド / SNS / Community / NoFap / streak / Porn 管理 / AI アドバイス /
 医療診断 / パートナー共有 / Push 通知 / 広告 / Wear OS / Apple Watch / 詳細な Health 相関分析 /
-双方向同期 / 独自 PIN / tolerant import
+双方向同期 / 独自 PIN / tolerant import / **バックグラウンド同期**（§6.2）/
+Outcome を用いた統計
 
 ---
 
