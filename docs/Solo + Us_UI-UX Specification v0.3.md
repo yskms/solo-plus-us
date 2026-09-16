@@ -1,10 +1,10 @@
-# Solo + Us — UI/UX Specification v0.2
+# Solo + Us — UI/UX Specification v0.3
 
 **App Name:** Solo + Us  
 **Tagline:** *Your intimate life, over time.*
 
 改訂：2026-09-16  
-関連：要件定義書 v0.2 / 基本設計 v0.2 / **設計判断記録 v0.2**
+関連：要件定義書 v0.3 / 基本設計 v0.3 / **設計判断記録 v0.3**
 
 > **本文と図版が矛盾する場合は本文を正とする。**
 > `docs/old/` は検討履歴であり仕様ではない。
@@ -380,7 +380,7 @@ Health Connectの成功を待たない。
 
 # 10. Screen 04 — Activity Detail
 
-Recent / Calendarから開く。
+Recent / Calendar から開く。
 
 ```text
 Activity                            ⋯
@@ -397,23 +397,14 @@ Sep 14, 2026
 
 DETAILS
 
-Duration
-Not recorded                         >
-
 Orgasm
-Not recorded                         >
-
-Ejaculation
-Not recorded                         >
-
-Mood before
-Not recorded                         >
-
-Mood after
 Not recorded                         >
 
 Notes
 Add a note                           >
+
+
+        + Add more details
 
 
 ────────────────────────────
@@ -427,9 +418,70 @@ Synced
 Delete Activity
 ```
 
-詳細項目は**すべてOptional**。
+詳細項目は**すべて Optional**。Quick Record 時には入力を要求しない。
 
-Quick Record時には入力を要求しない。
+---
+
+## 表示項目は設定に従う
+
+表示する項目は Settings > Activity Details（§17）の設定に従う。
+**既定では Orgasm と Notes のみ表示する。**
+
+```text
+既定 ON    Orgasm / Notes
+既定 OFF   Ejaculation / Protection / Duration / Mood before / Mood after
+```
+
+「射精したか」を標準項目に据えると、アプリ全体が男性中心の設計に見える。
+既定値を Orgasm 中心にすることが、この問題の実際の解決策であり、設定画面はその調整手段にすぎない。
+
+---
+
+## 不変条件：記録済みの値は常に表示する
+
+> **設定が OFF の項目でも、値が記録されていれば必ず表示する。**
+
+設定が制御するのは「未記録の項目を編集画面に出すかどうか」だけであり、
+既存の値を隠す手段ではない。これを守らないと、設定変更で実データが見えなくなる。
+
+```text
+DETAILS
+
+Orgasm
+Yes                                  >
+
+Ejaculation                ← 設定は OFF だが値があるので表示する
+Yes                                  >
+
+Notes
+Add a note                           >
+```
+
+---
+
+## + Add more details
+
+設定が OFF の項目にも、この行から到達できる。
+
+```text
+Add more details
+
+○ Ejaculation
+○ Protection
+○ Duration
+○ Mood before
+○ Mood after
+```
+
+ある日だけ記録したい項目のために設定画面を往復させない。
+
+---
+
+## Partnered の場合
+
+Protection を既定表示にする。ただし **Solo で選べないようハードゲートはしない。**
+
+アプリが「あなたにこの項目は関係ない」と決める構造を作らない。
 
 ---
 
@@ -474,7 +526,37 @@ Ejaculation
 ○ No
 ```
 
-`Not recorded`と`No`はDB上でも明確に区別する。
+## Protection
+
+```text
+Protection
+
+○ Not recorded
+○ Yes
+○ No
+```
+
+---
+
+## Orgasm と Ejaculation は別項目である
+
+同じ意味に畳まない。Partnered では `Orgasm = Yes` かつ `Ejaculation = No` のようなケースがあり得る。
+
+また「sexual activity の結果 ＝ ejaculation」と定義してしまうと、
+アプリ全体が特定の身体を前提にした設計になる。
+
+---
+
+## `Not recorded` と `No` を区別する
+
+DB 上でも明確に区別する。
+
+```text
+Not recorded  →  記録していない
+No            →  「なかった」と記録した
+```
+
+統計上この2つを混同しない。
 
 ---
 
@@ -680,6 +762,30 @@ Health data連携後：
 
 ---
 
+## Outcome を指標にしない
+
+Orgasm / Ejaculation / Protection は記録・表示・Export の対象とするが、**Insights で集計しない。**
+
+禁止：
+
+> Orgasm rate: 62%
+
+> You reached orgasm in 8 of 12 activities.
+
+> Your orgasm rate improved this month.
+
+割合・率・達成度として提示すると、達成率のスコアカードとして読まれる。
+低い数字を見せることに治療的・矯正的な含みが生まれ、「評価しない」という原則が崩れる。
+
+```text
+Context（Solo / Partnered） : 集計してよい
+Outcome                     : 集計しない
+```
+
+Insights が扱うのは「いつ・どれだけ・どの間隔で」であり、「うまくいったか」ではない。
+
+---
+
 # 17. Screen 07 — Settings
 
 ```text
@@ -704,6 +810,11 @@ Import Data                      >
 Delete Data                      >
 
 
+TRACKING
+
+Activity Details                 >
+
+
 PREFERENCES
 
 First Day of Week                >
@@ -717,6 +828,51 @@ About Solo + Us                  >
 Privacy Policy                   >
 Version                         1.0
 ```
+
+---
+
+## Screen 07a — Activity Details（表示項目のカスタマイズ）
+
+```text
+Activity Details
+
+
+Choose what you want to track.
+You can change this anytime.
+
+
+TRACKING DETAILS
+
+Orgasm                          ON
+Ejaculation                    OFF
+Protection                     OFF
+Duration                       OFF
+Mood before / after            OFF
+Notes                           ON
+
+
+Values you have already recorded
+are always shown, even if turned off.
+```
+
+### 設計意図
+
+**アプリは利用者の性別を尋ねない。**
+
+「男性なら Ejaculation、女性なら Orgasm」と出し分けるのではなく、**必要な項目を本人が選ぶ**。
+
+これにより、
+
+- 男性でも「Orgasm だけ記録したい」でよい
+- 女性でも必要なら Ejaculation を有効にできる
+- トランス・ノンバイナリーの利用者に対して、アプリが身体的特徴を推測しない
+- **性別という属性そのものを保存しなくて済む**（持たないデータは漏れない）
+
+### 文言のルール
+
+- 「あなたに必要な項目」のように、アプリ側が利用者の属性を推定する書き方をしない
+- 既定値の理由を説明しない（説明すると属性の話になる）
+- OFF にすることを「使わない」ではなく「表示しない」と表現する
 
 ---
 
@@ -741,12 +897,12 @@ Solo                        ON
 
 About synchronization
 
-Health Connect currently stores
-these entries as sexual activity.
+Health Connect に保存されるのは、
+記録した日時と、避妊具使用の有無だけです。
 
-Solo + Us keeps Solo and
-Partnered separately inside
-the app.
+Solo / Partnered の区別、Orgasm、
+Mood、Notes は Solo + Us の中だけに
+保存されます。
 
 
 Last synced
@@ -754,7 +910,7 @@ Today · 10:24 AM
 
 
 Unsynced changes            3
-[ Retry now ]
+[ Retry now ]   [ Mark as resolved ]
 ```
 
 重要：
@@ -767,6 +923,13 @@ Health Connect 上で Solo / Partnered の区別が維持されると誤解さ�
 
 同期エラーはこの画面にのみ表示する。**Today や Insights には出さない。**
 記録画面に外部同期の失敗を持ち込まない。
+
+### Mark as resolved が必要な理由
+
+外部の状態を読む権限を持たないため、「既に削除済みなのか、まだ残っているのか」を
+アプリ側から確認できない場合がある。
+
+永久に消えない未同期表示を残さないために、**最終的に人間が打ち切れる経路**を用意する。
 
 ---
 
@@ -1017,7 +1180,7 @@ components/
 ├─ AppHeader
 ├─ SectionHeader
 ├─ MetricCard
-├─ ActivityTypeCard
+├─ ActivityContextCard
 ├─ ActivityRow
 ├─ ActivityBadge
 ├─ QuickRecordSheet
@@ -1032,6 +1195,8 @@ components/
 ├─ ImportPreview        -- 件数プレビュー（確定前）
 ├─ DestructiveConfirm   -- 置換復元・全削除の確認
 ├─ RecoveryPanel        -- 復号できない場合の選択肢
+├─ DetailFieldRow       -- 記録済みなら設定 OFF でも表示する
+├─ AddMoreDetailsSheet  -- OFF の項目への逃げ道
 └─ IntersectPlus
 ```
 
@@ -1127,6 +1292,8 @@ v1では以下を入れない。
 - 独自 PIN
 - 双方向同期 / 自動マージ
 - 行単位スキップ付きの Import
+- 性別の質問・保存
+- orgasm rate 等の Outcome 指標
 
 ---
 

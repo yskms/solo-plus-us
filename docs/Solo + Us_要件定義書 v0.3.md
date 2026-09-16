@@ -1,8 +1,8 @@
-# Solo + Us 要件定義書 v0.2
+# Solo + Us 要件定義書 v0.3
 
-作成日：2026-09-15（v0.2 改訂：2026-09-16）  
+作成日：2026-09-15（v0.3 改訂：2026-09-16）  
 ステータス：実装着手前の確定版  
-関連：基本設計 v0.2 / UI-UX Specification v0.2 / **設計判断記録 v0.2**
+関連：基本設計 v0.3 / UI-UX Specification v0.3 / **設計判断記録 v0.3**
 
 > 用語・データ設計・セキュリティ要件は v0.2 で確定した。変更理由は設計判断記録を参照する。
 > 本文と図版が矛盾する場合は本文を正とする。`docs/old/` は検討履歴であり仕様ではない。
@@ -152,9 +152,9 @@ HealthKit の sexual activity も Solo / Partnered を区別しないため、
 
 # 5. 記録対象
 
-## 5.1 Activity Type
+## 5.1 Activity Context
 
-初期版では以下の2種類とする。
+Activity の分類軸は「行為の種類」ではなく **「相手の有無」** とする。
 
 ### Solo
 
@@ -162,15 +162,24 @@ HealthKit の sexual activity も Solo / Partnered を区別しないため、
 
 ### Partnered
 
-相手のいる性的活動。行為の内容は問わない。
+相手のいる性的活動。**行為の内容は問わない。**
 
----
+## 5.2 「Solo = Masturbation」と固定しない
 
-## 5.2 将来拡張
+`solo` / `partnered` は、何をしたかではなく **一人だったか / 誰かとだったか** を表す。
 
-将来的なデータタイプ追加を考慮した設計とする。
+この軸にすると、
 
-ただし初期版では種類を増やしすぎない。
+- 挿入を伴わない行為
+- partnered な文脈での masturbation
+- 将来の類型追加
+
+のいずれでも分類が破綻しない。行為名（`masturbation` / `sex`）を内部値にすると、
+これらのケースで意味が壊れる。
+
+## 5.3 将来拡張
+
+将来的なデータタイプ追加を考慮した設計とする。ただし初期版では種類を増やしすぎない。
 
 ---
 
@@ -181,33 +190,84 @@ HealthKit の sexual activity も Solo / Partnered を区別しないため、
 記録時に必須なのは以下のみ。
 
 ```text
-type
+context
 dateTime
 ```
 
 例：
 
 ```text
-type: solo
+context:  solo
 dateTime: 2026-09-15 22:35
 ```
 
----
-
 ## 6.2 任意項目
 
-以下は入力しなくても保存できる。
+以下は入力しなくても保存できる。**すべて任意であり、入力を促さない。**
+
+### Outcome（何が起きたか）
+
+```text
+orgasm
+ejaculation
+protectionUsed
+```
+
+### Optional context（どういう状況だったか）
 
 ```text
 duration
-ejaculation
-orgasm
 moodBefore
 moodAfter
 note
 ```
 
-詳細項目についてはユーザーテスト後に追加・削除を検討する。
+`orgasm` と `ejaculation` は**別項目として保持する**。
+Partnered では `orgasm = true` かつ `ejaculation = false` のようなケースがあり得るため、
+この2つを同一概念にしない。
+
+`protectionUsed` は Partnered で既定表示とするが、Solo で選べないよう禁止はしない。
+
+## 6.3 表示項目は利用者が選ぶ
+
+**アプリは利用者の性別を尋ねず、保存しない。**
+
+項目の出し分けを性別の推定で行うのではなく、利用者自身が表示項目を選ぶ。
+
+```text
+TRACKING DETAILS
+
+☑ Orgasm
+☐ Ejaculation
+☐ Duration
+☐ Mood before / after
+☐ Protection
+☑ Notes
+```
+
+既定では **Orgasm と Notes のみ ON**。
+
+### 理由
+
+1. **データ最小化。** 端末の物理取得を想定した脅威モデルに対し、
+   出し分けのためだけに性別という属性を増やすのは割に合わない。**持たないデータは漏れない**
+2. 身体的特徴をアプリ側が推測しない。トランス・ノンバイナリーの利用者にも同じ設計で成立する
+3. 男性でも「Orgasm だけ記録したい」でよく、女性でも必要なら Ejaculation を有効にできる
+
+「射精したか」を標準項目に据えると、アプリ全体が男性中心の設計に見える。
+既定値を Orgasm 中心にすることが、この問題の実際の解決策である。
+
+### 不変条件
+
+> **記録済みの値は、表示項目の設定に関わらず常に表示する。**
+
+設定が制御するのは「未記録の項目を編集画面に出すかどうか」だけであり、既存の値を隠す手段ではない。
+あわせて「その他の項目を追加」という逃げ道を用意し、OFF の項目にも到達できるようにする。
+
+## 6.4 記録を強制しない
+
+詳細項目は Quick Record では一切尋ねない。
+記録したい日にだけ、Activity を開いて追記する（§7、§8）。
 
 ---
 
@@ -367,6 +427,21 @@ Solo / Partnered を視覚的に区別する。
 計算方法は基本設計 §14 で固定する。
 「同日の複数回を別々に数えるか」「期間端の空白を含めるか」などは実装者の裁量に委ねない。
 
+## 11.1 Outcome を統計の指標にしない
+
+Orgasm / Ejaculation / Protection は記録・表示・Export の対象とするが、**集計しない。**
+割合・率・達成度としての指標を作らない。
+
+```text
+Context（Solo / Partnered） : 集計してよい
+Outcome                     : 集計しない
+```
+
+`orgasm rate 62%` のような指標は達成率のスコアカードとして読まれ、
+「ユーザーを評価しない」という原則に正面から抵触する。
+
+Statistics と Insights が扱うのは「いつ・どれだけ・どの間隔で」であり、「うまくいったか」ではない。
+
 ---
 
 ## 傾向
@@ -449,6 +524,18 @@ SexualActivityRecord
 
 Health Connect 上では Solo / Partnered を区別するフィールドが存在しないため、アプリ内データを正とする。
 
+`SexualActivityRecord` が保持できるのは**時刻と避妊具使用の有無だけ**である。
+
+| Solo + Us | Health Connect |
+|---|---|
+| 日時 | time |
+| protectionUsed | protectionUsed |
+| Solo / Partnered の区別 | **送られない** |
+| Orgasm / Ejaculation | **送られない** |
+| Duration / Mood / Notes | **送られない** |
+
+外へ出る情報の範囲は、設定画面に具体的に明示する。
+
 これは HealthKit でも同じであり、iOS 対応時も SQLite を正本とする方針は変わらない。
 
 ---
@@ -459,17 +546,22 @@ Health Connect 上では Solo / Partnered を区別するフィールドが存�
 App Database
 
 Activity
-├─ type
+├─ context
 │   ├─ solo
 │   └─ partnered
 │
 ├─ dateTime
-├─ duration
-├─ ejaculation
-├─ orgasm
-├─ moodBefore
-├─ moodAfter
-└─ note
+│
+├─ Outcome
+│   ├─ orgasm
+│   ├─ ejaculation
+│   └─ protectionUsed
+│
+└─ Optional context
+    ├─ duration
+    ├─ moodBefore
+    ├─ moodAfter
+    └─ note
 ```
 
 Health Connect：
@@ -813,7 +905,8 @@ Health Connect 同期済みの場合の削除同期は基本設計 §10 で設�
 | Solo / Partnered の記録 | ● | | |
 | 編集・削除 | ● | | |
 | 日時変更・過去日時への記録 | ● | | |
-| 詳細項目（duration / orgasm / ejaculation / mood / note） | ● | | 入力は完全任意 |
+| 詳細項目（orgasm / ejaculation / protection / duration / mood / note） | ● | | 入力は完全任意 |
+| 表示項目のカスタマイズ（§6.3） | ● | | 既定は Orgasm と Notes のみ ON |
 | Today（月次カウント・内訳・Recent） | ● | | |
 | Calendar（月表示・日別一覧） | ● | | |
 | Insights（合計・内訳・平均間隔） | ● | | タブは v1.0 から3つ出す |
