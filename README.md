@@ -9,9 +9,9 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 
 ## ステータス
 
-設計文書は **v0.11** で確定済み。実装は **Phase 1**（`phase1/foundation` ブランチ）着手中。
-現状は「暗号化 DB → Migration runner → スキーマ → Repository → Quick Record → Undo → 履歴 →
-Export/Import の往復」まで実装・テスト済み。詳細は下記「Phase 1 実装状況」を参照。
+設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
+Repository → Quick Record → Undo → 履歴 → Export/Import の往復）はクローズ済み。
+現在は **Phase 2**（Calendar）に着手中。詳細は下記「Phase 1 実装状況」「Phase 2 実装状況」を参照。
 
 ## ドキュメント
 
@@ -253,7 +253,7 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
   まず SQLCipher 配線を実機で確認したかったため、意図的に後回し
 - **Settings 画面一式**：Activity Details カスタマイズ、App Lock、Health Connect、Data(Export/Import UI)
   はいずれも Phase 3。`ExportService`/`ImportService` は実装・テスト済みだが、呼び出す UI がまだ無い
-- **Calendar / Insights**：プレースホルダーのみ（Phase 2/3）
+- **Insights**：プレースホルダーのみ（Phase 3。合計・内訳・平均間隔、§14 の統計定義）
 - **Health Connect 同期の実行部分**：`HealthConnectService` / `SyncWorker` は未実装（Phase 4）。
   ジョブのキューイング自体（`ActivityService` → `health_sync_jobs`）は実装・テスト済みで、
   `healthConnect.enabled` が既定 `false` のため実際には空のまま動く
@@ -273,3 +273,52 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
   ESLint 設定自体が無く、導入するとリポジトリ全体に対する既存コードの棚卸しが別途必要になるため、
   今回のバグ修正とは別スコープとして見送った。特に `connection.ts` のように native module 依存で
   Jest 検証ができないファイルほど、この種の静的チェックの価値が高い
+
+## Phase 2 実装状況
+
+`phase1/foundation` ブランチで継続。基本設計 §18 の Phase 2 は「Calendar → 月次統計 →
+Activity Detail（詳細項目）」だが、月次統計（Today の THIS MONTH 集計）と Activity Detail の
+詳細項目編集（Orgasm/Ejaculation/Protection/Duration/Mood/Notes）は Phase 1 の時点で既に実装済み
+だったため、Phase 2 で新規に着手したのは **Calendar 画面**（UI/UX §13）のみ。
+
+### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `lib/calendarGrid.ts` | 月グリッドの純粋関数（週の開始曜日・月またぎ・閏年を考慮した日数計算）。DB/native 依存なしで単体テスト可能 |
+| `lib/timeFormat.ts` | `preferences.timeFormat`（12h/24h）に従った時刻表示。Activity Detail の日時表示もこれに合わせて修正（従来は 12h 固定だった） |
+| `lib/relativeDate.ts` | `formatMonthDay`（"Sep 14" 形式）を追加。`ActivityRow` にあった同等のプライベート実装を置き換え |
+| `app/(tabs)/calendar.tsx` | 月表示グリッド・前月/次月ナビゲーション・日別ドット（§13「同日複数」の1-2件個別ドット/3件以上まとめ表示ルールに準拠）・日付タップで一覧表示・Activity Detail への遷移 |
+
+`findActivitiesByDateRange`（Phase 1 で実装済み）をそのまま利用し、月内の Activity を1回のクエリで
+取得してクライアント側で日付ごとにグルーピングする方式とした。新規の Repository/Service 関数は
+追加していない。
+
+### アクセシビリティ上の判断
+
+月グリッドの各日はドット（色のみ）で活動件数を示すが、§3「Solo/Partnered の判別を色だけに依存
+しない」というルールに対し、各セルに `accessibilityLabel`（例:「Sep 14, 1 solo」）を付与し、
+タップすると同じ情報がラベル付きの一覧（`ActivityBadge`）として即座に表示されるため、色のみに
+依存する情報伝達にはなっていないと判断した。
+
+### テスト
+
+```
+lib/__tests__/calendarGrid.test.ts   月グリッドの境界値（週開始・月末パディング・閏年・年またぎ）
+lib/__tests__/timeFormat.test.ts     12h/24h 変換（0時・12時の境界を含む）
+lib/__tests__/relativeDate.test.ts   formatMonthDay を追加
+```
+
+`app/(tabs)/calendar.tsx` 自体（React コンポーネント）はユニットテスト対象外——このプロジェクトに
+コンポーネントテスト基盤（React Native Testing Library 等）がまだ無いため。ロジックを極力
+`lib/calendarGrid.ts`/`lib/timeFormat.ts` に切り出すことで、画面側は「取得したデータを並べるだけ」
+に留めている。
+
+### Known gaps
+
+- **実機での見た目の確認が未実施**：iOS は Xcode/Swift ツールチェーン問題（上記参照）でブロック中。
+  Android はエミュレータ未セットアップ（AVD 未作成）で、かつこの Mac の空き容量が 6.4GB と、以前
+  iOS シミュレータのダウンロードをブロックした容量不足と同水準。月グリッドのレイアウト・ドットの
+  視認性・日別一覧のスクロール挙動は、いずれかのビルド経路が開通してから確認する
+- **日時編集 UI**：§4.4/§11.4「過去日時への記録・編集」は引き続き未実装（Phase 1 の Known gaps を参照）。
+  ネイティブの日時ピッカーもネイティブモジュールのため、同じ実機ビルド問題の影響を受けうる

@@ -1,4 +1,5 @@
-import { formatRelativeLocalDate } from '../relativeDate';
+import { formatRelativeLocalDate, formatMonthDay } from '../relativeDate';
+import { ValidationError } from '../errors';
 
 describe('formatRelativeLocalDate', () => {
   it('returns "Today" for the same date', () => {
@@ -15,5 +16,14 @@ describe('formatRelativeLocalDate', () => {
   });
   it('never returns a future/negative label for a future date (clamped to Today)', () => {
     expect(formatRelativeLocalDate('2026-09-20', '2026-09-16')).toBe('Today');
+  });
+});
+
+describe('formatMonthDay', () => {
+  it('formats a local date as an abbreviated month and day, no year', () => {
+    expect(formatMonthDay('2026-09-14')).toBe('Sep 14');
+  });
+  it('rejects an invalid local date', () => {
+    expect(() => formatMonthDay('not-a-date')).toThrow(ValidationError);
   });
 });
