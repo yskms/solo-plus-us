@@ -1423,6 +1423,7 @@ Calendar / 月次統計 / Recent history
 ### Phase 3 — Privacy & Data
 
 App Lock / **Recovery 画面** / Recents protection  
+日時編集 UI（過去日時への記録・編集。§8「Just now」からの日時変更入口、基本設計 §4.4/§11.4）  
 Export / Import の UI  
 Insights（合計・内訳・平均間隔）
 

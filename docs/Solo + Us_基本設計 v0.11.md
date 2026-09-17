@@ -2201,6 +2201,7 @@ Phase 2  Calendar → 月次統計 → Activity Detail（詳細項目）
 
 Phase 3  Insights（合計・内訳・平均間隔）
          → App Lock → Recovery 画面 → 画面マスク
+         → 日時編集 UI（過去日時への記録・編集、§4.4/§11.4）
          → Export / Import の UI
 
 Phase 4  Health Connect（clientRecordId / clientRecordVersion 確認 → 同期 → リトライ → 削除同期）
@@ -2210,6 +2211,10 @@ Phase 4  Health Connect（clientRecordId / clientRecordVersion 確認 → 同期
 
 v0.1 から順序を変更した。**暗号化と復元可能性を Phase 1 に置く**（後付けできないため）。
 Health Connect を最後に置くことで、審査をリリースのクリティカルパスから外せるようにする。
+
+日時編集 UI は §25 の MVP 表で v1.0 必須（●）とされているにもかかわらず、当初この表に
+明記されていなかった。実装時（Phase 2 レビュー）に気づき、Phase 3 に割り当てた
+（ネイティブの日時ピッカーが必要で、他の Phase 3 項目と同様に実機ビルドが前提になるため）。
 
 ---
 

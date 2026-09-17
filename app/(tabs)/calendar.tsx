@@ -45,14 +45,23 @@ function todayLocalDate(): string {
 }
 
 /**
- * Per-day summary: up to 2 individual dots, or a single collapsed "● N" for
- * 3+ (§13). Solo is a filled dot, Partnered is a hollow (outlined) dot —
+ * Per-day summary: up to 2 individual dots, or a single collapsed count for
+ * 3+ (§13). Solo is a hollow (outlined) dot, Partnered is a filled dot —
  * shape, not just color, carries the distinction (UI/UX §24 A3, §13 "色＋
- * activity indicator で識別"). The 3+ case collapses to a plain count and
- * intentionally drops the per-activity breakdown, matching §13's own "● 3"
- * mockup; it isn't asserting any one activity's context, so the
- * color/shape rule for *distinguishing* Solo from Partnered doesn't apply
- * to it the same way.
+ * activity indicator で識別"). Solo, not Partnered, gets the outline: an
+ * outline's visibility depends entirely on its stroke color's contrast
+ * against the background (there's no fill to fall back on), and
+ * `colors.partnered` (`#F4A699` light) only reaches ~1.8:1 against
+ * `colors.background` — below WCAG 1.4.11's 3:1 for graphical objects —
+ * while `colors.solo` reaches ~4.6:1. Swapping which context gets which
+ * shape keeps the low-contrast color on the more forgiving filled form.
+ *
+ * The 3+ case shows the count as text with no dot at all, rather than a
+ * third dot style — a plain filled dot there would look identical to a
+ * single Partnered activity and misread as "Partnered" (or, before this
+ * fix, "Solo") rather than "a nonspecific multi-activity day". It isn't
+ * asserting any one activity's context, so the shape rule for
+ * *distinguishing* Solo from Partnered doesn't apply to it.
  */
 function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors: ThemeColors }) {
   if (dayActivities.length === 0) return <View style={styles.dotRow} />;
@@ -62,12 +71,12 @@ function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors:
       <View style={styles.dotRow}>
         {dayActivities.map((activity) =>
           activity.context === 'solo' ? (
-            <View key={activity.id} style={[styles.dot, { backgroundColor: colors.solo }]} />
-          ) : (
             <View
               key={activity.id}
-              style={[styles.dot, styles.dotHollow, { borderColor: colors.partnered, backgroundColor: colors.background }]}
+              style={[styles.dot, styles.dotHollow, { borderColor: colors.solo, backgroundColor: colors.background }]}
             />
+          ) : (
+            <View key={activity.id} style={[styles.dot, { backgroundColor: colors.partnered }]} />
           ),
         )}
       </View>
@@ -76,7 +85,6 @@ function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors:
 
   return (
     <View style={styles.dotRow}>
-      <View style={[styles.dot, { backgroundColor: colors.intersection }]} />
       <Text style={[styles.dotCount, { color: colors.textSecondary }]}>{dayActivities.length}</Text>
     </View>
   );
@@ -108,6 +116,13 @@ export default function CalendarScreen() {
   // possibly-wrong week order and then re-flowing.
   const [firstDayOfWeek, setFirstDayOfWeek] = useState<FirstDayOfWeek | null>(null);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
+  // Distinct from `firstDayOfWeek === null`: that alone can't tell "still
+  // loading" from "loading failed", so a failed first load would leave the
+  // grid silently blank forever with no indication anything went wrong —
+  // and, separately, `byDate` starts out genuinely empty, which without
+  // this would show the day panel's "no activities" EmptyState for a
+  // moment before the real (possibly non-empty) data arrives.
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   // Guards against two reloads racing: switching months quickly fires a
   // new `reload` before the previous month's query has resolved, and
@@ -139,9 +154,11 @@ export default function CalendarScreen() {
       setFirstDayOfWeek(fdow);
       setTimeFormat(tf);
       setByDate(grouped);
+      setLoadStatus('ready');
     } catch (error) {
       if (requestSeqRef.current !== requestId) return;
       logError('Calendar reload failed', error);
+      setLoadStatus('error');
     }
   }, [db, visible]);
 
@@ -201,7 +218,21 @@ export default function CalendarScreen() {
         </Pressable>
       </View>
 
-      {headerLabels && grid && (
+      {loadStatus === 'loading' && (
+        <View style={styles.statusBlock}>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>Loading…</Text>
+        </View>
+      )}
+
+      {loadStatus === 'error' && (
+        <View style={styles.statusBlock}>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>
+            Couldn&apos;t load your calendar. Leaving and reopening this tab will try again.
+          </Text>
+        </View>
+      )}
+
+      {loadStatus === 'ready' && headerLabels && grid && (
         <>
           <View style={styles.weekdayRow}>
             {headerLabels.map((label, i) => (
@@ -243,7 +274,7 @@ export default function CalendarScreen() {
       )}
 
       <ScrollView style={styles.dayPanel} contentContainerStyle={styles.dayPanelContent}>
-        {selectedLocalDate && (
+        {loadStatus === 'ready' && selectedLocalDate && (
           <>
             <Text style={[styles.selectedDateLabel, { color: colors.textSecondary }]}>
               {formatMonthDay(selectedLocalDate)}
@@ -286,6 +317,8 @@ const styles = StyleSheet.create({
   navButton: { minWidth: minTouchTarget, minHeight: minTouchTarget, alignItems: 'center', justifyContent: 'center' },
   navArrow: { fontSize: 22, fontWeight: '600' },
   monthTitle: { fontSize: 17, fontWeight: '700', minWidth: 180, textAlign: 'center' },
+  statusBlock: { paddingHorizontal: spacing.md, paddingVertical: spacing.lg, alignItems: 'center' },
+  statusText: { fontSize: 14, textAlign: 'center' },
   weekdayRow: { flexDirection: 'row', paddingHorizontal: spacing.md },
   weekdayLabel: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '600' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.md },
