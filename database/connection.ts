@@ -267,6 +267,14 @@ export function wasRestoredFromFailedMigration(): boolean {
  * with a clear reason, Export still allowed) until an app update ships a
  * fixed migration — rather than letting every write path discover the
  * schema mismatch independently, one confusing failure at a time.
+ *
+ * Related, same-decision-point item: the `MigrationRestoreFailedError`
+ * screen in `DatabaseContext` (migration *and* the fallback restore both
+ * failed) currently just states that fact. In practice a relaunch often
+ * recovers on its own — `recoverInterruptedRestoreIfNeeded` finishes an
+ * interrupted restore on the next `getDatabase()` call — so that screen
+ * could tell the user to try restarting the app. Worth adding alongside
+ * the read-only-mode work above rather than as its own one-off change.
  */
 
 async function openAndMigrate(encryptionKey: string): Promise<DB> {
