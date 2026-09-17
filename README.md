@@ -596,14 +596,39 @@ lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文
    `catch` で `logError` するだけで `authError` を設定していなかった。汎用のエラー
    コード（`'unknown'`）を設定し、`describeAuthError` の汎用文言が出るよう修正
 
+#### レビューで見つかり、修正したもの（3回目）
+
+2回目で入れた `Modal` 化自体に、ロックが素通りになりうる抜けがあった。
+
+1. **【高・実機で最優先に確認】記録用モーダルが開いていると `Modal` のロック画面が
+   表示されない可能性**：RN の `Modal` は、配置された View を持つ ViewController から
+   `presentViewController` を呼んで表示する。`AppLockProvider` の `Modal` は root の
+   階層にあるため、表示元は root の ViewController になるが、`record`（`presentation:
+   'modal'`）がネイティブモーダルとして表示中だと、その ViewController は既に別画面を
+   表示中の状態にある。UIKit ではこの状態で2つ目の提示を試みても警告が出るだけで
+   表示されない。結果、ロック画面が出ないままロック用モーダルは `visible: true` を
+   保持し続け、下の `record` 画面はそのまま操作でき、閉じても再試行されない——
+   前回の「モーダルがロック画面より上に残る」よりも保護が弱い状態だった。対策として、
+   バックグラウンド復帰時に現在の pathname が `/record` であれば `router.dismiss()` で
+   先に閉じてからロックするよう修正（`activity/[id]` 等、通常の push 画面は対象外——
+   `record.tsx` には保持すべき下書き状態が無いことを確認したうえで、pathname を厳密に
+   チェックして record 以外は触らないようにした）
+2. **【低】自動 OFF のお知らせ（`Alert.alert`）が表示されない可能性**：
+   `disableAppLockDueToNoEnrollment` 内の `Alert.alert` が、ロック `Modal` の非表示と
+   ほぼ同時に呼ばれていた。iOS では画面の表示/非表示の遷移が重なると Alert が
+   表示されないことがある。`Alert.alert` の呼び出しをその場から `pendingAlertRef` へ
+   一旦退避し、`showingOverlay` が `true→false` に変わったことを検知する effect から
+   呼ぶよう変更（Modal が実際に閉じてから通知するため、確実性が上がる）
+
 #### Known gaps
 
 - **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの
   実機テストがそもそも必要（UI/UX §19 受け入れ条件「生体認証を無効にしている端末でも、
   端末パスコード等で解除できること」）。特に以下は実機でのみ最終確認できる：
   iOS Face ID ダイアログ・Android 端末パスコード画面と `AppState` の実際の遷移順序、
-  **記録用モーダル（`app/record.tsx`）を開いたままロックした場合に `Modal` オーバーレイが
-  確実に上に表示されること**、Android で `not_enrolled` が実際にどう返るか
+  **記録用モーダル（`app/record.tsx`）を開いたまま「Immediately」でロックし、
+  ロック解除後に記録用モーダルを閉じる一連の流れ**、Android で `not_enrolled` が
+  実際にどう返るか
 - **画面マスク（Recent Apps でのマスク）は未実装**：基本設計 §18 で App Lock の次の
   sub-item として明示的に分けられているため、今回は含めていない。ロック画面自体は
   実装したが、OS の Recent Apps スイッチャーに表示されるスナップショットに直前の

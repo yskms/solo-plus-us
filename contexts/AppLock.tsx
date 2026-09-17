@@ -20,8 +20,13 @@
  * native presentation layer, outside the root view hierarchy an
  * absolute-fill `View` covers. A `View` overlay could leave that modal
  * (or any future one) sitting *above* the lock screen, reachable while
- * "locked". `Modal`'s own native presentation stacks above other native
- * presentations reliably; unverified on-device (see README).
+ * "locked". But RN's `Modal` presents *from* the root view controller
+ * too — if `record` is already being presented from that same VC when
+ * this tries to present, the second `presentViewController` call
+ * silently fails, and toggling `visible` again later doesn't retry it.
+ * So `record` is dismissed first (see the `router.dismiss()` call below)
+ * whenever locking would otherwise leave it open underneath. Unverified
+ * on-device either way (see README).
  *
  * No app-specific PIN, no bypass — `expo-local-authentication` (device
  * biometrics, falling back to device passcode by default) is the only way
@@ -36,6 +41,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, AppState, Modal, StyleSheet, View, type AppStateStatus } from 'react-native';
+import { router, usePathname } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../constants/theme';
 import { useDatabase } from './DatabaseContext';
@@ -72,6 +78,9 @@ export function useAppLockActions(): AppLockActionsContextValue {
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   const db = useDatabase();
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   const [enabled, setEnabled] = useState(false);
   const [timing, setTiming] = useState<AppLockTiming>('immediately');
@@ -86,6 +95,11 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<LocalAuthentication.LocalAuthenticationError | null>(null);
 
   const backgroundedAtRef = useRef<number | null>(null);
+  // Set by `disableAppLockDueToNoEnrollment`, flushed by the effect below
+  // once the lock Modal has actually cleared — see that function's own
+  // comment for why calling `Alert.alert` directly, in the same tick as
+  // hiding the Modal, isn't reliable.
+  const pendingAlertRef = useRef<{ title: string; message: string } | null>(null);
   // A plain ref, not just the `authenticating` state: the AppState
   // listener below reads this synchronously and must see the update the
   // instant an authentication attempt starts/stops, not after React's
@@ -163,10 +177,20 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     setEnabled(false);
     setLocked(false);
     setAuthError(null);
-    Alert.alert(
-      'App Lock turned off',
-      'This device no longer has a passcode, fingerprint, or face unlock set up, so App Lock has been turned off to keep your records accessible.',
-    );
+    // Deferred rather than called here directly: this runs while the lock
+    // Modal's dismiss is still in flight (`visible` has only just flipped
+    // to `false` in the same tick), and iOS can silently drop an Alert
+    // presented while another presentation/dismissal transition is
+    // mid-flight. The effect below fires only once the Modal has actually
+    // stopped being shown, which is the one thing that has to be true
+    // before this Alert reliably appears — this is the only way the
+    // person finds out App Lock was turned off without their action, so
+    // it can't just be skipped if the timing is unlucky.
+    pendingAlertRef.current = {
+      title: 'App Lock turned off',
+      message:
+        'This device no longer has a passcode, fingerprint, or face unlock set up, so App Lock has been turned off to keep your records accessible.',
+    };
   }, [db]);
 
   const attemptUnlock = useCallback(async () => {
@@ -240,6 +264,23 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         }
       } else if (next === 'active' && backgroundedAtRef.current !== null) {
         if (shouldLockOnResume({ enabled, timing, backgroundedAtMs: backgroundedAtRef.current, nowMs: Date.now() })) {
+          if (pathnameRef.current === '/record') {
+            // record.tsx (`presentation: 'modal'`) is a genuinely separate
+            // native presentation on iOS. The <Modal> below presents from
+            // the *root* view controller — if record's modal is already
+            // being presented from that same root VC, a second
+            // `presentViewController` call silently fails (UIKit logs a
+            // warning, shows nothing), and toggling `visible` again later
+            // doesn't retry it: the lock screen would never appear, while
+            // record's modal stays fully interactive underneath. Dismiss
+            // it first so the root VC is free by the time the lock Modal
+            // tries to present. record.tsx has no draft state worth
+            // preserving (just two buttons) — unlike a regular pushed
+            // screen (e.g. Activity Detail), which this deliberately
+            // leaves alone by checking the exact pathname rather than
+            // dismissing indiscriminately.
+            router.dismiss();
+          }
           setLocked(true);
         }
         backgroundedAtRef.current = null;
@@ -259,6 +300,22 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   }, [enabled, timing, refreshAppLockSettings]);
 
   const showingOverlay = settingsStatus !== 'ready' || (enabled && locked);
+
+  // Flushes `pendingAlertRef` only on the transition *into* `false` (the
+  // Modal just closed), not on every render where it happens to be
+  // false — otherwise a re-render for an unrelated reason after the
+  // alert already fired would never re-show it (the ref is cleared right
+  // after), but nothing here would be wrong either way; this just keeps
+  // the alert tied to an actual "the overlay just went away" event.
+  const wasShowingOverlayRef = useRef(showingOverlay);
+  useEffect(() => {
+    if (wasShowingOverlayRef.current && !showingOverlay && pendingAlertRef.current) {
+      const { title, message } = pendingAlertRef.current;
+      pendingAlertRef.current = null;
+      Alert.alert(title, message);
+    }
+    wasShowingOverlayRef.current = showingOverlay;
+  }, [showingOverlay]);
 
   return (
     <AppLockActionsContext.Provider value={{ refreshAppLockSettings, authenticate }}>
