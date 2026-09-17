@@ -13,6 +13,20 @@ import { useColorScheme } from 'react-native';
 export interface ThemeColors {
   solo: string;
   partnered: string;
+  /**
+   * A darker/more saturated variant of `partnered`, for text and small
+   * graphical indicators (dots, icons) where `partnered` itself doesn't
+   * reach WCAG's 3:1 minimum (1.4.11 non-text contrast / 1.4.3 large
+   * text) against `background`/`surface` in the light theme (~1.8-1.95:1
+   * either way — filled or outlined makes no difference to this ratio).
+   * `partnered` stays the soft brand color for larger surfaces and
+   * decorative use (e.g. `IntersectPlus`, where WCAG's logo exception
+   * applies); use `partneredStrong` wherever the color itself is what
+   * conveys "Partnered" and needs to be legible on its own. The dark
+   * theme's `partnered` already clears 3:1 by a wide margin, so
+   * `partneredStrong` there is the same value as `partnered`.
+   */
+  partneredStrong: string;
   intersection: string;
 
   background: string;
@@ -29,6 +43,7 @@ export interface ThemeColors {
 export const lightColors: ThemeColors = {
   solo: '#2E7D6B',
   partnered: '#F4A699',
+  partneredStrong: '#92635B',
   intersection: '#3E5F58',
 
   background: '#F8F7FA',
@@ -45,6 +60,7 @@ export const lightColors: ThemeColors = {
 export const darkColors: ThemeColors = {
   solo: '#4FA890',
   partnered: '#F0B2A6',
+  partneredStrong: '#F0B2A6',
   intersection: '#7FB3A6',
 
   background: '#121615',

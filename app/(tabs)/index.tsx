@@ -4,7 +4,7 @@
  * the single most important control in the app — the Record FAB
  * (§7.1 "基本記録は2タップ以内を目標とする").
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -56,18 +56,17 @@ export default function TodayScreen() {
     setLastActivity(recentActivities[0] ?? null);
   }, [db]);
 
+  // A single effect for both reasons to reload (focus, and Undo's revision
+  // bump — contexts/DataRevision.tsx, which runs on this screen without any
+  // navigation happening) rather than a separate plain `useEffect`
+  // alongside this: that would fire its own extra reload on every mount,
+  // duplicating the one `useFocusEffect` already does. See
+  // app/(tabs)/calendar.tsx for the same pattern.
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload]),
+    }, [reload, revision]),
   );
-
-  // Undo runs on this screen without any navigation happening, so
-  // `useFocusEffect` above never re-fires for it — `revision` is the
-  // explicit signal for that case (contexts/DataRevision.tsx).
-  useEffect(() => {
-    reload();
-  }, [revision, reload]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
@@ -89,7 +88,7 @@ export default function TodayScreen() {
               </View>
               <View style={styles.metricsRow}>
                 <MetricCard value={counts.solo} label="Solo" color={colors.solo} />
-                <MetricCard value={counts.partnered} label="Partnered" color={colors.partnered} />
+                <MetricCard value={counts.partnered} label="Partnered" color={colors.partneredStrong} />
               </View>
             </>
           )}

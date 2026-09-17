@@ -9,9 +9,9 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 
 ## ステータス
 
-設計文書は **v0.11** で確定済み。実装は **Phase 1**（`phase1/foundation` ブランチ）着手中。
-現状は「暗号化 DB → Migration runner → スキーマ → Repository → Quick Record → Undo → 履歴 →
-Export/Import の往復」まで実装・テスト済み。詳細は下記「Phase 1 実装状況」を参照。
+設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
+Repository → Quick Record → Undo → 履歴 → Export/Import の往復）はクローズ済み。
+現在は **Phase 2**（Calendar）に着手中。詳細は下記「Phase 1 実装状況」「Phase 2 実装状況」を参照。
 
 ## ドキュメント
 
@@ -249,11 +249,13 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 - **iOS の DB 配置**：Documents ではなく Library/Application Support の方が用途に適しているという
   指摘は妥当だが、expo-file-system に対応する高レベル API が無く、プラットフォーム間で安全に
   パスを組み立てる手段が未確認のため、バックアップ除外の実装と合わせて Phase 3 で対応する
-- **日時編集 UI**：過去日時への記録・編集（§12/§4.4）は未実装。ネイティブの日時ピッカーを追加する前に
-  まず SQLCipher 配線を実機で確認したかったため、意図的に後回し
+- **日時編集 UI**：過去日時への記録・編集（§11.4/§4.4）は未実装。ネイティブの日時ピッカーを追加する前に
+  まず SQLCipher 配線を実機で確認したかったため、意図的に後回し。基本設計 §18 の Phase 1〜4 に
+  明記が無かったため Phase 2 レビューで指摘され、**Phase 3 に割り当てる**ことを決定（App Lock /
+  Recovery 画面 / 画面マスク / Export・Import UI と並行）。実機ビルドが通ることが前提
 - **Settings 画面一式**：Activity Details カスタマイズ、App Lock、Health Connect、Data(Export/Import UI)
   はいずれも Phase 3。`ExportService`/`ImportService` は実装・テスト済みだが、呼び出す UI がまだ無い
-- **Calendar / Insights**：プレースホルダーのみ（Phase 2/3）
+- **Insights**：プレースホルダーのみ（Phase 3。合計・内訳・平均間隔、§14 の統計定義）
 - **Health Connect 同期の実行部分**：`HealthConnectService` / `SyncWorker` は未実装（Phase 4）。
   ジョブのキューイング自体（`ActivityService` → `health_sync_jobs`）は実装・テスト済みで、
   `healthConnect.enabled` が既定 `false` のため実際には空のまま動く
@@ -273,3 +275,129 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
   ESLint 設定自体が無く、導入するとリポジトリ全体に対する既存コードの棚卸しが別途必要になるため、
   今回のバグ修正とは別スコープとして見送った。特に `connection.ts` のように native module 依存で
   Jest 検証ができないファイルほど、この種の静的チェックの価値が高い
+
+## Phase 2 実装状況
+
+`phase2/calendar` ブランチ（`phase1/foundation` からの派生。`phase1/foundation` は `main` にマージ
+済み）。基本設計 §18 の Phase 2 は「Calendar → 月次統計 → Activity Detail（詳細項目）」だが、
+月次統計（Today の THIS MONTH 集計）と Activity Detail の詳細項目編集（Orgasm/Ejaculation/
+Protection/Duration/Mood/Notes）は Phase 1 の時点で既に実装済みだったため、Phase 2 で新規に
+着手したのは **Calendar 画面**（UI/UX §13）のみ。
+
+### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `lib/calendarGrid.ts` | 月グリッドの純粋関数（週の開始曜日・月またぎ・閏年を考慮した日数計算）。DB/native 依存なしで単体テスト可能 |
+| `lib/timeFormat.ts` | `preferences.timeFormat`（12h/24h）に従った時刻表示。Activity Detail の日時表示もこれに合わせて修正（従来は 12h 固定だった） |
+| `lib/relativeDate.ts` | `formatMonthDay`（"Sep 14" 形式）を追加。`ActivityRow` にあった同等のプライベート実装を置き換え |
+| `app/(tabs)/calendar.tsx` | 月表示グリッド・前月/次月ナビゲーション・日別ドット（§13「同日複数」の1-2件個別ドット/3件以上まとめ表示ルールに準拠）・日付タップで一覧表示・Activity Detail への遷移 |
+
+`findActivitiesByDateRange`（Phase 1 で実装済み）をそのまま利用し、月内の Activity を1回のクエリで
+取得してクライアント側で日付ごとにグルーピングする方式とした。新規の Repository/Service 関数は
+追加していない。
+
+### アクセシビリティ上の判断
+
+月グリッドの各日の活動ドットは、Solo を塗りつぶし・Partnered を輪郭のみ（中抜き）にして、
+色だけでなく**形**でも区別する（§24 A3「色覚に依存せず識別できる」、§13「色＋activity indicator
+で識別」）。当初は色分けのみ＋各セルの `accessibilityLabel` で済ませていたが、ラベルはスクリーン
+リーダー利用者にしか届かず、色覚特性のある晴眼の利用者は日ごとにタップしないと区別できないという
+レビュー指摘を受けて修正した。3件以上をまとめた「● 3」は特定の活動の context を主張する表示では
+ないため、この区別ルールの対象外とした（§13 の "● 3" 表記そのままの簡略化）。
+
+今日の日付・選択中の日は、色に加えて太字（今日）・枠線（選択中、`accessibilityState.selected` も
+付与）で示し、同様に色だけに依存しないようにしている。
+
+### テスト
+
+```
+lib/__tests__/calendarGrid.test.ts   月グリッドの境界値（週開始・月末パディング・閏年・年またぎ）
+lib/__tests__/timeFormat.test.ts     12h/24h 変換（0時・12時の境界を含む）
+lib/__tests__/relativeDate.test.ts   formatMonthDay を追加
+```
+
+`app/(tabs)/calendar.tsx` 自体（React コンポーネント）はユニットテスト対象外——このプロジェクトに
+コンポーネントテスト基盤（React Native Testing Library 等）がまだ無いため。ロジックを極力
+`lib/calendarGrid.ts`/`lib/timeFormat.ts` に切り出すことで、画面側は「取得したデータを並べるだけ」
+に留めている。
+
+### レビューで見つかり、修正したもの（1回目）
+
+1. **【中】月を素早く切り替えると古い月の結果で表示が上書きされる**：`reload` は表示中の月に
+   依存する非同期処理で、切り替えを待たずに次の月へ移ると、後から解決した古い月の問い合わせが
+   新しい月のデータを上書きしうる状態だった。さらに `visible` が変わるたびに `reload` の
+   identity も変わり、`useFocusEffect` と別の `useEffect` の両方が反応して月切り替え1回につき
+   問い合わせが2回走る構造になっており、競合が起きやすくなっていた。問い合わせごとに連番の
+   id を持たせ、より新しい呼び出しが始まっていたら結果を捨てるよう修正。あわせて別々だった
+   2つの effect を1つの `useFocusEffect` に統合し、月切り替えのたびに二重に問い合わせが
+   走らないようにした
+2. **【中】ドットが色のみで Solo/Partnered を区別しており A3 の受け入れ基準と不整合**：
+   上記「アクセシビリティ上の判断」参照。塗りつぶし/輪郭の形の区別に修正
+3. **【中】選択中の日の視認性とアクセシビリティ状態**：ライトテーマで選択時の背景色 `surface`
+   （#FFFFFF）と画面背景 `background`（#F8F7FA）がほぼ同じで見分けにくかったため、背景の塗り
+   ではなく枠線（`colors.solo`）に変更。`accessibilityState={{ selected }}` も追加。今日の
+   日付も色だけでなく太字で示すよう修正
+4. **【低】設定読み込み前にグリッドが月曜始まりで一瞬描画され、後で並び替わる**：
+   `firstDayOfWeek` の初期値を `'monday'` という推測値ではなく `null`（未取得）にし、
+   実際の設定が読み込まれるまで曜日ヘッダーとグリッド自体を描画しないよう修正
+
+### レビューで見つかり、修正したもの（2回目）
+
+1回目の修正自体から新たに生まれた問題が中心。
+
+1. **【中】Partnered の中抜きドットがライトテーマでほとんど見えない**：#2（1回目）で形による
+   区別に直した際、コントラスト比を確認していなかった。`colors.partnered`（`#F4A699`）は
+   `colors.background`（`#F8F7FA`）に対して約 1.8:1 しかなく、WCAG 1.4.11 の図形要素基準
+   3:1 を下回る。中抜き（輪郭のみ）はこの比率がそのまま見た目に直結するため、以前の塗りつぶし
+   よりむしろ見えにくくなっていた。`colors.solo` は同条件で約 4.6:1 あるため、**中抜きにする
+   context を Solo 側に入れ替え**、Partnered は塗りつぶしのまま残した（ダークテーマは双方とも
+   問題なし）
+2. **【中】「● 3」以上のまとめ表示が Solo/Partnered のどちらかの単独ドットと同じ形に見える**：
+   3件以上をまとめた表示がただの塗りつぶし丸だったため、色の区別がつきにくい利用者には
+   「その context が3件」のように誤読されうる状態だった。ドット自体をやめ、件数の文字のみを
+   表示するよう修正（内訳を主張しない表示であることが形からも明確になる）
+3. **【中】初回読み込みに失敗すると、エラー表示も出ないまま空白になる**：#4（1回目）の修正で
+   `firstDayOfWeek` が読めるまでグリッドを描画しない形にしたが、読み込み自体が失敗した場合に
+   `firstDayOfWeek` が `null` のまま残り、グリッドもエラーメッセージも出ない状態になっていた。
+   また読み込み中は `byDate` が空のままのため、選択中の日の一覧に一瞬「記録なし」の
+   EmptyState が表示されてから実際のデータに切り替わる問題もあった。`loading`/`ready`/`error`
+   の3状態を持たせ、読み込み中・失敗時はグリッドと日別一覧の代わりに状態を示すメッセージを
+   表示するよう修正
+4. **【低】Phase 3 への割り当てが README にしか反映されていなかった**：基本設計 §18・UI/UX §27
+   の開発順序表にも「日時編集 UI」を Phase 3 として追記し、設計文書の優先順位
+   （設計判断記録 > 各設計文書の本文 > README）どおり正本を更新した
+5. **【低】Today 画面に Calendar で直した二重 effect のパターンが残っていた**：`useFocusEffect`
+   と別の `useEffect([revision, reload])` の両方を持っていたため、マウント時に読み込みが2回
+   走っていた（競合は起きないが Calendar の1回目修正と矛盾するパターン）。Calendar と同じ、
+   単一の `useFocusEffect` に `revision` を依存配列で含める形に統一
+
+### レビューで見つかり、修正したもの（3回目）
+
+1回目の「形を入れ替えれば解決する」という判断が誤りだった、という指摘。
+
+1. **【中】Partnered の色は塗りつぶしにしてもコントラスト基準を満たさず、他画面にも波及していた**：
+   WCAG 1.4.11 の 3:1 は図形と背景の差そのものへの基準であり、塗りつぶしか中抜きかは関係ない。
+   `#F4A699` は `background`（#F8F7FA）に対して約1.83:1、`surface`（#FFFFFF）に対して約1.95:1
+   しかなく、2回目の「中抜きにする側を入れ替える」修正だけでは実際には解決していなかった。
+   同じ `colors.partnered` は `app/(tabs)/index.tsx` の Today 月次件数（32px 太字、WCAG 1.4.3
+   の大きな文字 3:1 も未達）、`ActivityBadge`、`record.tsx` の選択ドットでも使われており、
+   Calendar 固有ではなく色トークン自体の問題だった。`constants/theme.ts` に
+   `partneredStrong`（Light: `#92635B`、`background`/`surface` に対しそれぞれ約4.73:1/5.05:1）
+   を追加し、文字色・小さな図形要素としての用途をこちらに切り替えた。`partnered` はブランドの
+   面の色・装飾用途（`IntersectPlus` 等）として残置。UI/UX §3 のカラートークン表・Semantic
+   usage にも追記した（ブランドマーク `IntersectPlus` は WCAG のロゴ除外に該当するため対象外）
+
+### Known gaps
+
+- **実機での見た目の確認が未実施**：iOS は Xcode/Swift ツールチェーン問題（上記参照）でブロック中。
+  Android はエミュレータ未セットアップ（AVD 未作成）で、かつこの Mac の空き容量が 6.4GB と、以前
+  iOS シミュレータのダウンロードをブロックした容量不足と同水準。月グリッドのレイアウト・ドットの
+  視認性・日別一覧のスクロール挙動、および §24 A1「最大 Dynamic Type でも要素が切れない」・
+  幅 320dp での表示は、いずれかのビルド経路が開通してから確認する
+- **【Phase 3 申し送り】`solo` と `partneredStrong` は明るさがほぼ同じ（約 1.02:1）**：
+  3回目レビューで判明。色相のみの違いになっており、色覚特性がある場合やグレースケール表示では
+  ほぼ区別がつかない。現状の使用箇所（Calendar のドットの形・テキストラベル併記）では実害がないが、
+  **Insights（Phase 3）で Solo/Partnered を色分けしたグラフ（棒グラフ等）を作る際は、模様や
+  ラベルなど色以外の手段を併用するか、明るさが十分に異なるグラフ専用の配色を別途用意すること**
+  （UI/UX §24 A3「色に頼らない識別」・A4「グラフと同じ情報をテキストでも取得できる」に関わる）

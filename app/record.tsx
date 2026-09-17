@@ -72,7 +72,7 @@ export default function RecordScreen() {
           { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed || saving ? 0.7 : 1 },
         ]}
       >
-        <View style={[styles.dot, { backgroundColor: colors.partnered }]} />
+        <View style={[styles.dot, { backgroundColor: colors.partneredStrong }]} />
         <View>
           <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Partnered</Text>
           <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>With someone</Text>

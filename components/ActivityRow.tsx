@@ -3,13 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useTheme, minTouchTarget } from '../constants/theme';
 import { ActivityBadge } from './ActivityBadge';
+import { formatMonthDay } from '../lib/relativeDate';
 import type { Activity } from '../types/Activity';
-
-function formatMonthDay(localDate: string): string {
-  const [, m, d] = localDate.split('-').map(Number);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[m - 1]} ${d}`;
-}
 
 export function ActivityRow({ activity }: { activity: Activity }) {
   const { colors } = useTheme();

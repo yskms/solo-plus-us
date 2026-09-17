@@ -10,7 +10,7 @@ import type { ActivityContext } from '../types/Activity';
 
 export function ActivityBadge({ context }: { context: ActivityContext }) {
   const { colors } = useTheme();
-  const dotColor = context === 'solo' ? colors.solo : colors.partnered;
+  const dotColor = context === 'solo' ? colors.solo : colors.partneredStrong;
 
   return (
     <View style={styles.row}>

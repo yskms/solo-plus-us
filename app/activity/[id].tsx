@@ -15,17 +15,17 @@ import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as ActivityService from '../../services/ActivityService';
+import { getSetting } from '../../services/SettingsRepository';
 import { contextLabel } from '../../lib/labels';
+import { formatLocalTime } from '../../lib/timeFormat';
 import { logError } from '../../lib/log';
 import type { Activity } from '../../types/Activity';
+import type { TimeFormat } from '../../types/Settings';
 
-function formatDateTime(activity: Activity): string {
+function formatDateTime(activity: Activity, timeFormat: TimeFormat): string {
   const [y, m, d] = activity.occurredLocalDate.split('-').map(Number);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const [hh, mm] = activity.occurredLocalTime.split(':').map(Number);
-  const period = hh < 12 ? 'AM' : 'PM';
-  const hour12 = hh % 12 === 0 ? 12 : hh % 12;
-  return `${months[m - 1]} ${d}, ${y} · ${hour12}:${String(mm).padStart(2, '0')} ${period}`;
+  return `${months[m - 1]} ${d}, ${y} · ${formatLocalTime(activity.occurredLocalTime, timeFormat)}`;
 }
 
 function TriState({
@@ -124,11 +124,16 @@ export default function ActivityDetailScreen() {
   const [durationTouched, setDurationTouched] = useState(false);
   const [note, setNote] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
 
   const load = useCallback(async () => {
     if (!id) return;
-    const found = await ActivityRepository.findActivityById(db, id);
+    const [found, tf] = await Promise.all([
+      ActivityRepository.findActivityById(db, id),
+      getSetting(db, 'preferences.timeFormat'),
+    ]);
     setActivity(found);
+    setTimeFormat(tf);
     if (found) {
       setOrgasm(found.orgasm);
       setEjaculation(found.ejaculation);
@@ -220,7 +225,7 @@ export default function ActivityDetailScreen() {
 
         <View style={styles.fieldBlock}>
           <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>DATE & TIME</Text>
-          <Text style={[styles.dateTimeText, { color: colors.textPrimary }]}>{formatDateTime(activity)}</Text>
+          <Text style={[styles.dateTimeText, { color: colors.textPrimary }]}>{formatDateTime(activity, timeFormat)}</Text>
         </View>
 
         <TriState label="Orgasm" value={orgasm} onChange={setOrgasm} colors={colors} />

@@ -21,3 +21,14 @@ export function formatRelativeLocalDate(activityLocalDate: string, todayLocalDat
   if (diff === 1) return 'Yesterday';
   return `${diff} days ago`;
 }
+
+const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** e.g. "Sep 14" — no year, for compact lists (Recent, Calendar's day panel). */
+export function formatMonthDay(localDate: string): string {
+  if (!isValidLocalDate(localDate)) {
+    throw new ValidationError(`Not a valid local date: ${localDate}`);
+  }
+  const [, m, d] = localDate.split('-').map(Number);
+  return `${MONTH_ABBREVIATIONS[m - 1]} ${d}`;
+}
