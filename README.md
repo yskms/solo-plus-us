@@ -198,13 +198,44 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
     例外が発生すると、その例外がそのまま上に伝播し、本来投げるはずだった migration 失敗の
     原因が握り潰されていた。`restoreBackup()` の呼び出しを try/catch で囲み、失敗時は
     `migrationError`（元の migration 失敗）と `restoreError`（復元自体の失敗）の両方を
-    `cause` に保持した新しいエラーを投げるよう修正。v2 以降で両方の失敗が重なった場合の
-    デバッグ時に両方の原因を確認できる
+    フィールドに持つ `MigrationRestoreFailedError`（`lib/errors.ts`）を投げるよう修正。
+    v2 以降で両方の失敗が重なった場合のデバッグ時に両方の原因を確認できる
 
 いずれも v2 以降の migration が失敗した場合にしか到達しない経路だが、`connection.ts` /
 `migrations/index.ts` を触っているうちに合わせて対処。#22 は `connection.ts` 内の
 ファイル操作のみのため Jest では検証不可（既知の制約、下記参照）、#23 は
 `database/migrations/__tests__/index.test.ts` にテストを追加して検証済み。
+
+### 5回目のレビューで見つかったもの
+
+24. **【高】#22 の修正自体に、コピー未完了のまま次の処理へ進むバグがあった**：
+    `expo-file-system` の `File.copy()` は `Promise<void>` を返す非同期メソッドだが（同期版は
+    `copySync()`）、`restoreMigrationBackup()` は同期関数で `backup.copy(temp)` を await せずに
+    呼んでいたため、コピーの完了を待たずに `dbFile` の削除・一時ファイルの move・`backup` の削除まで
+    進んでしまっていた。最悪の場合、壊れた DB だけが残りバックアップも消える、#22 で防ごうとした
+    「消えて見える」よりも実際に悪いデータ消失になりうる不具合。`tsc` は Promise を待たずに捨てても
+    型エラーにしないため検出できなかった。`backup.copySync(temp)` に置き換えて修正。この関数を
+    移動元の `restoreMigrationBackup()` 導入時（#22）から潜在していた既存バグで、直前のレビューでも
+    見落としていたもの
+25. **【低】cause の実機（Hermes）対応が未確認**：#23 で使った `new Error(msg, { cause })` の
+    第2引数を Hermes が実機でサポートしているかは未確認（この Mac の Xcode/Swift 環境では実機ビルド
+    自体ができないため検証不可）。未対応の場合 cause は黙って捨てられ、両方のエラー情報が失われる。
+    `MigrationRestoreFailedError`（`lib/errors.ts`）という専用クラスに変更し、
+    `migrationError`/`restoreError` を通常のプロパティとして保持するよう修正。実行環境に依存しなくなり、
+    `DatabaseContext` 側でもこの状態を専用の見出しで判別できるようにした
+26. **【低】「DB とバックアップが両方ある」場合のコメントが実態と一部違う**：
+    `recoverInterruptedRestoreIfNeeded()` の該当コメントは「復元は終わり、後片付けだけが残った」
+    場合のみを説明していたが、migration 実行中（`restoreMigrationBackup` に入る前）にアプリが
+    強制終了された場合も同じ状態になりうる。各 migration が個別トランザクションのため、
+    どちらの場合も `backup` を消してよい（DB の整合性は保たれ、次回起動時に現在の `user_version` から
+    再開する）ことに変わりはないが、将来トランザクション外のステップを持つ migration を書く際に
+    誤った前提にならないよう、両方のケースを正確にコメントへ書き直した
+
+#24 は v2 を待たずすぐ直す必要があると指摘された高優先度の修正（copy → copySync のみで完結）。
+#25 の副作用として `contexts/DatabaseContext.tsx` にも `MigrationRestoreFailedError` 用の
+見出し分岐を追加。レビューでは合わせて ESLint の `@typescript-eslint/no-floating-promises` 導入も
+提案されたが、本プロジェクトには ESLint 設定自体がまだ無く、新規導入は今回のバグ修正とは別スコープの
+作業のため見送り、Known gaps に記録するに留めた。
 
 ### Known gaps（意図的に未実装）
 
@@ -237,3 +268,8 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 - **実機 / シミュレータでの起動確認**：`pod install` の成功までは確認済み。Xcode の Swift
   ツールチェーンが古く（上記参照）、`expo run:ios` によるビルド・起動は未実施。Android 側の
   実機 / エミュレータ起動、Gradle ビルド（SQLCipher 分岐の実行）も未実施
+- **ESLint 未導入**：レビューで `@typescript-eslint/no-floating-promises` の導入を提案された
+  （#24 のような、await し忘れた Promise を `tsc` は検出しないため）。妥当な指摘だが、本プロジェクトは
+  ESLint 設定自体が無く、導入するとリポジトリ全体に対する既存コードの棚卸しが別途必要になるため、
+  今回のバグ修正とは別スコープとして見送った。特に `connection.ts` のように native module 依存で
+  Jest 検証ができないファイルほど、この種の静的チェックの価値が高い

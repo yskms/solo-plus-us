@@ -54,3 +54,26 @@ export class SchemaTooNewError extends Error {
     this.name = 'SchemaTooNewError';
   }
 }
+
+/**
+ * §7.2 — a migration failed *and* the attempt to restore the pre-migration
+ * backup also failed. Two independent causes are relevant to debugging
+ * this (why the migration broke, and separately why the restore couldn't
+ * recover from that), so both are kept as plain fields rather than via the
+ * ES2022 `Error` `cause` option: that option's support on Hermes-on-device
+ * is unverified (this app cannot currently build to a device — see
+ * README), and if unsupported it would fail silently, discarding both
+ * errors with no indication anything was lost. Plain constructor
+ * arguments have no such runtime-support question.
+ */
+export class MigrationRestoreFailedError extends Error {
+  readonly migrationError: unknown;
+  readonly restoreError: unknown;
+
+  constructor(migrationError: unknown, restoreError: unknown) {
+    super('Migration failed, and restoring the pre-migration backup also failed.');
+    this.name = 'MigrationRestoreFailedError';
+    this.migrationError = migrationError;
+    this.restoreError = restoreError;
+  }
+}

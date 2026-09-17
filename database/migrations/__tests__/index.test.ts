@@ -1,5 +1,5 @@
 import { runMigrations, type Migration, type MigrationExecutor, type MigrationTransactor } from '../index';
-import { SchemaTooNewError } from '../../../lib/errors';
+import { MigrationRestoreFailedError, SchemaTooNewError } from '../../../lib/errors';
 
 /**
  * A fake DB that behaves like op-sqlite closely enough to test the
@@ -171,11 +171,11 @@ describe('runMigrations', () => {
       thrown = error;
     }
 
-    expect(thrown).toBeInstanceOf(Error);
-    const cause = (thrown as Error).cause as { migrationError: unknown; restoreError: unknown };
-    expect(cause.migrationError).toBeInstanceOf(Error);
-    expect((cause.migrationError as Error).message).toBe(migrationError.message);
-    expect(cause.restoreError).toBe(restoreError);
+    expect(thrown).toBeInstanceOf(MigrationRestoreFailedError);
+    const failure = thrown as MigrationRestoreFailedError;
+    expect(failure.migrationError).toBeInstanceOf(Error);
+    expect((failure.migrationError as Error).message).toBe(migrationError.message);
+    expect(failure.restoreError).toBe(restoreError);
     expect(deleteBackup).not.toHaveBeenCalled();
   });
 });

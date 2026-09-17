@@ -15,7 +15,7 @@ import { getDatabase, wasRestoredFromFailedMigration } from '../database/connect
 import { clearAllClaims } from '../repositories/HealthSyncJobRepository';
 import { hasSeenPrivacyIntro } from '../lib/onboarding';
 import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
-import { DatabaseKeyUnavailableError } from '../lib/errors';
+import { DatabaseKeyUnavailableError, MigrationRestoreFailedError } from '../lib/errors';
 import { useTheme } from '../constants/theme';
 
 type DatabaseState =
@@ -66,13 +66,21 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     // Full Recovery bootstrap (§8.5/§8.8, D-26) is Phase 3 — this is a
     // deliberately plain fallback so a decrypt/open failure never renders
     // a blank screen or a native crash, without yet offering the actual
-    // restore-or-reset choice. The two known error types get a headline
-    // that names what's actually true (key lost vs. downgraded), rather
-    // than one generic message for every cause.
+    // restore-or-reset choice. Known error types get a headline that names
+    // what's actually true, rather than one generic message for every
+    // cause. `MigrationRestoreFailedError` specifically means a v2+
+    // migration failed *and* the fallback restore also failed — unlike
+    // `wasRestoredFromFailedMigration()` (migration failed but restore
+    // succeeded, app keeps running on the old schema), this is the case
+    // where neither succeeded and `getDatabase()` never returned a `db` at
+    // all.
     const isKeyUnavailable = state.error instanceof DatabaseKeyUnavailableError;
+    const isMigrationRestoreFailure = state.error instanceof MigrationRestoreFailedError;
     const headline = isKeyUnavailable
       ? 'Solo + Us can’t unlock the records on this device.'
-      : 'Solo + Us couldn’t open its database on this device.';
+      : isMigrationRestoreFailure
+        ? 'Solo + Us couldn’t update its database, and couldn’t undo the attempt either.'
+        : 'Solo + Us couldn’t open its database on this device.';
     return (
       <View style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 24 }]}>
         <Text style={{ color: colors.textPrimary, fontSize: 16, textAlign: 'center' }}>{headline}</Text>

@@ -21,7 +21,7 @@
  *    concern, so it's injected rather than implemented here — see
  *    `database/connection.ts`.
  */
-import { SchemaTooNewError } from '../../lib/errors';
+import { MigrationRestoreFailedError, SchemaTooNewError } from '../../lib/errors';
 
 export interface MigrationExecutor {
   execute: (query: string, params?: (string | number | boolean | null)[]) => Promise<unknown>;
@@ -108,10 +108,9 @@ export async function runMigrations(
         // the second; a plain `throw restoreError` would discard the
         // first. Diagnosing a broken v2+ migration needs both — losing
         // either one halves the useful information at exactly the moment
-        // it matters most.
-        throw new Error('Migration failed, and restoring the pre-migration backup also failed.', {
-          cause: { migrationError: error, restoreError },
-        });
+        // it matters most. See MigrationRestoreFailedError for why this
+        // isn't done via the standard `Error` `cause` option instead.
+        throw new MigrationRestoreFailedError(error, restoreError);
       }
     }
     throw error;

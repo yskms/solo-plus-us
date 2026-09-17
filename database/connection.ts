@@ -159,7 +159,15 @@ function restoreMigrationBackup(): void {
 
   const temp = getRestoreTempFile();
   deleteIfExists(temp);
-  backup.copy(temp);
+  // `copySync`, not `copy` — this function is synchronous end-to-end on
+  // purpose (see call sites), and `copy()` returns a `Promise<void>` that,
+  // left un-awaited here, would let every line below run before the copy
+  // actually finished: `dbFile` gets deleted and `backup` gets deleted out
+  // from under a copy that's still in flight, which is real data loss (not
+  // just the appearance of it) rather than the failure mode this function
+  // exists to prevent. `tsc` does not flag an un-awaited Promise, so this
+  // was previously silent.
+  backup.copySync(temp);
 
   const dbFile = getDbFile();
   deleteIfExists(dbFile);
@@ -194,8 +202,22 @@ function recoverInterruptedRestoreIfNeeded(): void {
     return;
   }
   if (dbFile.exists && backup.exists) {
-    // The restore itself finished (dbFile is back); only the final
-    // cleanup step didn't run. Nothing to reconstruct — just tidy up.
+    // Two different histories land here, not one: either the restore
+    // itself finished (dbFile is back) and only the final cleanup step
+    // didn't run, *or* the app was killed while migrations were still
+    // being applied — before anything failed, so `restoreMigrationBackup`
+    // never ran at all — leaving the original backup untouched next to a
+    // dbFile that's partway through the pending migrations. Both are safe
+    // to resolve the same way: each migration commits its DDL and its
+    // `user_version` bump in one transaction (see migrations/index.ts), so
+    // dbFile is never left structurally inconsistent, only possibly behind
+    // the latest known version. Deleting the stale backup here is safe in
+    // both cases — the next `runMigrations` call reads whatever
+    // `user_version` dbFile actually has and, if there's still existing
+    // data and pending migrations, creates a fresh backup before touching
+    // it again. This reasoning assumes every migration step lives inside
+    // that per-migration transaction; a future migration with a
+    // transaction-outside step would need this rechecked.
     backup.delete();
   }
   if (dbFile.exists) {
