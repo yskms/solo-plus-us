@@ -271,6 +271,12 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       } else if (next === 'active' && backgroundedAtRef.current !== null) {
         if (shouldLockOnResume({ enabled, timing, backgroundedAtMs: backgroundedAtRef.current, nowMs: Date.now() })) {
           setLocked(true);
+          // `isLockedRef` is normally kept in sync on every render, but
+          // that leaves a brief window — between this call and React's
+          // next render — where it would still read `false`. Setting it
+          // directly here closes that window immediately, so `isLocked()`
+          // is correct even for a check that happens to land in that gap.
+          isLockedRef.current = true;
           // The underlying screen (e.g. Activity Detail's note field)
           // stays mounted and focused while locked — the keyboard is its
           // own native layer, and can otherwise reappear over the lock
