@@ -160,8 +160,34 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
     #10 と同種の「declined/uncertain な同期状態」概念が必要で、Phase 4 の設計判断として
     `discardJob` のコメントに記録（コード修正はせず、安全側の現状維持）
 
+### 3回目のレビューで見つかったもの
+
+18. **`openAndMigrate` の catch で接続を二重に閉じうる**：`restoreBackup` フック内で `db.close()`
+    した後 `restoreMigrationBackup()` が例外を投げると、`restoredFromBackup` が false のまま
+    catch に入り、同じ接続をもう一度 `close()` していた。2 回目の close が例外を投げると本来の
+    原因が上書きされて消える。`dbClosed` フラグで二重 close を防ぎ、close 自体の例外は握り潰して
+    元のエラーを必ず残すよう修正。あわせて、復元後の再オープン（`openConnection`→`applyPragmas`）
+    が失敗した場合にその接続を閉じていなかった漏れも修正
+19. **90 秒のように「60 の倍数でない」duration に注記が出ていなかった**：条件が
+    `durationSeconds < 60` だったため、90 秒は注記なしで「2」と表示されていた。
+    `durationSeconds % 60 !== 0` に変更し、丸めで値が変わりうるケース全てで注記を出すよう修正
+20. **【設計への申し送り】復元後もアプリが通常どおり書き込みを続ける**：`wasRestoredFromFailedMigration()`
+    のバナーで §7.2 の「エラーを表示する」は満たしたが、その後も書き込み系の操作は普通に動き続ける。
+    v2 で列を追加した場合、その列を前提にした INSERT が復元後の古いスキーマに対して毎回失敗し、
+    「Your existing records are safe」というバナーの文言と実際の挙動（記録できない）が食い違う
+    状態になりうる。**最初の v2 migration を作る前に、設計書で「復元状態では書き込みを止め、
+    読み取り/Export のみ許可する」等の方針を決める必要がある**。`database/connection.ts` の
+    `wasRestoredFromFailedMigration` 直上にコメントとして記録（コード修正はせず、決定待ち）
+21. **【実機確認待ち】`MigrationRestoredBanner` の表示位置**：`<Stack>` の外側で独自に
+    `SafeAreaView edges={['top']}` を使っているため、ヘッダー付き画面（Activity Detail 等）では
+    上端の安全領域確保が二重になる可能性がある。現状は到達しない経路のため、v2 migration の
+    検証時に実機で確認する
+
 ### Known gaps（意図的に未実装）
 
+- **【v2 migration の前に決定必須】復元状態での書き込み方針**：#20 参照。バナーで通知はするが、
+  書き込み操作自体は止めていない。最初の v2 migration を作る前に、設計書で読み取り専用モード等の
+  方針を決めること
 - **iOS のバックアップ除外**（D-07 の後半）：Android の `allowBackup=false` + `dataExtractionRules` は
   実装済みだが、iOS の `NSURLIsExcludedFromBackupKey` は expo-file-system の API に無く、小さな
   ネイティブモジュールが要る。未実装（DB は現状 Documents 配下に置かれ、iOS 側は iCloud/iTunes

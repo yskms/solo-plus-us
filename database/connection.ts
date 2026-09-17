@@ -165,6 +165,29 @@ export function wasRestoredFromFailedMigration(): boolean {
   return restoredFromBackupOnLastOpen;
 }
 
+/**
+ * Undecided design gap — resolve before the first v2 migration ships.
+ *
+ * `wasRestoredFromFailedMigration()` and `MigrationRestoredBanner` satisfy
+ * §7.2's "show an error" today, but the app otherwise keeps running
+ * completely normally after a restore: the code is written against the
+ * *current* (v2+) schema/types, while the restored file is still on the
+ * *old* (v1) schema. A v2 migration that adds a column, and Repository
+ * code that unconditionally references that column in every write, would
+ * make every record/edit fail with a generic error on every attempt — not
+ * a one-time notice, an ongoing broken state the banner alone doesn't
+ * convey ("your records are safe" is true; "but you can no longer add to
+ * them" isn't said anywhere).
+ *
+ * This needs an explicit decision, in the design docs, before v2 exists —
+ * not something to improvise here once a real migration is on the line.
+ * Candidate direction: when `wasRestoredFromFailedMigration()` is true,
+ * put the app in a read-only mode (Repository writes rejected up front
+ * with a clear reason, Export still allowed) until an app update ships a
+ * fixed migration — rather than letting every write path discover the
+ * schema mismatch independently, one confusing failure at a time.
+ */
+
 async function openAndMigrate(encryptionKey: string): Promise<DB> {
   const dir = getDbDirectory();
   if (!dir.exists) {
@@ -173,7 +196,26 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
 
   restoredFromBackupOnLastOpen = false;
   let db = openConnection(encryptionKey);
+  let dbClosed = false;
   let restoredFromBackup = false;
+
+  // Closing an already-closed (or already-broken) connection can itself
+  // throw on some SQLite bindings. Without tracking `dbClosed`, that
+  // second close — reached when `restoreBackup` below closes `db` and
+  // then `restoreMigrationBackup()` itself throws — would replace the
+  // *real* error (why the restore failed) with a confusing "close of a
+  // closed handle" one. `dbClosed` makes this a true no-op the second
+  // time, and any close-time exception is swallowed rather than allowed
+  // to mask whatever error is already being thrown.
+  const closeOnce = () => {
+    if (dbClosed) return;
+    dbClosed = true;
+    try {
+      db.close();
+    } catch {
+      // See comment above — never let this override the real error.
+    }
+  };
 
   try {
     // Deliberately inside the try: a wrong/corrupt key typically doesn't
@@ -186,7 +228,7 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
         createBackup: () => createMigrationBackup(db),
         deleteBackup: async () => deleteMigrationBackupIfPresent(),
         restoreBackup: async () => {
-          db.close(); // must happen before touching the file (see restoreMigrationBackup doc comment)
+          closeOnce(); // must happen before touching the file (see restoreMigrationBackup doc comment)
           restoreMigrationBackup();
           restoredFromBackup = true;
         },
@@ -198,17 +240,26 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
       // detected, decrypt failure, or the failure happened before
       // backup/restore ran at all) — nothing safe to continue with.
       // Close the handle so a caller that retries `getDatabase()` doesn't
-      // leak one connection per attempt.
-      db.close();
+      // leak one connection per attempt. A no-op if `restoreBackup`
+      // above already closed it before failing.
+      closeOnce();
       throw error;
     }
     // §7.2: reopen against the restored (pre-migration) file so the app
     // stays usable, but record that this happened — see
     // `wasRestoredFromFailedMigration` above. Does not retry the
     // migration that just failed (retrying here would fail identically
-    // and loop).
-    db = openConnection(encryptionKey);
-    await applyPragmas(db);
+    // and loop). If *this* reopen itself fails, close whatever got
+    // opened before propagating — otherwise a broken reopen leaks a
+    // connection the same way the original bug did.
+    try {
+      db = openConnection(encryptionKey);
+      dbClosed = false;
+      await applyPragmas(db);
+    } catch (reopenError) {
+      closeOnce();
+      throw reopenError;
+    }
     restoredFromBackupOnLastOpen = true;
   }
 

@@ -240,15 +240,17 @@ export default function ActivityDetailScreen() {
             placeholderTextColor={colors.textTertiary}
             style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border }]}
           />
-          {!durationTouched && activity.durationSeconds != null && activity.durationSeconds < 60 && (
-            // This field only edits whole minutes. Recorded durations under
-            // a minute round to "0" here, which reads as "not recorded" —
-            // say the real value so it isn't misread that way. Untouched,
-            // saving still keeps the exact original value (see
-            // `durationTouched` above); this is display-only.
+          {!durationTouched && activity.durationSeconds != null && activity.durationSeconds % 60 !== 0 && (
+            // This field only edits whole minutes, so any duration that
+            // isn't an exact multiple of 60s displays rounded here — not
+            // just the < 60s case (90s still shows "2"). Say the real
+            // value so the rounding is never mistaken for what's actually
+            // recorded. Untouched, saving still keeps the exact original
+            // value (see `durationTouched` above); this is display-only.
             <Text style={[styles.fieldCaption, { color: colors.textTertiary }]}>
-              Recorded as {activity.durationSeconds} seconds (less than 1 minute). Editing this field will replace it
-              with a whole number of minutes.
+              Recorded as {activity.durationSeconds} seconds, shown here as{' '}
+              {Math.round(activity.durationSeconds / 60)} min. Editing this field will replace it with a whole
+              number of minutes.
             </Text>
           )}
         </View>
