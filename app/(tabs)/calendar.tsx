@@ -4,16 +4,15 @@
  * each one opens Activity Detail (§10).
  *
  * Per §13 "Multiple activities": 1-2 activities on a day show one dot per
- * activity (colored by that activity's own context); 3+ collapse into a
- * single count ("● 3") rather than listing dots one by one.
- *
- * The month grid's dots are colored but carry no text label — normally a
- * hard rule (§3 "Solo/Partneredの判別を色だけに依存しないこと"), but every
- * dot is on a tappable day that immediately reveals the same information
- * as an accessible, labeled list below (and via each cell's
- * accessibilityLabel), so nothing is *only* conveyed by color.
+ * activity; 3+ collapse into a single count ("● 3") rather than listing
+ * dots one by one. Solo/Partnered on those individual dots is distinguished
+ * by shape (filled vs. hollow), not color alone — see `DayDots` — per §24
+ * A3 and §13 "色＋activity indicator で識別". An earlier version relied on
+ * color plus each cell's `accessibilityLabel`, but a label only reaches
+ * screen-reader users; a sighted person with a color-vision deficiency
+ * would still have had to tap every day to tell them apart.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,19 +44,32 @@ function todayLocalDate(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-/** Per-day summary: up to 2 individual dots, or a single collapsed "● N" for 3+ (§13). */
+/**
+ * Per-day summary: up to 2 individual dots, or a single collapsed "● N" for
+ * 3+ (§13). Solo is a filled dot, Partnered is a hollow (outlined) dot —
+ * shape, not just color, carries the distinction (UI/UX §24 A3, §13 "色＋
+ * activity indicator で識別"). The 3+ case collapses to a plain count and
+ * intentionally drops the per-activity breakdown, matching §13's own "● 3"
+ * mockup; it isn't asserting any one activity's context, so the
+ * color/shape rule for *distinguishing* Solo from Partnered doesn't apply
+ * to it the same way.
+ */
 function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors: ThemeColors }) {
   if (dayActivities.length === 0) return <View style={styles.dotRow} />;
 
   if (dayActivities.length <= 2) {
     return (
       <View style={styles.dotRow}>
-        {dayActivities.map((activity) => (
-          <View
-            key={activity.id}
-            style={[styles.dot, { backgroundColor: activity.context === 'solo' ? colors.solo : colors.partnered }]}
-          />
-        ))}
+        {dayActivities.map((activity) =>
+          activity.context === 'solo' ? (
+            <View key={activity.id} style={[styles.dot, { backgroundColor: colors.solo }]} />
+          ) : (
+            <View
+              key={activity.id}
+              style={[styles.dot, styles.dotHollow, { borderColor: colors.partnered, backgroundColor: colors.background }]}
+            />
+          ),
+        )}
       </View>
     );
   }
@@ -91,46 +103,67 @@ export default function CalendarScreen() {
   const [visible, setVisible] = useState({ year: todayYear, month: todayMonth });
   const [selectedLocalDate, setSelectedLocalDate] = useState<string | null>(today);
   const [byDate, setByDate] = useState<Map<string, Activity[]>>(new Map());
-  const [firstDayOfWeek, setFirstDayOfWeek] = useState<FirstDayOfWeek>('monday');
+  // `null` (not yet known) rather than a guessed 'monday' default — `grid`/
+  // `headerLabels` below wait on this instead of rendering once with a
+  // possibly-wrong week order and then re-flowing.
+  const [firstDayOfWeek, setFirstDayOfWeek] = useState<FirstDayOfWeek | null>(null);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
 
+  // Guards against two reloads racing: switching months quickly fires a
+  // new `reload` before the previous month's query has resolved, and
+  // nothing guarantees they resolve in the order they were started. Each
+  // call claims the next id; a result is only applied if no newer call has
+  // started since — otherwise an in-flight request for a month the user
+  // has already navigated away from could win the race and overwrite the
+  // correct, newer data with stale results for the wrong month.
+  const requestSeqRef = useRef(0);
+
   const reload = useCallback(async () => {
+    const requestId = ++requestSeqRef.current;
     try {
       const [fdow, tf] = await Promise.all([
         getSetting(db, 'preferences.firstDayOfWeek'),
         getSetting(db, 'preferences.timeFormat'),
       ]);
-      setFirstDayOfWeek(fdow);
-      setTimeFormat(tf);
 
       const { fromLocalDate, toLocalDate } = localDateRangeForMonth(visible.year, visible.month);
       const activities = await findActivitiesByDateRange(db, { fromLocalDate, toLocalDate });
+      if (requestSeqRef.current !== requestId) return; // superseded by a newer reload — discard
+
       const grouped = new Map<string, Activity[]>();
       for (const activity of activities) {
         const list = grouped.get(activity.occurredLocalDate) ?? [];
         list.push(activity);
         grouped.set(activity.occurredLocalDate, list);
       }
+      setFirstDayOfWeek(fdow);
+      setTimeFormat(tf);
       setByDate(grouped);
     } catch (error) {
+      if (requestSeqRef.current !== requestId) return;
       logError('Calendar reload failed', error);
     }
   }, [db, visible]);
 
+  // A single effect for every reason to reload (focus, month change, Undo's
+  // revision bump — contexts/DataRevision.tsx) rather than a separate plain
+  // `useEffect` alongside this: `reload`'s identity already changes with
+  // `visible`, and `useFocusEffect` re-runs whenever its callback's
+  // dependencies change even without a real focus transition. A second,
+  // independently-triggered effect here would fire its own extra reload on
+  // every month change — exactly the duplicate-request pattern that made
+  // the race above easy to hit in practice.
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload]),
+    }, [reload, revision]),
   );
 
-  // Undo (contexts/DataRevision.tsx) can change data without a navigation
-  // event — see app/(tabs)/index.tsx for the same pattern.
-  useEffect(() => {
-    reload();
-  }, [revision, reload]);
-
-  const grid = buildMonthGrid(visible.year, visible.month, firstDayOfWeek);
-  const headerLabels = weekdayHeaderLabels(firstDayOfWeek);
+  // Until the real setting loads, don't guess: building the grid with an
+  // assumed 'monday' and re-flowing it once 'sunday' arrives would flash a
+  // visibly different layout for Sunday-first users on every open.
+  const grid = firstDayOfWeek ? buildMonthGrid(visible.year, visible.month, firstDayOfWeek) : null;
+  const headerLabels = firstDayOfWeek ? weekdayHeaderLabels(firstDayOfWeek) : null;
   const selectedActivities = (selectedLocalDate ? byDate.get(selectedLocalDate) : undefined) ?? [];
   const sortedSelectedActivities = [...selectedActivities].sort((a, b) =>
     a.occurredLocalTime.localeCompare(b.occurredLocalTime),
@@ -168,36 +201,46 @@ export default function CalendarScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.weekdayRow}>
-        {headerLabels.map((label, i) => (
-          <Text key={i} style={[styles.weekdayLabel, { color: colors.textTertiary }]}>
-            {label}
-          </Text>
-        ))}
-      </View>
-
-      <View style={styles.grid}>
-        {grid.map((cell, i) => {
-          if (!cell) return <View key={i} style={styles.dayCell} />;
-          const dayActivities = byDate.get(cell.localDate) ?? [];
-          const isSelected = cell.localDate === selectedLocalDate;
-          const isToday = cell.localDate === today;
-          return (
-            <Pressable
-              key={i}
-              onPress={() => setSelectedLocalDate(cell.localDate)}
-              style={[styles.dayCell, isSelected && { backgroundColor: colors.surface, borderRadius: radius.sm }]}
-              accessibilityRole="button"
-              accessibilityLabel={dayCellAccessibilityLabel(cell, dayActivities)}
-            >
-              <Text style={[styles.dayNumber, { color: isToday ? colors.solo : colors.textPrimary }]}>
-                {cell.dayOfMonth}
+      {headerLabels && grid && (
+        <>
+          <View style={styles.weekdayRow}>
+            {headerLabels.map((label, i) => (
+              <Text key={i} style={[styles.weekdayLabel, { color: colors.textTertiary }]}>
+                {label}
               </Text>
-              <DayDots dayActivities={dayActivities} colors={colors} />
-            </Pressable>
-          );
-        })}
-      </View>
+            ))}
+          </View>
+
+          <View style={styles.grid}>
+            {grid.map((cell, i) => {
+              if (!cell) return <View key={i} style={styles.dayCell} />;
+              const dayActivities = byDate.get(cell.localDate) ?? [];
+              const isSelected = cell.localDate === selectedLocalDate;
+              const isToday = cell.localDate === today;
+              return (
+                <Pressable
+                  key={i}
+                  onPress={() => setSelectedLocalDate(cell.localDate)}
+                  style={[styles.dayCell, isSelected && { borderWidth: 1.5, borderColor: colors.solo, borderRadius: radius.sm }]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={dayCellAccessibilityLabel(cell, dayActivities)}
+                >
+                  <Text
+                    style={[
+                      styles.dayNumber,
+                      { color: isToday ? colors.solo : colors.textPrimary, fontWeight: isToday ? '800' : '500' },
+                    ]}
+                  >
+                    {cell.dayOfMonth}
+                  </Text>
+                  <DayDots dayActivities={dayActivities} colors={colors} />
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
 
       <ScrollView style={styles.dayPanel} contentContainerStyle={styles.dayPanelContent}>
         {selectedLocalDate && (
@@ -255,7 +298,8 @@ const styles = StyleSheet.create({
   },
   dayNumber: { fontSize: 14, fontWeight: '500' },
   dotRow: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 8 },
-  dot: { width: 6, height: 6, borderRadius: 3 },
+  dot: { width: 7, height: 7, borderRadius: 3.5 },
+  dotHollow: { borderWidth: 1.5 },
   dotCount: { fontSize: 10, fontWeight: '600' },
   dayPanel: { flex: 1, marginTop: spacing.md },
   dayPanelContent: { paddingHorizontal: spacing.md, paddingBottom: 32, gap: spacing.xs },
