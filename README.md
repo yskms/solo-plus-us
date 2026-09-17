@@ -10,8 +10,9 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 ## ステータス
 
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
-Repository → Quick Record → Undo → 履歴 → Export/Import の往復）はクローズ済み。
-現在は **Phase 2**（Calendar）に着手中。詳細は下記「Phase 1 実装状況」「Phase 2 実装状況」を参照。
+Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
+クローズ済み。現在は **Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
+日時編集 UI → Export/Import の UI）の Insights に着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -401,3 +402,44 @@ lib/__tests__/relativeDate.test.ts   formatMonthDay を追加
   **Insights（Phase 3）で Solo/Partnered を色分けしたグラフ（棒グラフ等）を作る際は、模様や
   ラベルなど色以外の手段を併用するか、明るさが十分に異なるグラフ専用の配色を別途用意すること**
   （UI/UX §24 A3「色に頼らない識別」・A4「グラフと同じ情報をテキストでも取得できる」に関わる）
+
+## Phase 3 実装状況
+
+`phase3/insights` ブランチ。まず Insights 画面（UI/UX §14）から着手。
+
+### スコープの判断：Insights は v1.0 分のみ
+
+要件定義書 §25 の MVP 表は Insights を2行に分けている。
+
+```
+Insights（合計・内訳・平均間隔）         v1.0 ●
+Insights（年次・曜日・時間帯・All Time） v1.1
+```
+
+UI/UX §14/§15 のモックアップ（期間セレクタ・月次棒グラフ・最頻曜日・最頻時間帯）は
+両方の機能を1画面に描いているが、MVP 表に従い **v1.0 では期間セレクタと月次棒グラフ、
+最頻曜日/最頻時間帯は作らず**、全期間の合計・Solo/Partnered 内訳・平均間隔（基本設計 §14）
+のみを実装した。Today の「THIS MONTH」（当月のみ）とは異なり、Insights は全期間を対象に
+する点が新規価値になる。期間セレクタ以下の v1.1 分は未着手（Known gaps 参照）。
+
+### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `repositories/ActivityRepository.ts` | `countAllActivities`（日付範囲なしの全件集計）、`getActivityTimeSpan`（`MIN`/`MAX(occurred_at_utc)`）を追加 |
+| `lib/statistics.ts` | `averageIntervalDays`（§14「(最新−最古)÷(件数−1)の実時間差、2件未満は null」の純粋関数）、`formatAverageIntervalDays`（§14 表示規則「空欄にせず—を出す」） |
+| `app/(tabs)/insights.tsx` | TOTAL ACTIVITIES（全期間の合計・Solo/Partnered 内訳）・YOUR PATTERNS（平均間隔）。Calendar と同じ `loading`/`ready`/`error` の3状態、単一 `useFocusEffect` パターンを最初から採用 |
+
+### テスト
+
+```
+lib/__tests__/statistics.test.ts                 averageIntervalDays（0/1/2件以上、(count-1)で割ること、実時間差）、formatAverageIntervalDays
+test/__tests__/activityRepository.integration.test.ts  countAllActivities/getActivityTimeSpan を追加（既存ファイルに追加）
+```
+
+### Known gaps
+
+- **Insights の v1.1 分**：期間セレクタ（Month/Year/All Time）・月次棒グラフ・最頻曜日・
+  最頻時間帯は要件定義書 §25 で v1.1 と明記されているため未着手
+- **実機での見た目の確認が未実施**：Phase 1/2 と同じ制約（iOS は Xcode/Swift、Android は
+  エミュレータ未セットアップ・ディスク容量不足）が引き続き残っている

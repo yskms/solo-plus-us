@@ -385,3 +385,35 @@ export async function countActivitiesByDateRange(
   }
   return counts;
 }
+
+/** §14 Insights "TOTAL ACTIVITIES": all-time count, no date range. */
+export async function countAllActivities(executor: SqlExecutor): Promise<ActivityCounts> {
+  const result = await executor.execute('SELECT context, COUNT(*) as n FROM activities GROUP BY context');
+  const rows = (result.rows ?? []) as unknown as { context: ActivityContext; n: number }[];
+  const counts: ActivityCounts = { total: 0, solo: 0, partnered: 0 };
+  for (const row of rows) {
+    counts[row.context] = row.n;
+    counts.total += row.n;
+  }
+  return counts;
+}
+
+export interface ActivityTimeSpan {
+  oldestOccurredAtUtc: string;
+  newestOccurredAtUtc: string;
+}
+
+/**
+ * §14 "平均間隔": the two instants needed for `(最新 − 最古) ÷ (件数 − 1)`.
+ * `null` when there are no activities at all — the caller (Statistics
+ * Service) is the one that knows the "fewer than 2 records → —" rule; this
+ * just reports what's actually in the DB.
+ */
+export async function getActivityTimeSpan(executor: SqlExecutor): Promise<ActivityTimeSpan | null> {
+  const result = await executor.execute(
+    'SELECT MIN(occurred_at_utc) as oldest, MAX(occurred_at_utc) as newest FROM activities',
+  );
+  const row = result.rows?.[0] as { oldest: string | null; newest: string | null } | undefined;
+  if (!row?.oldest || !row.newest) return null;
+  return { oldestOccurredAtUtc: row.oldest, newestOccurredAtUtc: row.newest };
+}
