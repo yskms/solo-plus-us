@@ -1,15 +1,19 @@
 /**
  * UI/UX §14 Screen 06 — Insights. v1.0 scope only, per 要件定義書 §25's MVP
- * table: "Insights（合計・内訳・平均間隔）" is the v1.0 row; "Insights（年次・
- * 曜日・時間帯・All Time）" — the Period Selector (§15), the monthly bar
- * chart, and Most common day/time — is v1.1 and not built here. This
- * screen is therefore just an all-time total, its Solo/Partnered
- * breakdown, and the average interval between records (基本設計 §14);
- * no period selector.
+ * table: "Insights（合計・内訳・平均間隔）" is the v1.0 row. "All Time" was
+ * originally listed under the v1.1 row ("年次・曜日・時間帯・All Time")
+ * alongside the Period Selector (§15), the monthly bar chart, and Most
+ * common day/time — but this screen's totals *are* all-time, so that row
+ * was corrected to move "All Time" into v1.0 (see 要件定義書 §25). The
+ * Period Selector itself (Month/Year toggles), the monthly bar chart, and
+ * Most common day/time remain v1.1 and are not built here.
  *
  * This is deliberately *not* the same figure as Today's "THIS MONTH" card
  * (current calendar month only) — all-time totals and an average interval
- * are the "look back over years" view Today never shows.
+ * are the "look back over years" view Today never shows. Because there's
+ * no period selector yet, "All time" is stated once, screen-level, so
+ * nothing here reads as "this year" (the UI/UX §14 mockup's own period
+ * dropdown default) by omission.
  */
 import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -18,8 +22,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
-import { countAllActivities, getActivityTimeSpan, type ActivityCounts } from '../../repositories/ActivityRepository';
-import { averageIntervalDays, formatAverageIntervalDays } from '../../lib/statistics';
+import type { ActivityCounts } from '../../repositories/ActivityRepository';
+import { getInsightsSnapshot } from '../../services/StatisticsService';
+import { formatAverageIntervalDays } from '../../lib/statistics';
 import { MetricCard } from '../../components/MetricCard';
 import { EmptyState } from '../../components/EmptyState';
 import { logError } from '../../lib/log';
@@ -38,11 +43,9 @@ export default function InsightsScreen() {
 
   const reload = useCallback(async () => {
     try {
-      const [allCounts, span] = await Promise.all([countAllActivities(db), getActivityTimeSpan(db)]);
-      setCounts(allCounts);
-      setAverageInterval(
-        span ? averageIntervalDays(allCounts.total, span.oldestOccurredAtUtc, span.newestOccurredAtUtc) : null,
-      );
+      const snapshot = await getInsightsSnapshot(db);
+      setCounts(snapshot.counts);
+      setAverageInterval(snapshot.averageIntervalDays);
       setLoadStatus('ready');
     } catch (error) {
       logError('Insights reload failed', error);
@@ -63,6 +66,7 @@ export default function InsightsScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Insights</Text>
+        <Text style={[styles.periodCaption, { color: colors.textTertiary }]}>All time</Text>
 
         {loadStatus === 'loading' && (
           <Text style={[styles.statusText, { color: colors.textSecondary }]}>Loading…</Text>
@@ -111,6 +115,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: 48 },
   screenTitle: { fontSize: 22, fontWeight: '700' },
+  periodCaption: { fontSize: 13, marginTop: -4 },
   statusText: { fontSize: 14, textAlign: 'center', marginTop: spacing.lg },
   card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: spacing.md, gap: spacing.sm },
   sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },

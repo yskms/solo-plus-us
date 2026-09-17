@@ -37,4 +37,25 @@ describe('formatAverageIntervalDays', () => {
   it('renders a whole number with one decimal place', () => {
     expect(formatAverageIntervalDays(4)).toBe('4.0 days');
   });
+
+  it('uses singular "day" only when the rounded value is exactly 1.0', () => {
+    expect(formatAverageIntervalDays(1)).toBe('1.0 day');
+    expect(formatAverageIntervalDays(1.04)).toBe('1.0 day'); // rounds to 1.0
+    expect(formatAverageIntervalDays(1.2)).toBe('1.2 days');
+  });
+
+  it('switches to hours below 1 day even when rounding days would reach 1.0', () => {
+    // 0.96 days = ~23 hours: still < 1 day raw, so hours, not "1.0 day"
+    expect(formatAverageIntervalDays(0.96)).toBe('23.0 hours');
+  });
+
+  it('switches to hours below 1 day, rather than showing "0.x days"', () => {
+    // 30 minutes = 0.5 hours, not "0.0 days" (which would misread as simultaneous)
+    expect(formatAverageIntervalDays(0.5 / 24)).toBe('0.5 hours');
+  });
+
+  it('uses singular "hour" only when the rounded value is exactly 1.0', () => {
+    expect(formatAverageIntervalDays(1 / 24)).toBe('1.0 hour');
+    expect(formatAverageIntervalDays(2 / 24)).toBe('2.0 hours');
+  });
 });

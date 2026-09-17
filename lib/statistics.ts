@@ -19,8 +19,20 @@ export function averageIntervalDays(count: number, oldestOccurredAtUtc: string, 
   return (newest.getTime() - oldest.getTime()) / (count - 1) / MS_PER_DAY;
 }
 
-/** §14 UI display rule: never blank, "—" for "not enough data" rather than an evaluative placeholder. */
+/**
+ * §14 UI display rule: never blank, "—" for "not enough data" rather than
+ * an evaluative placeholder. Below 1 day, switches to hours — "0.0 days"
+ * for two records half an hour apart reads as "recorded at the same
+ * instant," which isn't what happened. Singular "day"/"hour" only for a
+ * value that rounds to exactly 1.0, matching how the rounded number reads
+ * ("1.0 day", not "1.0 days").
+ */
 export function formatAverageIntervalDays(days: number | null): string {
   if (days === null) return '—';
-  return `${days.toFixed(1)} days`;
+  if (days < 1) {
+    const hours = (days * 24).toFixed(1);
+    return `${hours} ${hours === '1.0' ? 'hour' : 'hours'}`;
+  }
+  const rounded = days.toFixed(1);
+  return `${rounded} ${rounded === '1.0' ? 'day' : 'days'}`;
 }

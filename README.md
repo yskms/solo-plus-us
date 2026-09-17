@@ -407,39 +407,69 @@ lib/__tests__/relativeDate.test.ts   formatMonthDay を追加
 
 `phase3/insights` ブランチ。まず Insights 画面（UI/UX §14）から着手。
 
-### スコープの判断：Insights は v1.0 分のみ
+### スコープの判断：Insights は v1.0 分のみ、集計期間は全期間で確定
 
-要件定義書 §25 の MVP 表は Insights を2行に分けている。
+要件定義書 §25 の MVP 表は元々 Insights を2行に分けており、「All Time」の文字は
+v1.1 側の行にあった。
 
 ```
 Insights（合計・内訳・平均間隔）         v1.0 ●
 Insights（年次・曜日・時間帯・All Time） v1.1
 ```
 
+v1.0 の行自体には集計期間が明記されておらず、実装当初は全期間（All Time）で作った
+ため、この表と食い違っていた（レビューで指摘）。ユーザーと相談のうえ、**全期間を
+v1.0 として確定し、MVP 表を修正**した（「All Time」を v1.0 側の行に移動）。
+
+```
+Insights（合計・内訳・平均間隔、全期間）           v1.0 ●
+Insights（期間セレクタ・月次棒グラフ・曜日・時間帯） v1.1
+```
+
 UI/UX §14/§15 のモックアップ（期間セレクタ・月次棒グラフ・最頻曜日・最頻時間帯）は
-両方の機能を1画面に描いているが、MVP 表に従い **v1.0 では期間セレクタと月次棒グラフ、
-最頻曜日/最頻時間帯は作らず**、全期間の合計・Solo/Partnered 内訳・平均間隔（基本設計 §14）
-のみを実装した。Today の「THIS MONTH」（当月のみ）とは異なり、Insights は全期間を対象に
-する点が新規価値になる。期間セレクタ以下の v1.1 分は未着手（Known gaps 参照）。
+両方の機能を1画面に描いているが、期間セレクタ本体（Month/Year トグル）・月次棒グラフ・
+最頻曜日/最頻時間帯は v1.1 のまま。Today の「THIS MONTH」（当月のみ）とは異なり、
+Insights は全期間を対象にする点が新規価値になる。画面には「All time」であることを
+明示するキャプションを追加した（期間セレクタが無いため、UI/UX §14 モックの年選択
+ドロップダウンだけを見て「今年の合計」と誤解されないように）。
 
 ### 実装済み
 
 | 層 | 内容 |
 |---|---|
 | `repositories/ActivityRepository.ts` | `countAllActivities`（日付範囲なしの全件集計）、`getActivityTimeSpan`（`MIN`/`MAX(occurred_at_utc)`）を追加 |
-| `lib/statistics.ts` | `averageIntervalDays`（§14「(最新−最古)÷(件数−1)の実時間差、2件未満は null」の純粋関数）、`formatAverageIntervalDays`（§14 表示規則「空欄にせず—を出す」） |
-| `app/(tabs)/insights.tsx` | TOTAL ACTIVITIES（全期間の合計・Solo/Partnered 内訳）・YOUR PATTERNS（平均間隔）。Calendar と同じ `loading`/`ready`/`error` の3状態、単一 `useFocusEffect` パターンを最初から採用 |
+| `services/StatisticsService.ts` | `getInsightsSnapshot`：件数と時間範囲を1つのトランザクションで読み、平均間隔まで計算して返す（`ExportService.buildExportPayload` と同じ理由——2つの別々の読み取りの間に記録・削除が入ると、件数と最古/最新の時刻が別時点の値になり平均間隔がずれる） |
+| `lib/statistics.ts` | `averageIntervalDays`（§14「(最新−最古)÷(件数−1)の実時間差、2件未満は null」の純粋関数）、`formatAverageIntervalDays`（§14 表示規則「空欄にせず—を出す」。1日未満は時間単位で表示し、丸めた値がちょうど 1.0 のときだけ単数形にする） |
+| `app/(tabs)/insights.tsx` | TOTAL ACTIVITIES（全期間の合計・Solo/Partnered 内訳）・YOUR PATTERNS（平均間隔）・「All time」キャプション。Calendar と同じ `loading`/`ready`/`error` の3状態、単一 `useFocusEffect` パターンを最初から採用 |
 
 ### テスト
 
 ```
-lib/__tests__/statistics.test.ts                 averageIntervalDays（0/1/2件以上、(count-1)で割ること、実時間差）、formatAverageIntervalDays
+lib/__tests__/statistics.test.ts                 averageIntervalDays（0/1/2件以上、(count-1)で割ること、実時間差）、
+                                                  formatAverageIntervalDays（時間/日の切り替え、単数/複数形の境界）
 test/__tests__/activityRepository.integration.test.ts  countAllActivities/getActivityTimeSpan を追加（既存ファイルに追加）
 ```
 
+### レビューで見つかり、修正したもの
+
+1. **【中】実装した「全期間」が MVP 表では v1.1 に分類されていた**：上記「スコープの判断」参照。
+   ユーザーと相談のうえ全期間を v1.0 として確定し、要件定義書 §25 の MVP 表を修正した
+2. **【中】画面に集計期間が表示されていなかった**：「TOTAL ACTIVITIES」の見出しだけでは
+   全期間の集計であることが分からず、UI/UX §14 モックの年選択ドロップダウンと合わせて
+   「今年の合計」と誤解されうる状態だった。「All time」キャプションを画面に追加
+3. **【低】件数と時間範囲を別々のトランザクションなしの読み取りで取得していた**：
+   `countAllActivities` と `getActivityTimeSpan` を `Promise.all` で並行に読んでおり、
+   間に記録・削除が入ると平均間隔が一時的にずれる状態だった。`ExportService` と同じ
+   理由で、`StatisticsService.getInsightsSnapshot` が1つのトランザクション内で両方を
+   読むよう修正
+4. **【低】1日未満の間隔が「0.0 days」と表示されていた**：記録が30分差でも「0.0 days」
+   となり同時刻の記録のように読めた。1日未満は時間単位（例: 「0.5 hours」）で表示する
+   よう修正。あわせて「1.0 days」のような不自然な複数形も、丸めた値がちょうど 1.0 の
+   ときだけ単数形（「1.0 day」/「1.0 hour」）になるよう修正
+
 ### Known gaps
 
-- **Insights の v1.1 分**：期間セレクタ（Month/Year/All Time）・月次棒グラフ・最頻曜日・
+- **Insights の v1.1 分**：期間セレクタ（Month/Year トグル）・月次棒グラフ・最頻曜日・
   最頻時間帯は要件定義書 §25 で v1.1 と明記されているため未着手
 - **実機での見た目の確認が未実施**：Phase 1/2 と同じ制約（iOS は Xcode/Swift、Android は
   エミュレータ未セットアップ・ディスク容量不足）が引き続き残っている
