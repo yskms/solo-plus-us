@@ -21,17 +21,27 @@ export function averageIntervalDays(count: number, oldestOccurredAtUtc: string, 
 
 /**
  * §14 UI display rule: never blank, "—" for "not enough data" rather than
- * an evaluative placeholder. Below 1 day, switches to hours — "0.0 days"
- * for two records half an hour apart reads as "recorded at the same
- * instant," which isn't what happened. Singular "day"/"hour" only for a
- * value that rounds to exactly 1.0, matching how the rounded number reads
- * ("1.0 day", not "1.0 days").
+ * an evaluative placeholder. Below 1 day, switches to hours, and below 1
+ * hour, to minutes — "0.0 days" (or, one tier down, "0.0 hours") for two
+ * records a few minutes apart reads as "recorded at the same instant,"
+ * which isn't what happened. Minutes is as fine as this needs to go:
+ * `occurred_at_utc` is itself minute-precision (§4.2, seconds always
+ * `:00`), so a "seconds" tier below this would only ever show noise from
+ * the division, not a real recorded distinction. Singular "day"/"hour"/
+ * "minute" only for a value that rounds to exactly 1.0, matching how the
+ * rounded number reads ("1.0 day", not "1.0 days").
  */
 export function formatAverageIntervalDays(days: number | null): string {
   if (days === null) return '—';
+
+  const hours = days * 24;
+  if (hours < 1) {
+    const minutes = (hours * 60).toFixed(1);
+    return `${minutes} ${minutes === '1.0' ? 'minute' : 'minutes'}`;
+  }
   if (days < 1) {
-    const hours = (days * 24).toFixed(1);
-    return `${hours} ${hours === '1.0' ? 'hour' : 'hours'}`;
+    const roundedHours = hours.toFixed(1);
+    return `${roundedHours} ${roundedHours === '1.0' ? 'hour' : 'hours'}`;
   }
   const rounded = days.toFixed(1);
   return `${rounded} ${rounded === '1.0' ? 'day' : 'days'}`;

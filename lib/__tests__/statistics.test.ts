@@ -50,12 +50,23 @@ describe('formatAverageIntervalDays', () => {
   });
 
   it('switches to hours below 1 day, rather than showing "0.x days"', () => {
-    // 30 minutes = 0.5 hours, not "0.0 days" (which would misread as simultaneous)
-    expect(formatAverageIntervalDays(0.5 / 24)).toBe('0.5 hours');
+    // 3 hours: below 1 day, at or above 1 hour, so hours (not days, not minutes)
+    expect(formatAverageIntervalDays(3 / 24)).toBe('3.0 hours');
   });
 
   it('uses singular "hour" only when the rounded value is exactly 1.0', () => {
     expect(formatAverageIntervalDays(1 / 24)).toBe('1.0 hour');
     expect(formatAverageIntervalDays(2 / 24)).toBe('2.0 hours');
+  });
+
+  it('switches to minutes below 1 hour even when rounding hours would reach 1.0', () => {
+    // 0.96 hours = ~57.6 minutes: still < 1 hour raw, so minutes, not "1.0 hour"
+    expect(formatAverageIntervalDays(0.96 / 24)).toBe('57.6 minutes');
+  });
+
+  it('switches to minutes below 1 hour, rather than showing "0.0 hours"', () => {
+    // 2 records 1 minute apart -> 0.0 hours would misread as simultaneous
+    expect(formatAverageIntervalDays(1 / 24 / 60)).toBe('1.0 minute');
+    expect(formatAverageIntervalDays(5 / 24 / 60)).toBe('5.0 minutes');
   });
 });

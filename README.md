@@ -450,7 +450,7 @@ lib/__tests__/statistics.test.ts                 averageIntervalDays（0/1/2件�
 test/__tests__/activityRepository.integration.test.ts  countAllActivities/getActivityTimeSpan を追加（既存ファイルに追加）
 ```
 
-### レビューで見つかり、修正したもの
+### レビューで見つかり、修正したもの（1回目）
 
 1. **【中】実装した「全期間」が MVP 表では v1.1 に分類されていた**：上記「スコープの判断」参照。
    ユーザーと相談のうえ全期間を v1.0 として確定し、要件定義書 §25 の MVP 表を修正した
@@ -466,6 +466,21 @@ test/__tests__/activityRepository.integration.test.ts  countAllActivities/getAct
    となり同時刻の記録のように読めた。1日未満は時間単位（例: 「0.5 hours」）で表示する
    よう修正。あわせて「1.0 days」のような不自然な複数形も、丸めた値がちょうど 1.0 の
    ときだけ単数形（「1.0 day」/「1.0 hour」）になるよう修正
+
+### レビューで見つかり、修正したもの（2回目）
+
+1回目の「全期間を v1.0 として確定」が要件定義書 §25 にしか反映されておらず、正本の
+優先順位（設計判断記録 > 各設計文書の本文）に反する食い違いが残っていた、という指摘。
+
+1. **【中】設計判断記録・UI/UX 仕様に「All Time は v1.1」が残っていた**：
+   設計判断記録 D-13、UI/UX §27 Phase 4 の該当行が要件定義書 §25 の修正と食い違っていた。
+   両方とも「All Time」を v1.0 側に修正。あわせて UI/UX §15（Period Selector 本体・
+   Month/Year 切り替え・年ごとの OVER TIME 内訳）は v1.1 のままであり、v1.0 の全期間
+   合計（§14 TOTAL ACTIVITIES）とは別物であることを §15 に明記した
+2. **【低】1時間未満の間隔が「0.0 hours」と表示される**：記録が1分差でも「0.0 hours」と
+   なり、1回目に直した「0.0 days」と同じ問題が1段階下に残っていた。`occurred_at_utc` が
+   分単位精度（§4.2）であることに合わせ、1時間未満は分単位（例: 「1.0 minute」）で
+   表示するよう修正
 
 ### Known gaps
 
