@@ -509,33 +509,75 @@ UI/UX §17 の Settings 画面は PRIVACY/HEALTH/DATA/TRACKING/PREFERENCES/ABOUT
 | 層 | 内容 |
 |---|---|
 | `lib/appLockTiming.ts` | `shouldLockOnResume`：バックグラウンド復帰時にロックすべきかどうかの純粋関数。コールドスタート（`backgroundedAtMs === null`）は常にロック扱い |
-| `contexts/AppLock.tsx` | `AppLockProvider`：`AppState` でバックグラウンド/フォアグラウンド遷移を監視し、`appLock.enabled`/`timing`（Phase 1 で追加済みの設定）に従ってロック画面を表示。DB 暗号鍵の可読性とは完全に独立（§8.3）——ロック中も DB 接続自体は保持されたまま、UI の描画だけを止める |
-| `components/LockScreen.tsx` | ロック画面（ブランドマーク・🔒・「Unlock with device authentication」）。マウント時に自動で `expo-local-authentication` の認証プロンプトを起動し、失敗/キャンセル時はタップで再試行 |
+| `lib/localAuthMessages.ts` | `describeAuthError`：`expo-local-authentication` の失敗コードを人が読める文言に変換する純粋関数（lockout のみ具体的な文言、cancel 系は非表示） |
+| `contexts/AppLock.tsx` | `AppLockProvider`：`AppState` でバックグラウンド/フォアグラウンド遷移を監視し、`appLock.enabled`/`timing`（Phase 1 で追加済みの設定）に従ってロック画面を表示。DB 暗号鍵の可読性とは完全に独立（§8.3）——ロック中も DB 接続自体は保持されたまま、UI の描画だけを止める。認証試行そのものもここに集約（`attemptUnlock`）し、端末に認証手段が無くなった場合は `appLock.enabled` を自動 OFF にする |
+| `components/LockScreen.tsx` | ロック画面（ブランドマーク・🔒・「Unlock with device authentication」、失敗理由の表示）。認証試行自体は `AppLockProvider` 側が持ち、ここは表示専用 |
+| `components/LoadErrorOverlay.tsx` | App Lock 設定の読み込みに失敗した場合のエラー表示 + 再試行 |
 | `app/settings/index.tsx` | Settings 画面（App Lock 行のみ） |
-| `app/settings/app-lock.tsx` | Use App Lock トグル、LOCK タイミング選択（Immediately/After 1 minute/After 5 minutes）。ON にする前に `getEnrolledLevelAsync()` で端末に認証手段が無い場合は拒否し、アプリ独自 PIN が無い設計（§19）でロックアウトされることを防ぐ |
+| `app/settings/app-lock.tsx` | Use App Lock トグル、LOCK タイミング選択（Immediately/After 1 minute/After 5 minutes）。ON にする前に `getEnrolledLevelAsync()` で端末に認証手段が無い場合は拒否。OFF にする際も認証を要求 |
 | `app/(tabs)/index.tsx` | Today の右上に ⚙ アイコンを追加（§7 モックアップ通り）、`/settings` への導線 |
-| `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中は `OnboardingRedirect`/`MigrationRestoredBanner`/`Stack` 全体（＝全画面）と `UndoSnackbar` を描画しない |
+| `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中も `children`（`Stack` 全体）はマウントしたまま、オーバーレイで覆う形（下記「レビューで見つかり、修正したもの」#3 参照） |
 
 #### テスト
 
 ```
-lib/__tests__/appLockTiming.test.ts   shouldLockOnResume（無効時は常に false、コールドスタートは常に true、
-                                       immediately/1m/5m の境界値）
+lib/__tests__/appLockTiming.test.ts     shouldLockOnResume（無効時は常に false、コールドスタートは常に true、
+                                         immediately/1m/5m の境界値）
+lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文言、cancel系は非表示、その他は汎用文言）
 ```
 
 `contexts/AppLock.tsx`・`components/LockScreen.tsx` 自体は `AppState`/`expo-local-authentication`
-（ネイティブ）依存のため Jest では検証できない——判定ロジックを `lib/appLockTiming.ts` に
-純粋関数として切り出すことで、そこだけはテスト可能にした。
+（ネイティブ）依存のため Jest では検証できない——判定ロジックを `lib/appLockTiming.ts`/
+`lib/localAuthMessages.ts` に純粋関数として切り出すことで、そこだけはテスト可能にした。
+
+#### レビューで見つかり、修正したもの
+
+利用者が自分の記録に二度と入れなくなる経路が2つ見つかった（優先度：高）。
+
+1. **【高】端末の認証をすべて外すと永久に開けなくなる**：App Lock を ON にする時点でしか
+   認証手段の有無を確認していなかった。ON にした後で端末のパスコード・生体認証を
+   すべて外すと `authenticateAsync` が常に失敗し、独自 PIN も無い設計（D-08）のため
+   二度と解除できず、唯一の脱出手段（アプリ削除）は DB ごと全データを失う。ロック画面
+   表示のたびに `getEnrolledLevelAsync()` を確認し、`SecurityLevel.NONE` なら
+   App Lock を自動的に OFF にしてロックを解除するよう修正（`disableAppLockDueToNoEnrollment`）。
+   D-08 の想定漏れとして設計判断記録に追記した
+2. **【高】認証ダイアログの表示自体がロックを再度かけ直すおそれがある**：iOS の Face ID
+   ダイアログは `active → inactive → active`、Android の端末パスコード画面は別 Activity
+   になるため、認証中に `AppState` が変化しうる。これを「バックグラウンドに行った」と
+   誤認すると、認証成功の直後に再ロックし、ロック画面のたびに認証ダイアログが自動で
+   出て同じことを繰り返す無限ループになりうる。認証試行中は `AppState` の変化を無視する
+   フラグ（`authenticatingRef`、React state ではなく ref——リスナーが同期的に参照するため）
+   を追加し、あわせて `inactive` 単体（Control Center 等）ではタイマーを開始しないよう
+   修正（`background` のみを対象に）。`inactive` への対応は別項目の「画面マスク」に譲る
+3. **【中】ロックのたびに画面の状態と編集中の内容が消える**：ロック中は `children` の
+   代わりに `LockScreen` を返していたため、`Stack` 以下が毎回アンマウントされ、
+   Activity Detail でメモ入力中に一瞬他のアプリへ切り替えただけで入力中の内容が失われる
+   状態だった。`children` は常時マウントしたまま、`LockScreen` を最前面にオーバーレイする
+   形に変更。オーバーレイ表示中は `pointerEvents="none"` でタッチを止め、
+   `accessibilityElementsHidden`/`importantForAccessibility="no-hide-descendants"` で
+   スクリーンリーダーからも隠す
+4. **【中】設定の読み込みに失敗すると画面全体が真っ白なまま**：初回の
+   `refreshAppLockSettings()` に catch が無く、失敗すると `null` を描画し続けていた
+   （Calendar で直したのと同じ種類の問題）。`loading`/`ready`/`error` の3状態にし、
+   失敗時は再試行ボタン付きのエラー表示（`LoadErrorOverlay`）を出すよう修正
+5. **【低】App Lock の OFF に認証が要らなかった**：設計書に明記が無いため判断が必要
+   だったが、ON にする操作と対称になるよう、OFF にする際も `authenticateAsync` を
+   要求するよう修正
+6. **【低】ロック画面の解除ボタンのアクセシビリティ情報が無く、失敗理由も伝えていなかった**：
+   `accessibilityRole`/`accessibilityLabel` を追加。`lib/localAuthMessages.ts` の
+   `describeAuthError` で lockout 等の失敗理由をロック画面に表示するよう修正
 
 #### Known gaps
 
 - **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの
   実機テストがそもそも必要（UI/UX §19 受け入れ条件「生体認証を無効にしている端末でも、
-  端末パスコード等で解除できること」）
+  端末パスコード等で解除できること」）。特に今回のレビューで見つかった iOS Face ID
+  ダイアログ・Android 端末パスコード画面と `AppState` の実際の遷移順序は、実機でのみ
+  最終確認できる
 - **画面マスク（Recent Apps でのマスク）は未実装**：基本設計 §18 で App Lock の次の
   sub-item として明示的に分けられているため、今回は含めていない。ロック画面自体は
   実装したが、OS の Recent Apps スイッチャーに表示されるスナップショットに直前の
-  画面内容が写り込む可能性は、この機能が入るまで残る
+  画面内容が写り込む可能性は、この機能が入るまで残る（`inactive` への対応もここに含む）
 - **オンボーディング後の App Lock 案内は未実装**：UI/UX §6「Continue後、必要なら
   App Lock 設定を案内する」は今回のスコープに含めていない
 - **Settings の他セクション**：Health Connect・Data（Export/Import/Delete）・

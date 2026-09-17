@@ -59,6 +59,13 @@ export default function AppLockSettingsScreen() {
         );
         return;
       }
+    } else {
+      // Turning App Lock off is otherwise reachable by anyone holding an
+      // already-unlocked phone, not just its owner — not in the design
+      // docs explicitly, but symmetric with what turning it *on* already
+      // requires, so the same authentication is required to turn it off.
+      const result = await LocalAuthentication.authenticateAsync({ promptMessage: 'Confirm to turn off App Lock' });
+      if (!result.success) return;
     }
     setBusy(true);
     try {
