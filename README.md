@@ -620,6 +620,29 @@ lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文
    一旦退避し、`showingOverlay` が `true→false` に変わったことを検知する effect から
    呼ぶよう変更（Modal が実際に閉じてから通知するため、確実性が上がる）
 
+#### レビューで見つかり、修正したもの（4回目）
+
+3回目の2件とも、「表示/非表示の切り替えが完了するのを待たずに次の処理をしていた」
+という同じ理由でまだ失敗しうる状態だった。
+
+1. **【中〜高】モーダルを閉じる処理が完了する前にロック画面を表示しようとしていた**：
+   `router.dismiss()` はネイティブの閉じるアニメーションを開始するだけで、完了を
+   待たない。直後に `setLocked(true)` すると、`record` がまだ閉じている途中で
+   ロック `Modal` の `presentViewController` が呼ばれ、3回目の#1と同じ理由（UIKit は
+   遷移中の2つ目の提示を表示しない）で失敗しうる状態だった。`awaitingModalDismiss`
+   状態を導入し、`pathname` が `/record` でなくなったことを effect で検知してから
+   `setLocked(true)` するよう変更（3秒のタイムアウトを安全弁として追加——`dismiss()`
+   が何らかの理由で解決しない場合に無期限に待ち続けないため）。待機中に Today 等の
+   内容が一瞬見えることを避けるため、`children` を包む通常の `View` に
+   `awaitingModalDismiss` 中も不透明な背景色を即座に重ねるようにした（ネイティブの
+   提示を待たない、同一レンダー内での対処）
+2. **【低】お知らせを出すタイミングが、まだ Modal が閉じ終わる前だった**：`showingOverlay`
+   の変化を検知する effect は React が変更を反映した直後に動くが、ネイティブの Modal が
+   実際に閉じ終わるのはその後になる。RN の `Modal` の `onDismiss`（iOS 限定、閉じ終わった
+   後に呼ばれる）を使うよう変更。Android は `Modal` が ViewController の表示ではないため
+   `onDismiss` を持たず、`showingOverlay` の effect のままで問題ない——`flushPendingAlert`
+   は冪等なので両方から呼ばれても安全
+
 #### Known gaps
 
 - **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの

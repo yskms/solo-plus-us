@@ -91,6 +91,12 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   // configured timing — erring toward *not* locking on launch would defeat
   // the point of the setting.
   const [locked, setLocked] = useState(true);
+  // True from the moment we decide to lock but `record` is still open,
+  // until its dismissal is confirmed (see the AppState listener and the
+  // effect below). Kept separate from `locked` itself: flipping `locked`
+  // immediately is exactly the bug this guards against — see the effect
+  // for why.
+  const [awaitingModalDismiss, setAwaitingModalDismiss] = useState(false);
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<LocalAuthentication.LocalAuthenticationError | null>(null);
 
@@ -279,9 +285,20 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
             // screen (e.g. Activity Detail), which this deliberately
             // leaves alone by checking the exact pathname rather than
             // dismissing indiscriminately.
+            //
+            // `router.dismiss()` only *starts* the native dismiss
+            // animation — it doesn't wait for it to finish. Setting
+            // `locked` (and so the lock Modal's `visible`) immediately
+            // here would try to present while record is still mid-close,
+            // hitting the exact same "second presentation silently
+            // fails" problem this is meant to avoid. `awaitingModalDismiss`
+            // holds off on that until the effect below confirms record is
+            // actually gone (or a timeout safety-nets it).
+            setAwaitingModalDismiss(true);
             router.dismiss();
+          } else {
+            setLocked(true);
           }
-          setLocked(true);
         }
         backgroundedAtRef.current = null;
         // Pick up a setting change made while backgrounded (e.g. restored
@@ -299,31 +316,69 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, [enabled, timing, refreshAppLockSettings]);
 
-  const showingOverlay = settingsStatus !== 'ready' || (enabled && locked);
+  // Confirms record.tsx has actually finished dismissing (`pathname` no
+  // longer `/record`) before locking — see the `awaitingModalDismiss`
+  // comment above for why. The timeout is a safety net, not the expected
+  // path: if `dismiss()` doesn't resolve for some reason, locking after a
+  // few seconds regardless beats leaving the "flash guard" (below) up
+  // forever with no real lock screen ever appearing.
+  useEffect(() => {
+    if (!awaitingModalDismiss) return;
+    if (pathname !== '/record') {
+      setAwaitingModalDismiss(false);
+      setLocked(true);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setAwaitingModalDismiss(false);
+      setLocked(true);
+    }, 3000);
+    return () => clearTimeout(timeout);
+  }, [awaitingModalDismiss, pathname]);
 
-  // Flushes `pendingAlertRef` only on the transition *into* `false` (the
-  // Modal just closed), not on every render where it happens to be
-  // false — otherwise a re-render for an unrelated reason after the
-  // alert already fired would never re-show it (the ref is cleared right
-  // after), but nothing here would be wrong either way; this just keeps
-  // the alert tied to an actual "the overlay just went away" event.
+  const showingOverlay = settingsStatus !== 'ready' || (enabled && locked);
+  // Covers `children` the instant we decide to lock, even before the
+  // native lock Modal has actually presented — a plain View's background
+  // color applies in the same render, with none of the native
+  // presentation delay/conflict a second Modal would have. This is the
+  // "flash guard" for the `awaitingModalDismiss` window specifically
+  // (record.tsx's own still-closing modal already visually covers
+  // `children` during that window regardless — this is belt-and-suspenders
+  // for the moment right after, before the lock Modal is confirmed up).
+  const hidingContent = showingOverlay || awaitingModalDismiss;
+
+  const flushPendingAlert = useCallback(() => {
+    if (!pendingAlertRef.current) return;
+    const { title, message } = pendingAlertRef.current;
+    pendingAlertRef.current = null;
+    Alert.alert(title, message);
+  }, []);
+
+  // `Modal`'s `onDismiss` is iOS-only, and fires once the native modal has
+  // *actually* finished closing — the one thing that has to be true
+  // before an Alert reliably appears (see `disableAppLockDueToNoEnrollment`).
+  // On Android, `Modal` isn't a ViewController-presentation the way iOS's
+  // is, so there's no equivalent "still transitioning" conflict to wait
+  // out — the effect below (transition into `!showingOverlay`) is
+  // sufficient there, and doubles as a safety net on iOS in case
+  // `onDismiss` doesn't fire for some reason (`flushPendingAlert` is
+  // idempotent — the ref is cleared on first use — so both can safely
+  // fire).
   const wasShowingOverlayRef = useRef(showingOverlay);
   useEffect(() => {
-    if (wasShowingOverlayRef.current && !showingOverlay && pendingAlertRef.current) {
-      const { title, message } = pendingAlertRef.current;
-      pendingAlertRef.current = null;
-      Alert.alert(title, message);
+    if (wasShowingOverlayRef.current && !showingOverlay) {
+      flushPendingAlert();
     }
     wasShowingOverlayRef.current = showingOverlay;
-  }, [showingOverlay]);
+  }, [showingOverlay, flushPendingAlert]);
 
   return (
     <AppLockActionsContext.Provider value={{ refreshAppLockSettings, authenticate }}>
       <View
-        style={styles.fill}
-        pointerEvents={showingOverlay ? 'none' : 'auto'}
-        accessibilityElementsHidden={showingOverlay}
-        importantForAccessibility={showingOverlay ? 'no-hide-descendants' : 'auto'}
+        style={[styles.fill, hidingContent && { backgroundColor: colors.background }]}
+        pointerEvents={hidingContent ? 'none' : 'auto'}
+        accessibilityElementsHidden={hidingContent}
+        importantForAccessibility={hidingContent ? 'no-hide-descendants' : 'auto'}
       >
         {children}
       </View>
@@ -332,7 +387,13 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
           makes that necessary. `onRequestClose` is a required no-op on
           Android: the hardware back button must not be a way to dismiss
           this without authenticating. */}
-      <Modal visible={showingOverlay} animationType="none" transparent={false} onRequestClose={() => {}}>
+      <Modal
+        visible={showingOverlay}
+        animationType="none"
+        transparent={false}
+        onRequestClose={() => {}}
+        onDismiss={flushPendingAlert}
+      >
         {settingsStatus === 'loading' && <View style={[styles.fill, { backgroundColor: colors.background }]} />}
         {settingsStatus === 'error' && <LoadErrorOverlay onRetry={refreshAppLockSettings} />}
         {settingsStatus === 'ready' && enabled && locked && (
