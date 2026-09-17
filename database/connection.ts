@@ -15,11 +15,13 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { generateNewDatabaseKey, getOrCreateDatabaseKey } from './key';
 import { migration001Initial } from './migrations/001_initial';
 import { runMigrations, type Migration } from './migrations';
+import { DatabaseCorruptOrWrongKeyError } from '../lib/errors';
 
 const DB_FILE_NAME = 'solo-plus-us.sqlite';
 const DB_DIR_NAME = 'solo-plus-us-db';
 const BACKUP_FILE_NAME = 'solo-plus-us.migration-backup.sqlite';
 const RESTORE_TEMP_FILE_NAME = 'solo-plus-us.sqlite.restoring';
+const RECOVERY_OLD_DB_FILE_NAME = 'solo-plus-us.recovery-old.sqlite';
 
 // The plaintext SQLite header is the 16-byte ASCII string "SQLite format 3"
 // followed by a single 0x00 byte. A SQLCipher-encrypted file has random
@@ -44,11 +46,12 @@ const MIGRATIONS: readonly Migration[] = [migration001Initial];
  * distribute this app (even via TestFlight) to anyone whose backups you
  * don't control.
  */
-function getDbDirectory(): Directory {
+/** Exported for `services/RecoveryService.ts` (§8.8) — the only other place allowed to know where the DB lives on disk. */
+export function getDbDirectory(): Directory {
   return new Directory(Paths.document, DB_DIR_NAME);
 }
 
-function getDbFile(): File {
+export function getDbFile(): File {
   return new File(getDbDirectory(), DB_FILE_NAME);
 }
 
@@ -60,15 +63,57 @@ function getRestoreTempFile(): File {
   return new File(getDbDirectory(), RESTORE_TEMP_FILE_NAME);
 }
 
-/** The `-wal` / `-shm` siblings SQLite creates next to a WAL-mode database file. */
-function getWalSiblings(dbFile: File): File[] {
+/** §8.8 Recovery bootstrap — where the genuine old (undecryptable) DB is moved aside to, in step 5. Exported for `services/RecoveryService.ts`. */
+export function getRecoveryOldFile(): File {
+  return new File(getDbDirectory(), RECOVERY_OLD_DB_FILE_NAME);
+}
+
+/** The `-wal` / `-shm` siblings SQLite creates next to a WAL-mode database file. Exported for `services/RecoveryService.ts`. */
+export function getWalSiblings(dbFile: File): File[] {
   return [new File(`${dbFile.uri}-wal`), new File(`${dbFile.uri}-shm`)];
 }
 
-function deleteIfExists(file: File): void {
+/** Exported for `services/RecoveryService.ts`. */
+export function deleteIfExists(file: File): void {
   if (file.exists) {
     file.delete();
   }
+}
+
+/**
+ * Moves `source` to `destination`, including its `-wal`/`-shm` siblings (if
+ * present) — §7.2's reasoning applies here too: in WAL mode, a connection
+ * can have committed data sitting in `-wal` that was never checkpointed
+ * into the main file, so leaving it behind would silently turn "preserve
+ * the old DB" into "preserve an incomplete copy of it".
+ *
+ * Sibling paths for *both* `source` and `destination` are computed up
+ * front, before any move happens — `File#moveSync` updates the calling
+ * instance's own `uri` to the new location, so deriving a sibling path from
+ * a `File` *after* moving it would silently compute the sibling of where it
+ * ended up, not where it started.
+ *
+ * Exported for `services/RecoveryService.ts`.
+ */
+export function moveDbFileWithWalSiblings(source: File, destination: File): void {
+  const sourceSiblings = getWalSiblings(source);
+  const destinationSiblings = getWalSiblings(destination);
+
+  if (!source.exists) return;
+  source.moveSync(destination);
+
+  for (let i = 0; i < sourceSiblings.length; i++) {
+    if (sourceSiblings[i].exists) {
+      sourceSiblings[i].moveSync(destinationSiblings[i]);
+    }
+  }
+}
+
+/** Exported for `services/RecoveryService.ts`. */
+export function deleteDbFileWithWalSiblings(file: File): void {
+  const siblings = getWalSiblings(file);
+  deleteIfExists(file);
+  for (const sibling of siblings) deleteIfExists(sibling);
 }
 
 async function readUserVersion(db: DB): Promise<number> {
@@ -129,6 +174,21 @@ async function createMigrationBackup(db: DB): Promise<void> {
 
 function deleteMigrationBackupIfPresent(): void {
   deleteIfExists(getBackupFile());
+}
+
+/**
+ * §8.5 — a best-effort heuristic for "the DB file exists, a key *was*
+ * read, but it can't decrypt this file" (wrong/stale key, or corruption).
+ * SQLite's own header-validation failure is conventionally worded "file
+ * is not a database" — exactly what SQLCipher also produces when the
+ * supplied key can't verify the header, since without the right key every
+ * byte (including where the plaintext header would be) looks like random
+ * data. Unverified on-device (see README) — this app cannot currently
+ * build to a device to confirm op-sqlite/SQLCipher's exact wording here.
+ */
+function looksLikeDecryptFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not a database/i.test(message);
 }
 
 /**
@@ -224,6 +284,64 @@ function recoverInterruptedRestoreIfNeeded(): void {
     // A `.restoring` temp file only ever matters mid-`restoreMigrationBackup`;
     // once `dbFile` exists again, any leftover is stale.
     deleteIfExists(getRestoreTempFile());
+  }
+}
+
+/**
+ * Startup self-healing for an interrupted §8.8 Recovery bootstrap
+ * (`services/RecoveryService.ts`'s `restoreFromBackup`). If the app was
+ * killed between step 5 (moving the genuine old, still-undecryptable DB
+ * aside to `getRecoveryOldFile()`) and step 6 (moving the newly-restored
+ * DB into `dbFile`'s position), a normal launch would otherwise see
+ * `getDbFile().exists === false` and take exactly the path
+ * `recoverInterruptedRestoreIfNeeded` exists to prevent for the
+ * migration-backup case: silently create a brand-new empty database,
+ * making every record look like it vanished — and, if left running long
+ * enough for new records to be written into that empty DB, a later
+ * Recovery retry would then destroy those new records too (Recovery's own
+ * pre-attempt check would see `getRecoveryOldFile()` and treat the by-then
+ * non-empty `dbFile` as disposable leftover from the earlier attempt).
+ *
+ * Only acts when `dbFile` is absent. If `dbFile` exists, this is either
+ * mid-attempt at the *other* end of the same window (see
+ * `discardStaleRecoveryOldIfPresent`, below, for the step 8/9 case) or a
+ * normal, uninterrupted state — nothing to fix either way. This narrower
+ * "only when absent" condition is specifically what makes it safe to call
+ * from *this* general-purpose startup path, where a `dbFile` that exists
+ * might be a perfectly good, currently-in-use database that just hasn't
+ * been opened yet this call — unlike `restoreFromBackup`'s own, more
+ * aggressive pre-attempt check (`RecoveryService.ts`'s
+ * `recoverGenuineOldDbForRetry`), which is only reachable after the
+ * *current* `dbFile` has already failed to open and so can safely treat
+ * any leftover there as disposable.
+ *
+ * Must run before `getOrCreateDatabaseKey` is asked whether the DB file
+ * exists, same as `recoverInterruptedRestoreIfNeeded`.
+ */
+export function recoverInterruptedRecoveryIfNeeded(): void {
+  const dbFile = getDbFile();
+  const oldAsideFile = getRecoveryOldFile();
+  if (dbFile.exists || !oldAsideFile.exists) return;
+  moveDbFileWithWalSiblings(oldAsideFile, dbFile);
+}
+
+/**
+ * Complementary cleanup for the *other* end of the same window: if the app
+ * was killed between step 8 (the new key persisted) and step 9 (the old DB
+ * aside finally discarded), `dbFile` is already the good, fully-committed
+ * new database — reaching this point (a *successful* open, called only
+ * from `getDatabase()`'s success path below) proves it. Any
+ * `getRecoveryOldFile()` left over at that point is necessarily stale (a
+ * completed Recovery whose last step didn't run), never data still worth
+ * preserving, so it's safe to finish discarding it here — rather than
+ * leaving it to accumulate indefinitely or, worse, be mistaken for genuine
+ * data by a much later, unrelated Recovery attempt (which would otherwise
+ * restore this stale file over a perfectly good, actively-used database).
+ */
+function discardStaleRecoveryOldIfPresent(): void {
+  const oldAsideFile = getRecoveryOldFile();
+  if (oldAsideFile.exists) {
+    deleteDbFileWithWalSiblings(oldAsideFile);
   }
 }
 
@@ -332,7 +450,7 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
       // leak one connection per attempt. A no-op if `restoreBackup`
       // above already closed it before failing.
       closeOnce();
-      throw error;
+      throw looksLikeDecryptFailure(error) ? new DatabaseCorruptOrWrongKeyError(error) : error;
     }
     // §7.2: reopen against the restored (pre-migration) file so the app
     // stays usable, but record that this happened — see
@@ -356,6 +474,27 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
 }
 
 /**
+ * Opens, applies pragmas, and brings a *fresh* database (at `fileName`, in
+ * the same directory as the main DB) up to the current schema version.
+ * Only for `services/RecoveryService.ts`'s temporary database (§8.8) — a
+ * brand-new file always starts at `user_version = 0`, so unlike
+ * `openAndMigrate`, there's no existing-data backup/restore path to wire
+ * up, and no shared `dbSingleton` (the caller owns this connection's
+ * lifecycle directly, since Recovery may open several of these in
+ * sequence while the *real* connection stays closed throughout).
+ */
+export async function openAndMigrateFreshAt(fileName: string, encryptionKey: string): Promise<DB> {
+  const dir = getDbDirectory();
+  if (!dir.exists) {
+    dir.create({ intermediates: true });
+  }
+  const db = open({ name: fileName, location: dir.uri.replace(/^file:\/\//, ''), encryptionKey });
+  await applyPragmas(db);
+  await runMigrations(db, MIGRATIONS, { getUserVersion: () => readUserVersion(db) });
+  return db;
+}
+
+/**
  * Returns the singleton database connection, opening and migrating it on
  * first call. Concurrent callers during startup share one in-flight open.
  *
@@ -374,8 +513,14 @@ export async function getDatabase(): Promise<DB> {
         // interrupted restore is exactly a case where that question's
         // obvious-looking answer ("no") would be wrong. See doc comment.
         recoverInterruptedRestoreIfNeeded();
+        recoverInterruptedRecoveryIfNeeded();
         const key = await getOrCreateDatabaseKey(getDbFile().exists);
         const db = await openAndMigrate(key);
+        // Reaching here proves `db` is genuinely usable — see
+        // discardStaleRecoveryOldIfPresent's doc comment for why that's
+        // exactly the signal needed to tell a merely-uncleaned-up
+        // `recovery-old` apart from one still worth preserving.
+        discardStaleRecoveryOldIfPresent();
         dbSingleton = db;
         return db;
       } catch (error) {

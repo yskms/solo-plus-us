@@ -42,6 +42,32 @@ export class DatabaseKeyUnavailableError extends Error {
 }
 
 /**
+ * §8.5 — the DB file exists and a key *was* read successfully, but
+ * SQLCipher still couldn't decrypt the file with it (a stale/wrong key,
+ * or file corruption). §8.5's "鍵が読み出せない" (key unreadable) and this
+ * are different failure points, but the same practical situation from the
+ * person's side — their records won't open — so both route to the same
+ * Recovery screen (§8.8).
+ *
+ * Detected heuristically from the raw error message
+ * (`looksLikeDecryptFailure` in `database/connection.ts`) — SQLite's own
+ * header-validation failure surfaces as "file is not a database", the
+ * same symptom decrypting with the wrong key produces (SQLCipher can't
+ * verify the header without the right key). This heuristic is unverified
+ * on-device (see README): this app cannot currently build to a device to
+ * confirm exactly what op-sqlite/SQLCipher surface for this case.
+ */
+export class DatabaseCorruptOrWrongKeyError extends Error {
+  readonly originalError: unknown;
+
+  constructor(originalError: unknown) {
+    super('The database file exists but could not be decrypted with the stored key.');
+    this.name = 'DatabaseCorruptOrWrongKeyError';
+    this.originalError = originalError;
+  }
+}
+
+/**
  * §7.1 — the DB's `user_version` is newer than any migration this build of
  * the app knows about (the app was downgraded onto data written by a
  * newer version). The design forbids opening the DB in this state.
@@ -75,5 +101,38 @@ export class MigrationRestoreFailedError extends Error {
     this.name = 'MigrationRestoreFailedError';
     this.migrationError = migrationError;
     this.restoreError = restoreError;
+  }
+}
+
+/**
+ * §8.8 Recovery bootstrap — the chosen backup file failed the same
+ * validation a normal Import would apply (`services/importValidation`).
+ * A distinct type (not a plain `ValidationError`) so `RecoveryScreen` can
+ * show the per-field report rather than a single message. `errors` is
+ * typed structurally (not imported from `services/importValidation`) to
+ * keep `lib/` free of a dependency on `services/` — the shape is small
+ * and stable enough not to need the shared type.
+ */
+export class RecoveryImportInvalidError extends Error {
+  readonly validationErrors: { path: string; message: string }[];
+
+  constructor(validationErrors: { path: string; message: string }[]) {
+    super(`Backup file failed validation (${validationErrors.length} issue(s)).`);
+    this.name = 'RecoveryImportInvalidError';
+    this.validationErrors = validationErrors;
+  }
+}
+
+/**
+ * §8.8 step 4/7 — the temporary (or, after switching, the real) database
+ * was reopened after import but its row count didn't match the backup
+ * file. Whichever step this happens at, nothing about the *original*
+ * (still-undecryptable) database has been touched yet — see
+ * `RecoveryService` for exactly what's still safe at each point.
+ */
+export class RecoveryVerificationFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RecoveryVerificationFailedError';
   }
 }
