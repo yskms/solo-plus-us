@@ -11,9 +11,11 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
 Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
-クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
-日時編集 UI → Export/Import の UI）のうち Insights・App Lock はクローズ済み、現在は
-Recovery 画面に着手中。詳細は下記の各「実装状況」を参照。
+クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → Export/Import の UI →
+画面マスク → 日時編集 UI。基本設計 §18 の元の順序から Export/Import の UI を画面マスク・
+日時編集 UI より前に繰り上げ——Recovery の「バックアップから復元する」が、利用者が事前に
+Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面は
+クローズ済み、現在は Export/Import の UI に着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -960,3 +962,11 @@ Phase 1 で実装・テスト済みのものをそのまま再利用しており
   中断に限っては次回の起動（`getDatabase()` の `recoverInterruptedRecoveryIfNeeded`）
   でも自動的に旧DBを正しい位置へ戻す**ため再試行は安全だが、同じ実行の中で即座に
   戻す処理や、UI からの「元に戻す」導線は無い
+
+### Export/Import の UI
+
+`phase3/export-import` ブランチ。基本設計 §18 の元の Phase 3 順序は Recovery 画面の次が
+画面マスクだが、Recovery の「バックアップから復元する」は利用者が事前に Export していな
+ければ実際には使えず、D-07（OS バックアップから DB ディレクトリを除外している以上、
+Export が唯一の正式な復旧手段）とも合わせ、Export/Import の UI を画面マスク・日時編集
+UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・レビューで確認）。
