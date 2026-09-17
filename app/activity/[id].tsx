@@ -13,6 +13,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
+import { useAppLockActions } from '../../contexts/AppLock';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as ActivityService from '../../services/ActivityService';
 import { getSetting } from '../../services/SettingsRepository';
@@ -107,6 +108,7 @@ export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const db = useDatabase();
+  const { isLocked } = useAppLockActions();
 
   const [activity, setActivity] = useState<Activity | null>(null);
   const [orgasm, setOrgasm] = useState<boolean | null>(null);
@@ -206,6 +208,14 @@ export default function ActivityDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          // This Alert is a system dialog — it renders above the App
+          // Lock overlay (contexts/AppLock.tsx), so it can still be
+          // sitting open and tappable if the app was backgrounded and
+          // locked while it was up. Checked here, not before opening the
+          // Alert: the screen itself is already unreachable once locked
+          // (pointerEvents="none"), so this only ever matters for an
+          // Alert that was already open before the lock happened.
+          if (isLocked()) return;
           try {
             await ActivityService.deleteActivity(db, activity.id);
             router.back();

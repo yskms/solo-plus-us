@@ -44,7 +44,7 @@
  * `getEnrolledLevelAsync` checks below, and D-08's addendum.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, AppState, BackHandler, StyleSheet, View, type AppStateStatus } from 'react-native';
+import { Alert, AppState, BackHandler, Keyboard, StyleSheet, View, type AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../constants/theme';
 import { useDatabase } from './DatabaseContext';
@@ -68,6 +68,20 @@ interface AppLockActionsContextValue {
    * authentication succeeded.
    */
   authenticate: (promptMessage: string) => Promise<boolean>;
+  /**
+   * Point-in-time check, not a reactive value — for guarding a destructive
+   * action's `onPress` (e.g. deleting an Activity) against running while
+   * locked. `Alert.alert` is a system-level dialog that renders above
+   * this provider's own overlay (the same "outside the root view
+   * hierarchy" problem `record.tsx`'s old modal presentation had — see
+   * the file doc comment — except there's no non-Alert way to route
+   * around it: RN has no API to dismiss an Alert from code). If an Alert
+   * with a destructive confirm button was already open when the app
+   * backgrounded, it stays open and interactive on top of the lock
+   * screen after resuming; the button it confirms must check this itself
+   * rather than assume not being visible means not being reachable.
+   */
+  isLocked: () => boolean;
 }
 
 const AppLockActionsContext = createContext<AppLockActionsContextValue | null>(null);
@@ -93,6 +107,13 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState(true);
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<LocalAuthentication.LocalAuthenticationError | null>(null);
+  // Mirrors `enabled && locked` for the synchronous `isLocked()` check
+  // exposed via context — updated every render rather than via an effect,
+  // since it just needs to be correct by the time a caller reads it, not
+  // to trigger anything itself.
+  const isLockedRef = useRef(false);
+  isLockedRef.current = enabled && locked;
+  const isLocked = useCallback(() => isLockedRef.current, []);
 
   const backgroundedAtRef = useRef<number | null>(null);
   // A plain ref, not just the `authenticating` state: the AppState
@@ -250,6 +271,13 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       } else if (next === 'active' && backgroundedAtRef.current !== null) {
         if (shouldLockOnResume({ enabled, timing, backgroundedAtMs: backgroundedAtRef.current, nowMs: Date.now() })) {
           setLocked(true);
+          // The underlying screen (e.g. Activity Detail's note field)
+          // stays mounted and focused while locked — the keyboard is its
+          // own native layer, and can otherwise reappear over the lock
+          // overlay with the still-focused input silently accepting
+          // typed text behind it. Forcing a blur removes both the
+          // visible keyboard and the focus itself.
+          Keyboard.dismiss();
         }
         backgroundedAtRef.current = null;
         // Pick up a setting change made while backgrounded (e.g. restored
@@ -281,7 +309,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   }, [showingOverlay]);
 
   return (
-    <AppLockActionsContext.Provider value={{ refreshAppLockSettings, authenticate }}>
+    <AppLockActionsContext.Provider value={{ refreshAppLockSettings, authenticate, isLocked }}>
       <View
         style={styles.fill}
         pointerEvents={showingOverlay ? 'none' : 'auto'}

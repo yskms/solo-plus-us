@@ -510,13 +510,14 @@ UI/UX §17 の Settings 画面は PRIVACY/HEALTH/DATA/TRACKING/PREFERENCES/ABOUT
 |---|---|
 | `lib/appLockTiming.ts` | `shouldLockOnResume`：バックグラウンド復帰時にロックすべきかどうかの純粋関数。コールドスタート（`backgroundedAtMs === null`）は常にロック扱い |
 | `lib/localAuthMessages.ts` | `describeAuthError`：`expo-local-authentication` の失敗コードを人が読める文言に変換する純粋関数（lockout のみ具体的な文言、cancel 系は非表示） |
-| `contexts/AppLock.tsx` | `AppLockProvider`：`AppState` でバックグラウンド/フォアグラウンド遷移を監視し、`appLock.enabled`/`timing`（Phase 1 で追加済みの設定）に従ってロック画面を表示。DB 暗号鍵の可読性とは完全に独立（§8.3）——ロック中も DB 接続自体は保持されたまま、UI の描画だけを止める。認証試行そのものもここに集約（`attemptUnlock`）し、端末に認証手段が無くなった場合は `appLock.enabled` を自動 OFF にする |
+| `contexts/AppLock.tsx` | `AppLockProvider`：`AppState` でバックグラウンド/フォアグラウンド遷移を監視し、`appLock.enabled`/`timing`（Phase 1 で追加済みの設定）に従ってロック画面を表示。DB 暗号鍵の可読性とは完全に独立（§8.3）——ロック中も DB 接続自体は保持されたまま、UI の描画だけを止める。認証試行そのものもここに集約（`attemptUnlock`）し、端末に認証手段が無くなった場合は `appLock.enabled` を自動 OFF にする。ロック時に `Keyboard.dismiss()` を呼び、`isLocked()`（同期的な point-in-time チェック）を context 経由で公開（7回目参照） |
 | `components/LockScreen.tsx` | ロック画面（ブランドマーク・🔒・「Unlock with device authentication」、失敗理由の表示）。認証試行自体は `AppLockProvider` 側が持ち、ここは表示専用 |
 | `components/LoadErrorOverlay.tsx` | App Lock 設定の読み込みに失敗した場合のエラー表示 + 再試行 |
 | `app/settings/index.tsx` | Settings 画面（App Lock 行のみ） |
 | `app/settings/app-lock.tsx` | Use App Lock トグル、LOCK タイミング選択（Immediately/After 1 minute/After 5 minutes）。ON にする前に `getEnrolledLevelAsync()` で端末に認証手段が無い場合は拒否。OFF にする際も認証を要求 |
 | `app/(tabs)/index.tsx` | Today の右上に ⚙ アイコンを追加（§7 モックアップ通り）、`/settings` への導線 |
 | `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中も `children`（`Stack` 全体）はマウントしたまま、オーバーレイで覆う形（下記「レビューで見つかり、修正したもの」#3 参照）。`record` 画面は `presentation: 'modal'` を使わない（6回目参照） |
+| `app/activity/[id].tsx` | 削除確認 `Alert` の「Delete」`onPress` の先頭で `isLocked()` を確認し、ロック中は何もしない（7回目参照。`Alert` はシステムダイアログでロック画面より上に表示されるため） |
 
 #### テスト
 
@@ -705,6 +706,29 @@ Add Activity の画面を「Bottom Sheet **または** Modal」と明記して�
 App Lock の実装の中で最も壊れやすく、実機でしか確かめようがなかった部分（ネイティブ
 モーダルの遷移完了検知）をまるごと除去した形になる。記録画面はボタン2つだけの
 シンプルな画面のため、見た目の変化はほぼ無い（スライドの方向が変わる程度）。
+
+#### レビューで見つかり、修正したもの（7回目）
+
+ネイティブのモーダルは無くなったが、同じく「root の外」に出るものが2つ残っていた。
+
+1. **【低〜中】ロック中も、開いていた削除確認ダイアログを操作できる**：
+   `Alert.alert` はシステムダイアログとして、アプリの画面より常に上に表示される
+   （`record.tsx` の旧モーダルと同じ「root の外」の問題だが、RN には Alert を
+   コードから閉じる API が無いため、閉じて回避する手段が無い）。Activity Detail で
+   削除確認ダイアログ（`confirmDelete`）を開いたままバックグラウンドへ行き、戻って
+   ロックがかかっても、ダイアログはロック画面の上に残ったまま「Delete」を押せる
+   状態だった——認証なしで記録を削除できる経路。`AppLockProvider` に
+   `isLocked()`（その場で読む同期的なチェック。`enabled && locked` を毎レンダー
+   ミラーする ref 経由）を追加し、「Delete」の `onPress` の先頭で確認して
+   ロック中なら何もしないよう修正。他の `Alert` は操作を伴わないお知らせのみのため、
+   対象はこの削除確認だけ（`style: 'destructive'` を検索して確認）
+2. **【低】ロックしてもキーボードが残り、見えない入力欄に入力できる**：
+   Activity Detail でメモ入力中にロックがかかっても、キーボードは別のネイティブ
+   レイヤーのため、ロック画面の上に残ったままフォーカスも外れず、見えないメモ欄に
+   文字を打てる状態だった（予測変換候補に入力中の内容が表示される可能性もある）。
+   `setLocked(true)` の箇所で `Keyboard.dismiss()` を呼ぶよう修正
+
+これで App Lock のコード側で残る指摘は無く、あとは実機での確認項目のみになる。
 
 #### Known gaps
 
