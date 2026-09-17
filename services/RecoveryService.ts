@@ -17,7 +17,6 @@ import {
   getRecoveryOldFile,
   moveDbFileWithWalSiblings,
   openAndMigrateFreshAt,
-  recoverInterruptedRecoveryIfNeeded,
 } from '../database/connection';
 import { deleteStoredDatabaseKey, generateNewDatabaseKey, replaceStoredDatabaseKey } from '../database/key';
 import { markPrivacyIntroSeen } from '../lib/onboarding';
@@ -32,7 +31,43 @@ function getRecoveryTempFile(): File {
   return new File(getDbDirectory(), RECOVERY_TEMP_DB_FILE_NAME);
 }
 
-/** Removes anything a previous, interrupted Recovery attempt might have left behind in the *temp* file specifically — see `recoverInterruptedRecoveryIfNeeded` (database/connection.ts) for the old-DB-aside case, which is handled separately because it must never simply be deleted. */
+/**
+ * Unlike `database/connection.ts`'s `recoverInterruptedRecoveryIfNeeded`
+ * (shared with `getDatabase()`'s general startup path, which must leave a
+ * present `dbFile` alone — it might be a perfectly good, currently-in-use
+ * database), this one is only ever reachable from inside
+ * `restoreFromBackup`, which is itself only reachable after the *current*
+ * `dbFile` has already failed to open (see `DatabaseContext` — Recovery
+ * only shows for `DatabaseKeyUnavailableError`/`DatabaseCorruptOrWrongKeyError`).
+ * So whatever is at `dbFile` here — including a leftover from an earlier
+ * `restoreFromBackup` attempt at *this same* backup file that got past
+ * step 6 but failed step 7's verification, key never persisted — is never
+ * the good copy, and is always safe to discard.
+ *
+ * And if `getRecoveryOldFile()` exists at this point, it can't be a stale
+ * leftover from some earlier, unrelated, fully-completed Recovery either:
+ * `discardStaleRecoveryOldIfPresent` (connection.ts) runs on every
+ * *successful* `getDatabase()` open and would already have removed it
+ * before this code could ever run. So a `recovery-old` found here is
+ * unconditionally the one genuine copy of the original, still-
+ * undecryptable database — always safe, and necessary, to restore over
+ * whatever (if anything) currently sits at `dbFile`.
+ *
+ * Without this, a retry after a step 7 verification failure would reach
+ * this function's caller, see `dbFile` present (the leftover from the
+ * failed attempt), leave it and `recovery-old` untouched, and then fail
+ * again at its own step 5 — `moveDbFileWithWalSiblings` moving onto an
+ * already-occupied destination — every single time, leaving "delete and
+ * start over" (which destroys the genuine old DB) as the only way out.
+ */
+function recoverGenuineOldDbForRetry(): void {
+  const oldAsideFile = getRecoveryOldFile();
+  if (!oldAsideFile.exists) return;
+  deleteDbFileWithWalSiblings(getDbFile());
+  moveDbFileWithWalSiblings(oldAsideFile, getDbFile());
+}
+
+/** Removes anything a previous, interrupted Recovery attempt might have left behind in the *temp* file specifically — see `recoverGenuineOldDbForRetry` for the old-DB-aside case, which is handled separately because it must never simply be deleted. */
 function cleanUpPriorTempAttempt(): void {
   deleteDbFileWithWalSiblings(getRecoveryTempFile());
 }
@@ -60,16 +95,12 @@ export interface RestoreFromBackupResult {
  * database is exactly where it was, preserving whatever chance remains of
  * a human eventually recovering it some other way (§8.8: "将来復号できる
  * 可能性がある限り、こちらから消さない"). This holds across retries too —
- * see `recoverInterruptedRecoveryIfNeeded` (database/connection.ts), run
- * first, below: the same startup self-healing `getDatabase()` runs on
- * every normal launch, called again here so a retry started without an
- * intervening relaunch (tapping "Restore from a backup" again directly
- * from RecoveryScreen) self-heals the same way.
+ * see `recoverGenuineOldDbForRetry`, run first, below.
  */
 export async function restoreFromBackup(backupFileUri: string): Promise<RestoreFromBackupResult> {
   // Step 1.
   closeDatabaseForRecovery();
-  recoverInterruptedRecoveryIfNeeded();
+  recoverGenuineOldDbForRetry();
   cleanUpPriorTempAttempt();
 
   const raw = await new File(backupFileUri).text();
@@ -154,9 +185,9 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
     // already verified the same data moments earlier, so this would only
     // fire on a genuinely unexpected failure worth surfacing directly
     // rather than silently papering over with more file surgery. Whatever
-    // is left at `dbFile` now is exactly what
-    // `recoverInterruptedRecoveryIfNeeded` discards (not restores from) on
-    // the next attempt, since the real data is safe at `oldAsideFile`.
+    // is left at `dbFile` now is exactly what `recoverGenuineOldDbForRetry`
+    // discards (not restores from) on the next attempt, since the real
+    // data is safe at `oldAsideFile`.
     throw new RecoveryVerificationFailedError(
       `Database verification failed after switching (expected ${file.activities.length} rows, found ${finalCount}).`,
     );
@@ -182,7 +213,7 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
  * reached this error state) SecureStore entry, not something the file
  * deletion alone depends on.
  *
- * Unlike `restoreFromBackup`, this doesn't call `recoverInterruptedRecoveryIfNeeded`
+ * Unlike `restoreFromBackup`, this doesn't call `recoverGenuineOldDbForRetry`
  * first — choosing "delete and start over" is an explicit, fully-
  * destructive choice, so any `recovery-old` leftover from a previous
  * interrupted restore attempt is exactly the kind of thing this is meant

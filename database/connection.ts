@@ -305,12 +305,18 @@ function recoverInterruptedRestoreIfNeeded(): void {
  * Only acts when `dbFile` is absent. If `dbFile` exists, this is either
  * mid-attempt at the *other* end of the same window (see
  * `discardStaleRecoveryOldIfPresent`, below, for the step 8/9 case) or a
- * normal, uninterrupted state — nothing to fix either way.
+ * normal, uninterrupted state — nothing to fix either way. This narrower
+ * "only when absent" condition is specifically what makes it safe to call
+ * from *this* general-purpose startup path, where a `dbFile` that exists
+ * might be a perfectly good, currently-in-use database that just hasn't
+ * been opened yet this call — unlike `restoreFromBackup`'s own, more
+ * aggressive pre-attempt check (`RecoveryService.ts`'s
+ * `recoverGenuineOldDbForRetry`), which is only reachable after the
+ * *current* `dbFile` has already failed to open and so can safely treat
+ * any leftover there as disposable.
  *
  * Must run before `getOrCreateDatabaseKey` is asked whether the DB file
- * exists, same as `recoverInterruptedRestoreIfNeeded`. Also called at the
- * start of `restoreFromBackup` itself, so a retry started without an
- * intervening relaunch self-heals the same way.
+ * exists, same as `recoverInterruptedRestoreIfNeeded`.
  */
 export function recoverInterruptedRecoveryIfNeeded(): void {
   const dbFile = getDbFile();

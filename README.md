@@ -774,7 +774,7 @@ Import フローとは独立した、9 ステップの安全な切り替え手�
 | `database/connection.ts` | `getDbDirectory`/`getDbFile`/`getWalSiblings`/`deleteIfExists`/`getRecoveryOldFile`/`moveDbFileWithWalSiblings`/`deleteDbFileWithWalSiblings` を export（`RecoveryService` が直接ファイル操作するため）。`openAndMigrateFreshAt(fileName, key)` を追加——任意のファイル名で新規 DB を開き最新スキーマまで migrate する（既存データが無いため backup/restore 分岐は不要、Recovery の一時 DB 専用）。`looksLikeDecryptFailure` で「file is not a database」相当のエラーを検知し `DatabaseCorruptOrWrongKeyError` に変換。`recoverInterruptedRecoveryIfNeeded`（export）/`discardStaleRecoveryOldIfPresent`（内部）を `getDatabase()` の起動シーケンスに追加——`recoverInterruptedRestoreIfNeeded`（migration backup 用）と同じ場所で、Recovery bootstrap の中断も検知する（2回目のレビュー参照） |
 | `database/key.ts` | `deleteStoredDatabaseKey` を追加（「削除してやり直す」経路専用） |
 | `lib/errors.ts` | `RecoveryImportInvalidError`（バックアップファイルの検証失敗、per-field のエラー一覧を保持）、`RecoveryVerificationFailedError`（import 後の件数検証失敗）、`DatabaseCorruptOrWrongKeyError`（鍵はあるが復号できない場合、下記レビュー参照）を追加 |
-| `services/RecoveryService.ts` | `restoreFromBackup`：§8.8 の9ステップ（①旧接続を閉じる→②新しい鍵+一時DB→③一時DBへimport→④閉じて開き直し件数確認→⑤旧DBを退避→⑥一時DBを正式な位置へ→⑦開き直して確認→⑧新しい鍵を確定→⑨旧DBを破棄）をそのまま実装。**8まで旧DB・旧鍵に一切触れない**——失敗時は常に旧DBが手つかずで残る。実行開始時に `connection.ts` の `recoverInterruptedRecoveryIfNeeded`（起動時の自己修復と共通）を呼び、前回の中断/失敗から復帰してから始める。`markPrivacyIntroSeen` は手順③の一時DBに対して呼ぶ（2回目のレビュー参照）。`resetAndStartOver`：DBファイル削除のみで次回起動時に新規鍵が生成される（`getOrCreateDatabaseKey` の既存ロジックによる） |
+| `services/RecoveryService.ts` | `restoreFromBackup`：§8.8 の9ステップ（①旧接続を閉じる→②新しい鍵+一時DB→③一時DBへimport→④閉じて開き直し件数確認→⑤旧DBを退避→⑥一時DBを正式な位置へ→⑦開き直して確認→⑧新しい鍵を確定→⑨旧DBを破棄）をそのまま実装。**8まで旧DB・旧鍵に一切触れない**——失敗時は常に旧DBが手つかずで残る。実行開始時に `recoverGenuineOldDbForRetry`（`dbFile` の存在に関係なく `recovery-old` を優先——`restoreFromBackup` 到達時は今の `dbFile` が必ず開けなかった後、という前提の上で安全。`connection.ts` の `getDatabase()` 起動パス専用の `recoverInterruptedRecoveryIfNeeded` とは別物、3回目のレビュー参照）を呼び、前回の中断/失敗から復帰してから始める。`markPrivacyIntroSeen` は手順③の一時DBに対して呼ぶ（2回目のレビュー参照）。`resetAndStartOver`：DBファイル削除のみで次回起動時に新規鍵が生成される（`getOrCreateDatabaseKey` の既存ロジックによる） |
 | `components/RecoveryScreen.tsx` | UI/UX §21 のモックアップ通り。「バックアップから復元する」（`expo-document-picker` でJSONを選択）/「データを削除してやり直す」（確認ステップを挟む）に加え「Try again」（下記レビュー参照） |
 | `contexts/DatabaseContext.tsx` | `DatabaseKeyUnavailableError`/`DatabaseCorruptOrWrongKeyError` の場合に `RecoveryScreen` を表示するよう分岐（他のエラー種別は従来通りの簡易フォールバック）。`AppLockProvider` より前段（`children` の外）で表示されるため、§21「App Lock を経ずに到達する」を自然に満たす。開くロジックを `attemptOpen` として切り出し、Recovery 成功後に呼び直せるようにした |
 | `app.json` | `expo-document-picker` を plugins に追加（`expo config --json` で解決を確認。実際の効果は `ios.usesIcloudStorage` 未設定のため現状 no-op だが、素のまま prebuild すると警告が出るため登録） |
@@ -874,6 +874,42 @@ Recovery 側で再発する経路が残っていた。
 経由せず）普通に再起動する」「手順8〜9の間でアプリを強制終了し、普通に再起動する」
 を追加した（下記 Known gaps 参照）。
 
+#### レビューで見つかり、修正したもの（3回目）
+
+2回目の修正で `RecoveryService.ts` 側の再試行チェックを `connection.ts` の
+`recoverInterruptedRecoveryIfNeeded`（「`dbFile` があれば何もしない」という narrower
+な前提）に統合したことで、1回目のレビューで直したはずの経路が退行していた。
+
+- **【高】手順7で失敗した後に復元をやり直すと、必ず失敗し、旧DBを削除する選択肢しか
+  残らない**：手順7の検証失敗はアプリの中断ではなく通常の失敗経路だが、その時点では
+  `dbFile` に鍵未確定の新しいDBが、`recovery-old` に本物の旧DBが残る——`dbFile` が
+  存在するケースであり、統合後の `recoverInterruptedRecoveryIfNeeded` は何もしない。
+  再試行の手順5で `moveDbFileWithWalSiblings` が既に埋まっている
+  移動先（`recovery-old`）へ移動しようとして例外になり、以後何度やり直しても同じ
+  ところで失敗し続け、「Delete and start over」（本物の旧DBごと削除）しか選べなく
+  なっていた
+
+指摘を受けて、3箇所の役割を明確に分離：
+
+| 呼び出す場所 | `recovery-old` があるときの処理 |
+|---|---|
+| `getDatabase`（鍵の判定の前） | `dbFile` が無ければ戻す（手順5〜6の中断） |
+| `getDatabase`（正常に開けた後） | 古いものとして削除（手順8〜9の中断） |
+| `restoreFromBackup` の最初 | `dbFile` があっても、それを削除して `recovery-old` を戻す（手順6〜8の中断、手順7の通常の失敗） |
+
+`restoreFromBackup` に到達するのは今の `dbFile` を開けなかったときだけであり、かつ
+`recovery-old` が残っているならそれは `discardStaleRecoveryOldIfPresent`（正常に
+開けた時点で削除される）をすり抜けていない、つまり必ず本物の旧DB——という2点から、
+`dbFile` の存在有無に関係なく常に `recovery-old` を優先して良いと判断できる。
+`services/RecoveryService.ts` に `recoverGenuineOldDbForRetry`（`dbFile` を無条件に
+削除してから `recovery-old` を戻す）を復活させ、`restoreFromBackup` の先頭で
+これを呼ぶよう変更。`connection.ts` 側の `recoverInterruptedRecoveryIfNeeded` は
+`getDatabase()` 専用のまま変更していない（`dbFile` が存在する場合に無条件で
+破棄するのは、まだ開いていないだけの正常なDBを壊しうるため、起動パスでは安全ではない）。
+
+これでこの回避不能だった行き止まりは解消。実機での確認項目に「手順7で失敗させた後、
+すぐにもう一度復元する」を追加した。
+
 #### テスト
 
 `RecoveryService.ts`/`RecoveryScreen.tsx` は op-sqlite・expo-file-system・expo-document-picker
@@ -894,8 +930,10 @@ Phase 1 で実装・テスト済みのものをそのまま再利用しており
   - **手順8〜9の間でアプリを強制終了し、普通に再起動する**（`dbFile` が正常に開け、
     `discardStaleRecoveryOldIfPresent` が残っている `recovery-old` を削除すること）
   - **手順7の直前でアプリを強制終了し、再び Recovery を実行する**
-    （`recoverInterruptedRecoveryIfNeeded` が正しく本物の旧DBを `dbFile` の位置へ
-    戻すこと）
+    （`recoverGenuineOldDbForRetry` が正しく本物の旧DBを `dbFile` の位置へ戻すこと）
+  - **手順7で（アプリの中断ではなく）検証失敗させた後、すぐにもう一度復元する**
+    （3回目のレビューで見つかった経路。`recoverGenuineOldDbForRetry` が、鍵未確定の
+    新しいDBを破棄して本物の旧DBを正しく `dbFile` の位置へ戻すこと）
 - **`looksLikeDecryptFailure` のヒューリスティックは未検証**：op-sqlite/SQLCipher が
   鍵不一致・ファイル破損時に実際にどんなメッセージを出すかは実機でしか確認できない。
   「not a database」に一致しない場合、`DatabaseCorruptOrWrongKeyError` に変換されず
@@ -906,12 +944,8 @@ Phase 1 で実装・テスト済みのものをそのまま再利用しており
   セーフティ Export 自体がまだ実装されていない（Export/Import の UI は未着手の
   sub-item）
 - **同一実行内での自動ロールバックは無い**：④（一時DB検証）より後、⑦（正式DB検証）で
-  失敗した場合、旧DBは `oldAsideFile` に手つかずで残る。**次回の起動または Recovery
-  実行では `recoverInterruptedRecoveryIfNeeded` が自動的に旧DBを正しい位置へ戻す**
-  ため再試行は安全だが、同じ実行の中で即座に戻す処理や、UI からの「元に戻す」導線は無い
-- **手順6〜8の間の中断は未対応**：`dbFile` に鍵未確定の新しいDBが、`recovery-old` に
-  本物の旧DBが残っている状態でさらに Recovery を再実行すると、手順5の移動先
-  （`recovery-old` の位置）が既に埋まっている。`recoverInterruptedRecoveryIfNeeded`
-  は `dbFile` が存在する場合は何もしない（指摘2のシナリオと区別できないため）ので、
-  この狭い中断窓は現状フォローされていない。頻度・実害を評価した上で、必要なら
-  設計を詰めてから対応する
+  失敗した場合、旧DBは `oldAsideFile` に手つかずで残る。**次回の Recovery 再試行
+  （`restoreFromBackup` の先頭の `recoverGenuineOldDbForRetry`）または、⑤〜⑥の間の
+  中断に限っては次回の起動（`getDatabase()` の `recoverInterruptedRecoveryIfNeeded`）
+  でも自動的に旧DBを正しい位置へ戻す**ため再試行は安全だが、同じ実行の中で即座に
+  戻す処理や、UI からの「元に戻す」導線は無い
