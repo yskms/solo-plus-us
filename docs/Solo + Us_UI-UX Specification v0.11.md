@@ -77,6 +77,7 @@ UIも「今日」だけではなく、
 export const colors = {
   solo: '#2E7D6B',
   partnered: '#F4A699',
+  partneredStrong: '#92635B',
   intersection: '#3E5F58',
 
   background: '#F8F7FA',
@@ -99,7 +100,16 @@ Solo activity / primary interaction.
 
 `partnered`
 
-Partnered activity.
+Partnered activity。ブランドの面の色（大きめの色面・`IntersectPlus` ブランドマークなど装飾用途）。
+
+`partneredStrong`
+
+`partnered` の濃色バリアント。文字やドット等の小さな図形要素に `partnered` を使うと、
+Light テーマで背景（`background`/`surface`）に対して約 1.8〜1.95:1 しかなく、WCAG 1.4.11
+（図形要素 3:1）・1.4.3（大きな文字 3:1）を満たさない。**色そのもので「Partnered」を
+伝える要素（Activity バッジのドット、Calendar のドット、件数表示など）には `partnered`
+ではなく `partneredStrong` を使う。** Dark テーマは `partnered` 自体で十分なコントラストが
+あるため、`partneredStrong` は `partnered` と同値でよい。
 
 `intersection`
 
@@ -119,6 +129,7 @@ Settings に Appearance があり、App Icon にも Dark 版があるため、�
 export const darkColors = {
   solo: '#4FA890',
   partnered: '#F0B2A6',
+  partneredStrong: '#F0B2A6',
   intersection: '#7FB3A6',
 
   background: '#121615',

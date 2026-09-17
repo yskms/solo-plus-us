@@ -88,7 +88,7 @@ export default function TodayScreen() {
               </View>
               <View style={styles.metricsRow}>
                 <MetricCard value={counts.solo} label="Solo" color={colors.solo} />
-                <MetricCard value={counts.partnered} label="Partnered" color={colors.partnered} />
+                <MetricCard value={counts.partnered} label="Partnered" color={colors.partneredStrong} />
               </View>
             </>
           )}

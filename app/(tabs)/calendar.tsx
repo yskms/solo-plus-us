@@ -48,20 +48,23 @@ function todayLocalDate(): string {
  * Per-day summary: up to 2 individual dots, or a single collapsed count for
  * 3+ (§13). Solo is a hollow (outlined) dot, Partnered is a filled dot —
  * shape, not just color, carries the distinction (UI/UX §24 A3, §13 "色＋
- * activity indicator で識別"). Solo, not Partnered, gets the outline: an
- * outline's visibility depends entirely on its stroke color's contrast
- * against the background (there's no fill to fall back on), and
- * `colors.partnered` (`#F4A699` light) only reaches ~1.8:1 against
- * `colors.background` — below WCAG 1.4.11's 3:1 for graphical objects —
- * while `colors.solo` reaches ~4.6:1. Swapping which context gets which
- * shape keeps the low-contrast color on the more forgiving filled form.
+ * activity indicator で識別").
+ *
+ * Both dots use `colors.partneredStrong`/`colors.solo` rather than the
+ * plain `colors.partnered` — `colors.partnered` (`#F4A699` light) only
+ * reaches ~1.8-1.95:1 against `background`/`surface`, below WCAG 1.4.11's
+ * 3:1 for graphical objects *regardless* of fill vs. outline (that ratio
+ * is between the shape's own color and the background either way; an
+ * earlier version of this fix swapped Solo/Partnered's shapes assuming
+ * that alone would resolve it, which was wrong). `partneredStrong` is the
+ * darker/more legible variant for exactly this case — see `ThemeColors`.
  *
  * The 3+ case shows the count as text with no dot at all, rather than a
  * third dot style — a plain filled dot there would look identical to a
- * single Partnered activity and misread as "Partnered" (or, before this
- * fix, "Solo") rather than "a nonspecific multi-activity day". It isn't
- * asserting any one activity's context, so the shape rule for
- * *distinguishing* Solo from Partnered doesn't apply to it.
+ * single Partnered activity and misread as "Partnered" rather than "a
+ * nonspecific multi-activity day". It isn't asserting any one activity's
+ * context, so the shape rule for *distinguishing* Solo from Partnered
+ * doesn't apply to it.
  */
 function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors: ThemeColors }) {
   if (dayActivities.length === 0) return <View style={styles.dotRow} />;
@@ -76,7 +79,7 @@ function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors:
               style={[styles.dot, styles.dotHollow, { borderColor: colors.solo, backgroundColor: colors.background }]}
             />
           ) : (
-            <View key={activity.id} style={[styles.dot, { backgroundColor: colors.partnered }]} />
+            <View key={activity.id} style={[styles.dot, { backgroundColor: colors.partneredStrong }]} />
           ),
         )}
       </View>

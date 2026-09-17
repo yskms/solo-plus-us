@@ -372,6 +372,22 @@ lib/__tests__/relativeDate.test.ts   formatMonthDay を追加
    走っていた（競合は起きないが Calendar の1回目修正と矛盾するパターン）。Calendar と同じ、
    単一の `useFocusEffect` に `revision` を依存配列で含める形に統一
 
+### レビューで見つかり、修正したもの（3回目）
+
+1回目の「形を入れ替えれば解決する」という判断が誤りだった、という指摘。
+
+1. **【中】Partnered の色は塗りつぶしにしてもコントラスト基準を満たさず、他画面にも波及していた**：
+   WCAG 1.4.11 の 3:1 は図形と背景の差そのものへの基準であり、塗りつぶしか中抜きかは関係ない。
+   `#F4A699` は `background`（#F8F7FA）に対して約1.83:1、`surface`（#FFFFFF）に対して約1.95:1
+   しかなく、2回目の「中抜きにする側を入れ替える」修正だけでは実際には解決していなかった。
+   同じ `colors.partnered` は `app/(tabs)/index.tsx` の Today 月次件数（32px 太字、WCAG 1.4.3
+   の大きな文字 3:1 も未達）、`ActivityBadge`、`record.tsx` の選択ドットでも使われており、
+   Calendar 固有ではなく色トークン自体の問題だった。`constants/theme.ts` に
+   `partneredStrong`（Light: `#92635B`、`background`/`surface` に対しそれぞれ約4.73:1/5.05:1）
+   を追加し、文字色・小さな図形要素としての用途をこちらに切り替えた。`partnered` はブランドの
+   面の色・装飾用途（`IntersectPlus` 等）として残置。UI/UX §3 のカラートークン表・Semantic
+   usage にも追記した（ブランドマーク `IntersectPlus` は WCAG のロゴ除外に該当するため対象外）
+
 ### Known gaps
 
 - **実機での見た目の確認が未実施**：iOS は Xcode/Swift ツールチェーン問題（上記参照）でブロック中。
