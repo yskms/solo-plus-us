@@ -11,8 +11,9 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
 Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
-クローズ済み。現在は **Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
-日時編集 UI → Export/Import の UI）の Insights に着手中。詳細は下記の各「実装状況」を参照。
+クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
+日時編集 UI → Export/Import の UI）のうち Insights はクローズ済み、現在は App Lock に
+着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -488,3 +489,54 @@ test/__tests__/activityRepository.integration.test.ts  countAllActivities/getAct
   最頻時間帯は要件定義書 §25 で v1.1 と明記されているため未着手
 - **実機での見た目の確認が未実施**：Phase 1/2 と同じ制約（iOS は Xcode/Swift、Android は
   エミュレータ未セットアップ・ディスク容量不足）が引き続き残っている
+
+### App Lock
+
+`phase3/app-lock` ブランチ。基本設計 §18 の Phase 3 順序（Insights → App Lock → Recovery
+画面 → 画面マスク → 日時編集 UI → Export/Import の UI）に従い、Insights の次に着手。
+
+#### スコープの判断：Settings 画面は App Lock 分のみ先に作る
+
+UI/UX §17 の Settings 画面は PRIVACY/HEALTH/DATA/TRACKING/PREFERENCES/ABOUT の6セクション
+から成るが、App Lock 以外はまだどれも実装されていない。ユーザーと相談のうえ、
+**Settings 画面全体を先にスキャフォールドせず、App Lock 行だけを先に作る**ことにした。
+他のセクション（Health Connect・Data・Activity Details・Preferences・About）は、
+それぞれの Phase 3/4 の sub-item に着手するときに1行ずつ追加していく。「Coming soon」の
+プレースホルダー行は作らない（デッドリンクを残さない）。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `lib/appLockTiming.ts` | `shouldLockOnResume`：バックグラウンド復帰時にロックすべきかどうかの純粋関数。コールドスタート（`backgroundedAtMs === null`）は常にロック扱い |
+| `contexts/AppLock.tsx` | `AppLockProvider`：`AppState` でバックグラウンド/フォアグラウンド遷移を監視し、`appLock.enabled`/`timing`（Phase 1 で追加済みの設定）に従ってロック画面を表示。DB 暗号鍵の可読性とは完全に独立（§8.3）——ロック中も DB 接続自体は保持されたまま、UI の描画だけを止める |
+| `components/LockScreen.tsx` | ロック画面（ブランドマーク・🔒・「Unlock with device authentication」）。マウント時に自動で `expo-local-authentication` の認証プロンプトを起動し、失敗/キャンセル時はタップで再試行 |
+| `app/settings/index.tsx` | Settings 画面（App Lock 行のみ） |
+| `app/settings/app-lock.tsx` | Use App Lock トグル、LOCK タイミング選択（Immediately/After 1 minute/After 5 minutes）。ON にする前に `getEnrolledLevelAsync()` で端末に認証手段が無い場合は拒否し、アプリ独自 PIN が無い設計（§19）でロックアウトされることを防ぐ |
+| `app/(tabs)/index.tsx` | Today の右上に ⚙ アイコンを追加（§7 モックアップ通り）、`/settings` への導線 |
+| `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中は `OnboardingRedirect`/`MigrationRestoredBanner`/`Stack` 全体（＝全画面）と `UndoSnackbar` を描画しない |
+
+#### テスト
+
+```
+lib/__tests__/appLockTiming.test.ts   shouldLockOnResume（無効時は常に false、コールドスタートは常に true、
+                                       immediately/1m/5m の境界値）
+```
+
+`contexts/AppLock.tsx`・`components/LockScreen.tsx` 自体は `AppState`/`expo-local-authentication`
+（ネイティブ）依存のため Jest では検証できない——判定ロジックを `lib/appLockTiming.ts` に
+純粋関数として切り出すことで、そこだけはテスト可能にした。
+
+#### Known gaps
+
+- **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの
+  実機テストがそもそも必要（UI/UX §19 受け入れ条件「生体認証を無効にしている端末でも、
+  端末パスコード等で解除できること」）
+- **画面マスク（Recent Apps でのマスク）は未実装**：基本設計 §18 で App Lock の次の
+  sub-item として明示的に分けられているため、今回は含めていない。ロック画面自体は
+  実装したが、OS の Recent Apps スイッチャーに表示されるスナップショットに直前の
+  画面内容が写り込む可能性は、この機能が入るまで残る
+- **オンボーディング後の App Lock 案内は未実装**：UI/UX §6「Continue後、必要なら
+  App Lock 設定を案内する」は今回のスコープに含めていない
+- **Settings の他セクション**：Health Connect・Data（Export/Import/Delete）・
+  Activity Details・Preferences・About は未着手（上記「スコープの判断」参照）

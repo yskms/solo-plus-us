@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import { DatabaseProvider, useNeedsOnboarding } from '../contexts/DatabaseContext';
 import { DataRevisionProvider } from '../contexts/DataRevision';
 import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
+import { AppLockProvider } from '../contexts/AppLock';
 import { UndoSnackbar } from '../components/UndoSnackbar';
 import { MigrationRestoredBanner } from '../components/MigrationRestoredBanner';
 
@@ -51,20 +52,24 @@ export default function RootLayout() {
     <DatabaseProvider>
       <DataRevisionProvider>
         <RecordFeedbackProvider>
-          <View style={{ flex: 1 }}>
-            <OnboardingRedirect />
-            <MigrationRestoredBanner />
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
-              <Stack.Screen
-                name="record"
-                options={{ presentation: 'modal', headerShown: false }}
-              />
-              <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
-            </Stack>
-            <UndoSnackbar />
-          </View>
+          <AppLockProvider>
+            <View style={{ flex: 1 }}>
+              <OnboardingRedirect />
+              <MigrationRestoredBanner />
+              <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
+                <Stack.Screen
+                  name="record"
+                  options={{ presentation: 'modal', headerShown: false }}
+                />
+                <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
+                <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
+                <Stack.Screen name="settings/app-lock" options={{ title: 'App Lock' }} />
+              </Stack>
+              <UndoSnackbar />
+            </View>
+          </AppLockProvider>
         </RecordFeedbackProvider>
       </DataRevisionProvider>
     </DatabaseProvider>
