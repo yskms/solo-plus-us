@@ -969,4 +969,56 @@ Phase 1 で実装・テスト済みのものをそのまま再利用しており
 画面マスクだが、Recovery の「バックアップから復元する」は利用者が事前に Export していな
 ければ実際には使えず、D-07（OS バックアップから DB ディレクトリを除外している以上、
 Export が唯一の正式な復旧手段）とも合わせ、Export/Import の UI を画面マスク・日時編集
-UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・レビューで確認）。
+UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・レビューで確認）。§12（Export）・
+§13（Import/strict restore）に対応。「Delete Data」（§10.6、UI/UX §17 の DATA セクション
+3行目）は基本設計 §18 の Phase 3 に明記された項目ではないため、今回のスコープには含めて
+いない（下記 Known gaps 参照）。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `services/ExportService.ts` | 既存の `buildExportPayload`/`serializeExportFile`（JSON、Phase 1 実装済み）に加え `serializeExportCsv` を追加（§12.3）。列は `id,context,occurredLocalDate,occurredLocalTime,occurredAtUtc,timezoneOffsetMinutes,timezoneId,orgasm,ejaculation,protectionUsed,durationSeconds,moodBefore,moodAfter,note` の順で固定。CSV は復元対象外（§12.1）のため `syncVersion`/`createdAt`/`updatedAt` は含めない。カンマ・ダブルクォート・改行を含む値は RFC 4180 準拠でクォート |
+| `services/ImportService.ts` | 既存の `performReplaceImport`（置換復元、Phase 1 実装済み）に加え `performAppendImport` を追加（§13.3「追加のみ」）。`id` が未存在の Activity だけを挿入し、既存行・設定には一切触れない（`settings` は完全に無視——置換復元と違い「追加のみモードでは無視する」という§13.3の規定どおり） |
+| `services/SafetyExportService.ts`（新規） | §13.3 の「置換復元の手順 1」——置換の前に必ず検証済みバックアップを作る。Android は `expo-file-system/legacy` の `StorageAccessFramework`（ユーザーに保存先を選ばせ、書き込み後に読み直して件数を検証）。iOS には SAF 相当の標準 API が無いため（`StorageAccessFramework` は型定義上 Android 専用と明記）、アプリの `Paths.document` 直下に検証付きで書き込む（`database/connection.ts` の `getDbDirectory()` とは別の場所——DB はそこから意図的に除外されている。Documents は現状 iCloud/iTunes バックアップに含まれる。将来 iOS 側の DB バックアップ除外が実装されたとき、除外範囲が Documents 全体に広がらないことが前提——詳細はファイル内コメント参照）。検証（書き込んだ件数の読み直し確認）に失敗、またはユーザーが保存先選択をキャンセルした場合は `SafetyExportFailedError` を投げ、呼び出し側は置換を開始しない |
+| `services/ExportSharingService.ts`（新規） | 通常の Export（§12.4、共有シート——保存先の検証は不要）。`Paths.cache` に一時ファイルを書き、`expo-sharing` で共有し、共有後に削除する |
+| `lib/errors.ts` | `SafetyExportFailedError` を追加 |
+| `app/settings/data.tsx`（新規） | UI/UX §20 Screen 10（Export：JSON/CSV ボタン）＋ §13.3 の Import フロー（`ImportPreview`/`DestructiveConfirm` 相当、モックアップには無いが §25 のコンポーネント一覧と件数プレビューの文言例から実装）。ステップは `menu → modeChoice → confirmReplace/busy`——`RecoveryScreen.tsx` と同じ、ステップ状態を1ファイルで持つ構成。「追加のみ」はセーフティ Export 不要（非破壊的なため）で直接実行、「すべて置換」は確認画面を挟んでからセーフティ Export → 置換の順で実行。Import 完了後は `useDataRevision().bump()` を呼び、他画面（Today/Calendar 等）に変更を伝える |
+| `app/settings/index.tsx`/`app/_layout.tsx` | DATA セクションに「Export & Import」の1行を追加（UI/UX §17 の Export/Import/Delete の3行ではなく1行——Delete が無いため）。ルートタイトルは "Data" |
+
+#### テスト
+
+`services/ExportService.ts` の `serializeExportCsv`（純粋関数）と `services/ImportService.ts` の
+`performAppendImport` は既存の `test/__tests__/exportImport.integration.test.ts`（better-sqlite3
+統合テスト）に追加：追加のみモードが既存行・設定に触れないこと、同じファイルの2回目の
+Import が全件スキップされること、CSV のヘッダー順序とエスケープ（カンマ・クォート・改行）
+を検証。`services/SafetyExportService.ts`・`services/ExportSharingService.ts`・
+`app/settings/data.tsx` は op-sqlite 以外にも expo-file-system（`/legacy` の
+StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存するため Jest では
+検証できない——`RecoveryService.ts` と同じ制約。
+
+#### Known gaps
+
+- **実機での動作確認が未実施**：特に以下を優先して確認する：
+  - **Android のセーフティ Export**：`StorageAccessFramework.requestDirectoryPermissionsAsync`
+    でのディレクトリ選択、`createFileAsync`/`writeAsStringAsync`/`readAsStringAsync` の実際の
+    挙動（ファイル名の拡張子付与、既存ファイルとの衝突時の挙動など）
+  - **iOS のセーフティ Export**：`Paths.document` への `File#write`/`text()` の実際の挙動
+    （`write()` が明示的な `create()` なしで新規ファイルを作成できるかを含む、未検証）
+  - **共有シート**：JSON/CSV の共有・保存が両 OS で正しい MIME type/UTI で認識されること
+  - Import のファイル選択（`expo-document-picker`、JSON の読み込み）も同様
+- **iOS の DB バックアップ除外が未実装な間の一時的な整合**：セーフティ Export を
+  `Paths.document` 直下に書く設計は、「DB は除外・Documents の他の場所は除外されない」
+  という前提に依存する。§8.6 の iOS 側実装（`NSURLIsExcludedFromBackupKey`）が実装され、
+  かつその除外範囲が Documents 全体に広がった場合、この安全性の前提が崩れる——実装時に
+  `services/SafetyExportService.ts` を再確認する必要がある
+- **Delete Data（§10.6）は未実装**：UI/UX §17 の DATA セクションの3行目。基本設計 §18 の
+  Phase 3 に明記された項目ではないため今回のスコープに含めていない
+- **Export schema の Migration（§13.2）は未実装**：現行 export version が 1 のみで、
+  古いバージョンが存在しないため。v2 を出す時点で `migrateExportV1ToV2` 等を追加する必要
+  がある（`services/importValidation.ts` は現状 `version !== CURRENT_EXPORT_VERSION` を
+  一律拒否している）
+- **セーフティ Export 失敗時のリトライ導線が無い**：セーフティ Export が失敗すると
+  `menu` ステップへ戻るのみで、同じ確認画面へワンタップで戻る導線は無い（Cancel から
+  やり直す形になる）
+- **暗号化された Export（パスフレーズ付き）は v1.1 で検討**（§12.4 に明記、既知の対象外）

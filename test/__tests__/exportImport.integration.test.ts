@@ -7,8 +7,8 @@
 import { createTestDb, type TestDb } from '../support/sqliteTestDb';
 import * as ActivityService from '../../services/ActivityService';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
-import { buildExportPayload, serializeExportFile } from '../../services/ExportService';
-import { performReplaceImport } from '../../services/ImportService';
+import { buildExportPayload, serializeExportFile, serializeExportCsv } from '../../services/ExportService';
+import { performReplaceImport, performAppendImport } from '../../services/ImportService';
 import { validateExportFile } from '../../services/importValidation';
 import { setSetting, getSetting } from '../../services/SettingsRepository';
 import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
@@ -154,5 +154,59 @@ describe('Export → Import round trip', () => {
     // A real UI would stop here and never call performReplaceImport at all — asserting that a bit more
     // directly: the destination must remain exactly as it was (empty).
     expect(await ActivityRepository.findAllActivities(destDb)).toHaveLength(0);
+  });
+
+  it('append-import (§13.3 追加のみ) only inserts activities whose id is not already present, and leaves existing rows/settings untouched', async () => {
+    const existing = await ActivityService.recordActivity(destDb, {
+      context: 'solo',
+      instantUtc: new Date('2020-01-01T00:00:00Z'),
+      note: 'already here',
+    });
+    await setSetting(destDb, 'appLock.enabled', true);
+
+    await ActivityService.recordActivity(sourceDb, { context: 'partnered', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await ActivityService.recordActivity(sourceDb, { context: 'solo', instantUtc: new Date('2026-01-01T00:00:00Z') });
+    const exportFile = await buildExportPayload(sourceDb);
+    const validated = validateExportFile(JSON.parse(serializeExportFile(exportFile)));
+    if (!validated.valid) throw new Error('unexpected invalid export');
+
+    const first = await performAppendImport(destDb, validated.file);
+    expect(first.importedCount).toBe(2);
+    expect(first.skippedCount).toBe(0);
+
+    const afterFirst = await ActivityRepository.findAllActivities(destDb);
+    expect(afterFirst).toHaveLength(3); // the pre-existing one + 2 newly appended
+    expect(afterFirst.find((a) => a.id === existing.id)?.note).toBe('already here'); // untouched, not overwritten
+    expect(await getSetting(destDb, 'appLock.enabled')).toBe(true); // §13.3: settings ignored entirely in append-only mode
+
+    // Importing the exact same file again must skip everything — every id now already exists.
+    const second = await performAppendImport(destDb, validated.file);
+    expect(second.importedCount).toBe(0);
+    expect(second.skippedCount).toBe(2);
+    expect(await ActivityRepository.findAllActivities(destDb)).toHaveLength(3);
+  });
+
+  it('serializes CSV with the documented column order and escapes commas/quotes/newlines (§12.3)', async () => {
+    await ActivityService.recordActivity(sourceDb, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+      timezoneId: 'Asia/Tokyo',
+      note: 'has a comma, a "quote", and a\nnewline',
+    });
+    await ActivityService.recordActivity(sourceDb, { context: 'partnered', instantUtc: new Date('2026-01-01T00:00:00Z') });
+
+    const exportFile = await buildExportPayload(sourceDb);
+    const csv = serializeExportCsv(exportFile);
+    const lines = csv.split('\r\n');
+
+    expect(lines[0]).toBe(
+      'id,context,occurredLocalDate,occurredLocalTime,occurredAtUtc,timezoneOffsetMinutes,timezoneId,orgasm,ejaculation,protectionUsed,durationSeconds,moodBefore,moodAfter,note',
+    );
+    expect(lines).toHaveLength(1 + exportFile.activities.length);
+    expect(csv).toContain('"has a comma, a ""quote"", and a\nnewline"');
+    // CSV is one-way (§12.1) — restore-only fields must not appear.
+    expect(lines[0]).not.toContain('syncVersion');
+    expect(lines[0]).not.toContain('createdAt');
+    expect(lines[0]).not.toContain('updatedAt');
   });
 });
