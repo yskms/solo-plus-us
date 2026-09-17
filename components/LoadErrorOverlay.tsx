@@ -4,9 +4,8 @@
  * guessing "unlocked" (could expose content the person meant to protect)
  * or guessing "locked" (see the `disableAppLockDueToNoEnrollment` doc
  * comment in AppLock.tsx for why silently assuming "locked forever" on a
- * failure is its own trap). Rendered inside a React Native `Modal` (see
- * AppLock.tsx), which already fills the screen — this only needs
- * `flex: 1`, not its own absolute positioning.
+ * failure is its own trap). Rendered as an absolutely-positioned sibling
+ * overlay (see AppLock.tsx), so this fills that same area itself.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

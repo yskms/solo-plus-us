@@ -7,9 +7,8 @@
  * attempt itself (including auto-prompting on mount) so that its
  * `authenticatingRef` guard against spurious `AppState` churn stays in
  * one place rather than needing to synchronize across two components.
- * Rendered inside a React Native `Modal` (see AppLock.tsx), which already
- * fills the screen — this only needs `flex: 1`, not its own absolute
- * positioning.
+ * Rendered as an absolutely-positioned sibling overlay (see AppLock.tsx),
+ * so this fills that same area itself.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

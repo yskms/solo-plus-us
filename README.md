@@ -516,7 +516,7 @@ UI/UX §17 の Settings 画面は PRIVACY/HEALTH/DATA/TRACKING/PREFERENCES/ABOUT
 | `app/settings/index.tsx` | Settings 画面（App Lock 行のみ） |
 | `app/settings/app-lock.tsx` | Use App Lock トグル、LOCK タイミング選択（Immediately/After 1 minute/After 5 minutes）。ON にする前に `getEnrolledLevelAsync()` で端末に認証手段が無い場合は拒否。OFF にする際も認証を要求 |
 | `app/(tabs)/index.tsx` | Today の右上に ⚙ アイコンを追加（§7 モックアップ通り）、`/settings` への導線 |
-| `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中も `children`（`Stack` 全体）はマウントしたまま、オーバーレイで覆う形（下記「レビューで見つかり、修正したもの」#3 参照） |
+| `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中も `children`（`Stack` 全体）はマウントしたまま、オーバーレイで覆う形（下記「レビューで見つかり、修正したもの」#3 参照）。`record` 画面は `presentation: 'modal'` を使わない（6回目参照） |
 
 #### テスト
 
@@ -672,15 +672,49 @@ lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文
 Known gaps の実機確認項目に含めたまま、この単独の指摘は実機確認が済むまで
 未解決（要検証）として扱う。
 
+#### レビューで見つかり、修正したもの（6回目）：根本原因ごと除去
+
+5回目までの3ラウンドは、いずれも「ロック中も `record.tsx` のネイティブモーダルが
+ロック画面より上に残る（or ロック画面自体が出ない）」問題に対し、"何らかの合図で
+ネイティブの遷移完了を検知してから動く" という方針で対処してきた。ところが
+`onDismiss`・`pathname`・`record.tsx` のマウント/アンマウントと、3ラウンド連続で
+「この合図はネイティブの完了より後に来るはず」という前提に頼り、うち2回は前提が
+外れていた（`pathname` は state 更新時点、`onDismiss` は effect に先を越されて
+いた）。3回目の前提（マウント/アンマウントは閉じるアニメーション後）もコードの
+読み合わせだけでは確認できず、同じ種類の見落としを繰り返すおそれが指摘された。
+
+**対応**：合図を探すのをやめ、問題の原因（`record.tsx` が root とは別のネイティブ
+階層に描画される `presentation: 'modal'` であること）自体を無くした。UI/UX §8 は
+Add Activity の画面を「Bottom Sheet **または** Modal」と明記しており、ネイティブ
+モーダルは必須ではない。`app/_layout.tsx` の `record` から `presentation: 'modal'`
+を外し、他の画面と同じ既定の `card`（root と同じネイティブスタック内の push）に
+変更した。これにより、
+
+- `record` が root の外に別階層を持たなくなり、「表示中の画面があると2つ目を
+  表示できない」という衝突自体が起きなくなる
+- ロック画面側も `Modal` にする必要がなくなり、`children` の後ろに重ねる通常の
+  `View`（絶対配置の兄弟要素）だけで確実に覆える
+- `awaitingModalDismiss`・`registerRecordScreenMounted`/`Unmounted`・3秒の
+  タイムアウト・`onDismiss` と Android 用 effect の使い分けが、すべて不要になった
+  （`contexts/AppLock.tsx` から削除。`app/record.tsx` の mount/unmount 連携も削除）
+- `Alert.alert` も、競合するネイティブ遷移が無くなったため、他の画面と同様
+  その場で直接呼ぶ形に戻した（`pendingAlertRef` の退避が不要になった）
+- Android のハードウェア戻るボタンは、`Modal` の `onRequestClose` が無くなった
+  代わりに `BackHandler` でロック中は無視するよう追加した（新規に必要になった対応）
+
+App Lock の実装の中で最も壊れやすく、実機でしか確かめようがなかった部分（ネイティブ
+モーダルの遷移完了検知）をまるごと除去した形になる。記録画面はボタン2つだけの
+シンプルな画面のため、見た目の変化はほぼ無い（スライドの方向が変わる程度）。
+
 #### Known gaps
 
 - **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの
   実機テストがそもそも必要（UI/UX §19 受け入れ条件「生体認証を無効にしている端末でも、
   端末パスコード等で解除できること」）。特に以下は実機でのみ最終確認できる：
   iOS Face ID ダイアログ・Android 端末パスコード画面と `AppState` の実際の遷移順序、
-  **記録用モーダル（`app/record.tsx`）を開いたまま「Immediately」でロックし、
-  ロック解除後に記録用モーダルを閉じる一連の流れ**、Android で `not_enrolled` が
-  実際にどう返るか
+  Android で `not_enrolled` が実際にどう返るか。**記録画面（`app/record.tsx`）を
+  開いたままロックする組み合わせは、6回目の修正でネイティブモーダル自体を無くした
+  ため、他の画面（Today 等）を開いたままロックする場合と同じ経路になった**
 - **画面マスク（Recent Apps でのマスク）は未実装**：基本設計 §18 で App Lock の次の
   sub-item として明示的に分けられているため、今回は含めていない。ロック画面自体は
   実装したが、OS の Recent Apps スイッチャーに表示されるスナップショットに直前の
