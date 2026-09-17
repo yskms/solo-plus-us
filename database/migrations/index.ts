@@ -97,9 +97,22 @@ export async function runMigrations(
     return applied;
   } catch (error) {
     if (hadExistingData && options.backup) {
-      // §7.2: restore, then let the app keep running on the pre-migration
-      // schema. Migration failure is not fatal to opening the app.
-      await options.backup.restoreBackup();
+      try {
+        // §7.2: restore, then let the app keep running on the pre-migration
+        // schema. Migration failure is not fatal to opening the app.
+        await options.backup.restoreBackup();
+      } catch (restoreError) {
+        // Two different failures happened here: why the migration itself
+        // failed (`error`), and why the attempt to recover from that also
+        // failed (`restoreError`). A plain `throw error` would discard
+        // the second; a plain `throw restoreError` would discard the
+        // first. Diagnosing a broken v2+ migration needs both — losing
+        // either one halves the useful information at exactly the moment
+        // it matters most.
+        throw new Error('Migration failed, and restoring the pre-migration backup also failed.', {
+          cause: { migrationError: error, restoreError },
+        });
+      }
     }
     throw error;
   }

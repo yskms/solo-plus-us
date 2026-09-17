@@ -19,6 +19,7 @@ import { runMigrations, type Migration } from './migrations';
 const DB_FILE_NAME = 'solo-plus-us.sqlite';
 const DB_DIR_NAME = 'solo-plus-us-db';
 const BACKUP_FILE_NAME = 'solo-plus-us.migration-backup.sqlite';
+const RESTORE_TEMP_FILE_NAME = 'solo-plus-us.sqlite.restoring';
 
 // The plaintext SQLite header is the 16-byte ASCII string "SQLite format 3"
 // followed by a single 0x00 byte. A SQLCipher-encrypted file has random
@@ -53,6 +54,10 @@ function getDbFile(): File {
 
 function getBackupFile(): File {
   return new File(getDbDirectory(), BACKUP_FILE_NAME);
+}
+
+function getRestoreTempFile(): File {
+  return new File(getDbDirectory(), RESTORE_TEMP_FILE_NAME);
 }
 
 /** The `-wal` / `-shm` siblings SQLite creates next to a WAL-mode database file. */
@@ -131,19 +136,73 @@ function deleteMigrationBackupIfPresent(): void {
  * live database file out from under an open connection (and its `-wal`/
  * `-shm` siblings) is exactly the kind of unsafe file surgery §7.2 warns
  * against for the *backup* step; the restore step deserves the same care.
+ *
+ * Copies into a temp file *before* touching `dbFile`, then does a
+ * filesystem move (rename) rather than a second copy into place. The
+ * highest-risk step — copying a whole file, which could fail partway
+ * through — happens entirely before `dbFile` is deleted, so a failure
+ * there leaves `backup` and the (already-broken) `dbFile` exactly as they
+ * were: nothing new to lose. Without this, deleting `dbFile` first and
+ * then copying `backup` on top of it (the original implementation) had a
+ * window where a failed copy left *neither* file in place — the next
+ * launch would see no `dbFile`, treat that as a fresh install, and create
+ * a brand-new empty database while the real data sat untouched in
+ * `backup`, looking to the user like every record had been deleted. See
+ * `recoverInterruptedRestoreIfNeeded` for the complementary startup check
+ * that catches this even if a future change reintroduces a similar gap.
  */
 function restoreMigrationBackup(): void {
   const backup = getBackupFile();
   if (!backup.exists) {
     return;
   }
+
+  const temp = getRestoreTempFile();
+  deleteIfExists(temp);
+  backup.copy(temp);
+
   const dbFile = getDbFile();
   deleteIfExists(dbFile);
   for (const sibling of getWalSiblings(dbFile)) {
     deleteIfExists(sibling);
   }
-  backup.copy(dbFile);
+
+  temp.moveSync(dbFile);
   backup.delete();
+}
+
+/**
+ * Startup self-healing for an interrupted restore. If the app was killed
+ * (or crashed) mid-`restoreMigrationBackup` — after `backup` was fully
+ * copied into `dbFile` but before `backup.delete()` ran, or, before the
+ * fix above existed, after `dbFile` was deleted but before the copy back
+ * finished — this finishes the job *before* anything else runs. Without
+ * it, `getDbFile().exists === false` (with data still sitting in
+ * `backup`) would be indistinguishable from a genuine first launch: a
+ * brand-new empty database would be created with the existing key, and
+ * every record would appear to have vanished.
+ *
+ * Must run before `getOrCreateDatabaseKey` is asked whether the DB file
+ * exists — that's the exact question this resolves first.
+ */
+function recoverInterruptedRestoreIfNeeded(): void {
+  const dbFile = getDbFile();
+  const backup = getBackupFile();
+
+  if (!dbFile.exists && backup.exists) {
+    restoreMigrationBackup();
+    return;
+  }
+  if (dbFile.exists && backup.exists) {
+    // The restore itself finished (dbFile is back); only the final
+    // cleanup step didn't run. Nothing to reconstruct — just tidy up.
+    backup.delete();
+  }
+  if (dbFile.exists) {
+    // A `.restoring` temp file only ever matters mid-`restoreMigrationBackup`;
+    // once `dbFile` exists again, any leftover is stale.
+    deleteIfExists(getRestoreTempFile());
+  }
 }
 
 let dbSingleton: DB | null = null;
@@ -281,6 +340,10 @@ export async function getDatabase(): Promise<DB> {
   if (!openPromise) {
     openPromise = (async () => {
       try {
+        // Must run before anything asks whether the DB file exists — an
+        // interrupted restore is exactly a case where that question's
+        // obvious-looking answer ("no") would be wrong. See doc comment.
+        recoverInterruptedRestoreIfNeeded();
         const key = await getOrCreateDatabaseKey(getDbFile().exists);
         const db = await openAndMigrate(key);
         dbSingleton = db;

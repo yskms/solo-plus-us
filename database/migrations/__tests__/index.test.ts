@@ -149,6 +149,35 @@ describe('runMigrations', () => {
     expect(restoreBackup).toHaveBeenCalledTimes(1);
     expect(deleteBackup).not.toHaveBeenCalled();
   });
+
+  it('preserves both the migration failure and the restore failure when restoreBackup() also throws', async () => {
+    const fake = makeFakeDb(1);
+    fake.setFailOnStatementIncluding('ALTER TABLE a');
+    const migrationError = new Error('simulated failure on: ALTER TABLE a ADD COLUMN b TEXT');
+    const restoreError = new Error('simulated restore failure');
+    const createBackup = jest.fn(async () => {});
+    const deleteBackup = jest.fn(async () => {});
+    const restoreBackup = jest.fn(async () => {
+      throw restoreError;
+    });
+
+    let thrown: unknown;
+    try {
+      await runMigrations(fake.db, [migration(2, 'ALTER TABLE a ADD COLUMN b TEXT')], {
+        getUserVersion: fake.getUserVersion,
+        backup: { createBackup, deleteBackup, restoreBackup },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    const cause = (thrown as Error).cause as { migrationError: unknown; restoreError: unknown };
+    expect(cause.migrationError).toBeInstanceOf(Error);
+    expect((cause.migrationError as Error).message).toBe(migrationError.message);
+    expect(cause.restoreError).toBe(restoreError);
+    expect(deleteBackup).not.toHaveBeenCalled();
+  });
 });
 
 describe('runMigrations — §7.1 downgrade detection', () => {

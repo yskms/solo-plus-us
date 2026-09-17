@@ -63,7 +63,7 @@ DB 設計には影響しないため Phase 1 は着手できる。
 
 ## Phase 1 実装状況
 
-`phase1/foundation` ブランチ。134 件のテストが通り、`tsc --noEmit` はエラーなし。
+`phase1/foundation` ブランチ。135 件のテストが通り、`tsc --noEmit` はエラーなし。
 
 ### ビルド構成
 
@@ -182,6 +182,29 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
     `SafeAreaView edges={['top']}` を使っているため、ヘッダー付き画面（Activity Detail 等）では
     上端の安全領域確保が二重になる可能性がある。現状は到達しない経路のため、v2 migration の
     検証時に実機で確認する
+
+### 4回目のレビューで見つかったもの
+
+22. **Migration 復元の途中失敗がデータ消失に見える**：`restoreMigrationBackup()` が「先に
+    `dbFile` を削除し、その後 `backup` をコピーする」順序だったため、コピーが途中で失敗すると
+    `dbFile` と `backup` のどちらも存在しない瞬間が残りうる。次回起動時にこれを「新規インストール」
+    と誤認し、鍵はそのままに空の DB を新規作成してしまう——利用者からは記録が全て消えたように
+    見える。`backup` を一時ファイルへコピー→`dbFile` 削除→一時ファイルを `moveSync` で
+    `dbFile` へ、という順序に変更し、失敗しうる「まるごとコピー」を `dbFile` 削除より前に
+    完了させることでこの空白を無くした。あわせて、途中で強制終了された場合に備え、
+    `getDatabase()` の最初（鍵の有無を尋ねる前）に `recoverInterruptedRestoreIfNeeded()` を追加し、
+    `dbFile` が無く `backup` が残っている状態を新規インストールと区別して復元を完了させる
+23. **Migration 失敗時、復元自体も失敗すると元のエラーが消える**：`restoreBackup()` フック内で
+    例外が発生すると、その例外がそのまま上に伝播し、本来投げるはずだった migration 失敗の
+    原因が握り潰されていた。`restoreBackup()` の呼び出しを try/catch で囲み、失敗時は
+    `migrationError`（元の migration 失敗）と `restoreError`（復元自体の失敗）の両方を
+    `cause` に保持した新しいエラーを投げるよう修正。v2 以降で両方の失敗が重なった場合の
+    デバッグ時に両方の原因を確認できる
+
+いずれも v2 以降の migration が失敗した場合にしか到達しない経路だが、`connection.ts` /
+`migrations/index.ts` を触っているうちに合わせて対処。#22 は `connection.ts` 内の
+ファイル操作のみのため Jest では検証不可（既知の制約、下記参照）、#23 は
+`database/migrations/__tests__/index.test.ts` にテストを追加して検証済み。
 
 ### Known gaps（意図的に未実装）
 
