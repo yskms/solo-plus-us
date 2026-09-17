@@ -14,8 +14,8 @@ Repository → Quick Record → Undo → 履歴 → Export/Import の往復）�
 クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → Export/Import の UI →
 画面マスク → 日時編集 UI。基本設計 §18 の元の順序から Export/Import の UI を画面マスク・
 日時編集 UI より前に繰り上げ——Recovery の「バックアップから復元する」が、利用者が事前に
-Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面は
-クローズ済み、現在は Export/Import の UI に着手中。詳細は下記の各「実装状況」を参照。
+Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面・
+Export/Import の UI はクローズ済み、現在は画面マスクに着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
