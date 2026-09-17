@@ -1091,3 +1091,49 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
   項目なので今は問題ないが、置換復元は `health_sync` の対応関係を全削除するため、
   Phase 4 で Health Connect を実装する際に必ず対応が必要になる箇所として残しておく
 - **暗号化された Export（パスフレーズ付き）は v1.1 で検討**（§12.4 に明記、既知の対象外）
+
+### 画面マスク
+
+`phase3/screen-mask` ブランチ。基本設計 §18 の Phase 3 順序に従い、Export/Import の UI の次に
+着手。要件定義書 §21 Discreet Mode「Recent Apps 画面のマスク」（v1.0 必須、●）。App Lock の
+レビュー時に「`inactive` は画面マスクの担当」と切り分けていた項目（`contexts/AppLock.tsx` の
+AppState リスナーのコメント参照）。
+
+**常時オン、設定不可**：App Lock 自体の enabled/disabled のような端末所有者の好みの設定ではなく、
+§8 の DB 暗号化・§8.6 のバックアップ除外と同じ、判断の余地のない OS レベルの露出対策として扱う
+（要件定義書側も「実装する」「●」であり「検討」ではない）。UI/UX §17 のモックアップにある
+「Hide App Preview >」の行は、App Lock の「UNLOCK WITH」行と同じ「情報のみ、トグルではない」
+扱いにした——設計判断記録に明文化された根拠は無いが、この判断で実装している。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `expo-screen-capture`（新規依存） | `preventScreenCaptureAsync()`（両 OS）でスクリーンショット・画面収録をブロック。Android は**これ単体で** Recent Apps のサムネイルも空白化される（`FLAG_SECURE`）。`enableAppSwitcherProtectionAsync()`（iOS のみ）で App Switcher・バックグラウンド・割り込み時のぼかしオーバーレイをネイティブ側に任せる——このアプリの View 階層で `AppState` を監視して自前でオーバーレイを描画する必要はない。`app.plugin.js` を持たないため `app.json` の `plugins` への追加は不要（`expo config --json` で確認済み） |
+| `lib/screenMask.ts`（新規） | `useScreenMask()`：上記2つの呼び出しをまとめたフック。`app/_layout.tsx` の `RootLayout` の最上部で無条件に呼ぶ（`DatabaseProvider`/`AppLockProvider` より外側——読み込み中・Recovery 画面・ロック中・ロック解除後のどの状態でも一律に適用するため） |
+| `app/settings/hide-app-preview.tsx`（新規） | 「常時オン」を伝える情報のみの画面（`app-lock.tsx` の「UNLOCK WITH」行と同じパターン）。トグルは無い |
+| `app/settings/index.tsx`/`app/_layout.tsx` | PRIVACY セクションに「Hide App Preview」の行を追加（App Lock の下、区切り線付き） |
+
+#### テスト
+
+`expo-screen-capture` はネイティブモジュールのため Jest では検証できない——`connection.ts`・
+`RecoveryService.ts` と同じ制約。`lib/screenMask.ts` は単純な2つの非同期呼び出し（プラット
+フォーム分岐込み）で、切り出して純粋関数化できる複雑な分岐が無いため、今回は純粋関数の抽出は
+していない。
+
+#### Known gaps
+
+- **実機での動作確認が未実施**：この項目は特にコードレビューだけでは確認しきれない
+  ——iOS の `enableAppSwitcherProtectionAsync()` のぼかし表示、Android の
+  `preventScreenCaptureAsync()` による Recent Apps サムネイルの空白化、両 OS での
+  スクリーンショット・画面収録のブロックは、いずれも実機の Recent Apps／App Switcher
+  を実際に開いて確認する必要がある
+- **スクリーンショットブロックと Recent Apps マスクが分離できない（Android）**：
+  要求されているのは「バックグラウンド移行時のマスク」だが、Android では
+  `preventScreenCaptureAsync()` が唯一の関連 API であり、これがスクリーンショット
+  自体のブロックも兼ねる。両者を分離する設定は無いため、意図した副次的保護として
+  受け入れている（README 上記参照）
+- **「Hide App Preview」を常時オン・トグル無しにする判断は、設計判断記録に明文化されて
+  いない**：要件定義書の「実装する」「●」という記載を根拠にした実装時の判断であり、
+  App Lock（D-08）のように独立した D-XX エントリを持たない。将来この判断に疑問が出た
+  場合、まずここを確認する

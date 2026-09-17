@@ -6,7 +6,8 @@
  * single "Export & Import" row rather than §17's separate Export/Import/
  * Delete rows — `settings/data.tsx` covers Export and Import; Delete
  * (§10.6) isn't built yet, so the mockup's three-row split isn't followed
- * literally (see README).
+ * literally (see README). "Hide App Preview" (§18 画面マスク) links to an
+ * informational screen, not a toggle — see `lib/screenMask.ts`.
  */
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -14,12 +15,16 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 
-function SettingsRow({ label, onPress }: { label: string; onPress: () => void }) {
+function SettingsRow({ label, onPress, divider }: { label: string; onPress: () => void; divider?: boolean }) {
   const { colors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.row, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}
+      style={({ pressed }) => [
+        styles.row,
+        { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+        divider && { borderTopWidth: StyleSheet.hairlineWidth },
+      ]}
       accessibilityRole="button"
     >
       <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
@@ -36,6 +41,7 @@ export default function SettingsIndexScreen() {
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRIVACY</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingsRow label="App Lock" onPress={() => router.push('/settings/app-lock')} />
+          <SettingsRow label="Hide App Preview" onPress={() => router.push('/settings/hide-app-preview')} divider />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>

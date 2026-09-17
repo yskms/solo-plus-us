@@ -11,6 +11,7 @@ import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
 import { AppLockProvider } from '../contexts/AppLock';
 import { UndoSnackbar } from '../components/UndoSnackbar';
 import { MigrationRestoredBanner } from '../components/MigrationRestoredBanner';
+import { useScreenMask } from '../lib/screenMask';
 
 /** First-ever launch only: sends the person to the Privacy Introduction before anything else. */
 function OnboardingRedirect() {
@@ -33,6 +34,10 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({});
+  // Unconditional — see lib/screenMask.ts. Applies regardless of
+  // DatabaseProvider/AppLock state (loading, Recovery, locked, unlocked),
+  // so it's called at the very top of the tree, not nested inside either.
+  useScreenMask();
 
   useEffect(() => {
     if (error) throw error;
@@ -72,6 +77,7 @@ export default function RootLayout() {
                 <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
                 <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
                 <Stack.Screen name="settings/app-lock" options={{ title: 'App Lock' }} />
+                <Stack.Screen name="settings/hide-app-preview" options={{ title: 'Hide App Preview' }} />
                 <Stack.Screen name="settings/data" options={{ title: 'Data' }} />
               </Stack>
               <UndoSnackbar />
