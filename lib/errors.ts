@@ -42,6 +42,32 @@ export class DatabaseKeyUnavailableError extends Error {
 }
 
 /**
+ * §8.5 — the DB file exists and a key *was* read successfully, but
+ * SQLCipher still couldn't decrypt the file with it (a stale/wrong key,
+ * or file corruption). §8.5's "鍵が読み出せない" (key unreadable) and this
+ * are different failure points, but the same practical situation from the
+ * person's side — their records won't open — so both route to the same
+ * Recovery screen (§8.8).
+ *
+ * Detected heuristically from the raw error message
+ * (`looksLikeDecryptFailure` in `database/connection.ts`) — SQLite's own
+ * header-validation failure surfaces as "file is not a database", the
+ * same symptom decrypting with the wrong key produces (SQLCipher can't
+ * verify the header without the right key). This heuristic is unverified
+ * on-device (see README): this app cannot currently build to a device to
+ * confirm exactly what op-sqlite/SQLCipher surface for this case.
+ */
+export class DatabaseCorruptOrWrongKeyError extends Error {
+  readonly originalError: unknown;
+
+  constructor(originalError: unknown) {
+    super('The database file exists but could not be decrypted with the stored key.');
+    this.name = 'DatabaseCorruptOrWrongKeyError';
+    this.originalError = originalError;
+  }
+}
+
+/**
  * §7.1 — the DB's `user_version` is newer than any migration this build of
  * the app knows about (the app was downgraded onto data written by a
  * newer version). The design forbids opening the DB in this state.

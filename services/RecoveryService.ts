@@ -1,11 +1,12 @@
 /**
  * 基本設計 v0.11 §8.5/§8.8 — Recovery bootstrap, for when the existing DB
- * file can't be decrypted (`DatabaseKeyUnavailableError`). Deliberately
- * independent from the normal `getDatabase()`/Import path — by
- * definition the existing DB can't be opened, so nothing that depends on
- * that (the normal Import flow, `ActivityRepository`, `ActivityService`)
- * is usable here. This is the one place allowed to bypass that and talk
- * to the filesystem/key storage directly, alongside `database/connection.ts`.
+ * file can't be decrypted (`DatabaseKeyUnavailableError` /
+ * `DatabaseCorruptOrWrongKeyError`). Deliberately independent from the
+ * normal `getDatabase()`/Import path — by definition the existing DB
+ * can't be opened, so nothing that depends on that (the normal Import
+ * flow, `ActivityRepository`, `ActivityService`) is usable here. This is
+ * the one place allowed to bypass that and talk to the filesystem/key
+ * storage directly, alongside `database/connection.ts`.
  */
 import { File } from 'expo-file-system';
 import {
@@ -17,6 +18,7 @@ import {
   openAndMigrateFreshAt,
 } from '../database/connection';
 import { deleteStoredDatabaseKey, generateNewDatabaseKey, replaceStoredDatabaseKey } from '../database/key';
+import { markPrivacyIntroSeen } from '../lib/onboarding';
 import { validateExportFile } from './importValidation';
 import { performReplaceImport } from './ImportService';
 import { RecoveryImportInvalidError, RecoveryVerificationFailedError } from '../lib/errors';
@@ -33,11 +35,69 @@ function getRecoveryOldFile(): File {
   return new File(getDbDirectory(), RECOVERY_OLD_DB_FILE_NAME);
 }
 
-/** Removes anything a previous, interrupted Recovery attempt might have left behind, before starting a new one. */
-function cleanUpAnyPriorAttempt(): void {
-  const tempFile = getRecoveryTempFile();
-  deleteIfExists(tempFile);
-  for (const sibling of getWalSiblings(tempFile)) deleteIfExists(sibling);
+/**
+ * Moves `source` to `destination`, including its `-wal`/`-shm` siblings
+ * (if present) — §7.2's reasoning applies here too: in WAL mode, a
+ * connection can have committed data sitting in `-wal` that was never
+ * checkpointed into the main file, so leaving it behind would silently
+ * turn "preserve the old DB" into "preserve an incomplete copy of it".
+ *
+ * Sibling paths for *both* `source` and `destination` are computed
+ * up front, before any move happens — `File#moveSync` updates the calling
+ * instance's own `uri` to the new location, so deriving a sibling path
+ * from a `File` *after* moving it would silently compute the sibling of
+ * where it ended up, not where it started.
+ */
+function moveDbFileWithWalSiblings(source: File, destination: File): void {
+  const sourceSiblings = getWalSiblings(source);
+  const destinationSiblings = getWalSiblings(destination);
+
+  if (!source.exists) return;
+  source.moveSync(destination);
+
+  for (let i = 0; i < sourceSiblings.length; i++) {
+    if (sourceSiblings[i].exists) {
+      sourceSiblings[i].moveSync(destinationSiblings[i]);
+    }
+  }
+}
+
+function deleteDbFileWithWalSiblings(file: File): void {
+  const siblings = getWalSiblings(file);
+  deleteIfExists(file);
+  for (const sibling of siblings) deleteIfExists(sibling);
+}
+
+/**
+ * If a previous `restoreFromBackup` attempt got at least as far as
+ * step 5 (moving the genuine old DB aside) but never reached step 9
+ * (final cleanup) — whether because step 7's verification failed, the
+ * app was killed in between, or this is a second attempt after the first
+ * one errored out — `getRecoveryOldFile()` holds the one and only
+ * genuine copy of the original, still-undecryptable database. Whatever
+ * currently sits at `getDbFile()`'s position is either leftover from
+ * that failed attempt (a new DB whose key was never persisted, since
+ * step 8 didn't run either) or nothing at all — never the real data.
+ *
+ * Without this, a *second* `restoreFromBackup` call would reach its own
+ * step 5, see `getDbFile()` present (the leftover), and — via
+ * `deleteIfExists(oldAsideFile)` — destroy the genuine old DB to make
+ * room for that leftover. §8.8's central guarantee ("将来復号できる
+ * 可能性がある限り、こちらから消さない") held only within a single
+ * successful run without this check; restoring the genuine old DB to its
+ * rightful place *first* is what makes it hold across a retry too.
+ */
+function recoverGenuineOldDbIfNeeded(): void {
+  const oldAsideFile = getRecoveryOldFile();
+  if (!oldAsideFile.exists) return;
+
+  deleteDbFileWithWalSiblings(getDbFile());
+  moveDbFileWithWalSiblings(oldAsideFile, getDbFile());
+}
+
+/** Removes anything a previous, interrupted Recovery attempt might have left behind in the *temp* file specifically — see `recoverGenuineOldDbIfNeeded` for the old-DB-aside case, which is handled separately because it must never simply be deleted. */
+function cleanUpPriorTempAttempt(): void {
+  deleteDbFileWithWalSiblings(getRecoveryTempFile());
 }
 
 export interface RestoreFromBackupResult {
@@ -62,12 +122,14 @@ export interface RestoreFromBackupResult {
  * fails before then, the original (still-undecryptable, but *un-deleted*)
  * database is exactly where it was, preserving whatever chance remains of
  * a human eventually recovering it some other way (§8.8: "将来復号できる
- * 可能性がある限り、こちらから消さない").
+ * 可能性がある限り、こちらから消さない"). This holds across retries too —
+ * see `recoverGenuineOldDbIfNeeded`, run first, below.
  */
 export async function restoreFromBackup(backupFileUri: string): Promise<RestoreFromBackupResult> {
   // Step 1.
   closeDatabaseForRecovery();
-  cleanUpAnyPriorAttempt();
+  recoverGenuineOldDbIfNeeded();
+  cleanUpPriorTempAttempt();
 
   const raw = await new File(backupFileUri).text();
   let parsed: unknown;
@@ -111,21 +173,16 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
       // Already closed above in the success path; a close-of-closed here
       // is expected on the error path where it wasn't reached yet.
     }
-    deleteIfExists(tempFile);
-    for (const sibling of getWalSiblings(tempFile)) deleteIfExists(sibling);
+    deleteDbFileWithWalSiblings(tempFile);
     throw error;
   }
 
-  // Step 5. The old file may not even exist (e.g. it was already moved
-  // aside by an interrupted previous attempt) — that's fine, there's
-  // simply nothing to preserve from it this time.
+  // Step 5. The old file may not even exist (a first-ever launch could
+  // theoretically reach `restoreFromBackup` with no prior DB at all) —
+  // that's fine, there's simply nothing to preserve from it this time.
   const dbFile = getDbFile();
   const oldAsideFile = getRecoveryOldFile();
-  deleteIfExists(oldAsideFile);
-  if (dbFile.exists) {
-    dbFile.moveSync(oldAsideFile);
-  }
-  for (const sibling of getWalSiblings(dbFile)) deleteIfExists(sibling);
+  moveDbFileWithWalSiblings(dbFile, oldAsideFile);
 
   // Step 6.
   tempFile.moveSync(dbFile);
@@ -134,14 +191,17 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
   const finalDb = await openAndMigrateFreshAt(dbFile.name, newKey);
   const finalCheck = await finalDb.execute('SELECT COUNT(*) as n FROM activities');
   const finalCount = (finalCheck.rows?.[0] as { n?: number } | undefined)?.n ?? -1;
-  finalDb.close();
   if (finalCount !== file.activities.length) {
+    finalDb.close();
     // The old DB is still intact at `oldAsideFile` and the stored key is
     // still the *old* one (step 8 hasn't run) — this deliberately doesn't
     // attempt an automatic rollback beyond that: getting here means step 4
     // already verified the same data moments earlier, so this would only
     // fire on a genuinely unexpected failure worth surfacing directly
-    // rather than silently papering over with more file surgery.
+    // rather than silently papering over with more file surgery. Whatever
+    // is left at `dbFile` now is exactly what `recoverGenuineOldDbIfNeeded`
+    // discards (not restores from) on the next attempt, since the real
+    // data is safe at `oldAsideFile`.
     throw new RecoveryVerificationFailedError(
       `Database verification failed after switching (expected ${file.activities.length} rows, found ${finalCount}).`,
     );
@@ -151,7 +211,18 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
   await replaceStoredDatabaseKey(newKey);
 
   // Step 9.
-  deleteIfExists(oldAsideFile);
+  deleteDbFileWithWalSiblings(oldAsideFile);
+
+  // Not part of §8.8's numbered sequence, but necessary for the restored
+  // app to behave correctly: `onboarding.privacyIntroSeenAt` isn't part
+  // of the export (lib/onboarding.ts — device-local routing state, not a
+  // product setting), so a freshly-imported DB has no record of it.
+  // Someone going through Recovery is, by definition, an existing user
+  // restoring their own history, not a first-time installer — sending
+  // them back through Privacy Introduction would misrepresent that.
+  // Must run before `finalDb.close()` below — the connection is needed.
+  await markPrivacyIntroSeen(finalDb);
+  finalDb.close();
 
   return { importedCount: file.activities.length };
 }
@@ -166,15 +237,19 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
  * here is extra care for the (already-empty, by definition of having
  * reached this error state) SecureStore entry, not something the file
  * deletion alone depends on.
+ *
+ * Unlike `restoreFromBackup`, this doesn't call `recoverGenuineOldDbIfNeeded`
+ * first — choosing "delete and start over" is an explicit, fully-
+ * destructive choice, so any `recovery-old` leftover from a previous
+ * interrupted restore attempt is exactly the kind of thing this is meant
+ * to discard, not preserve.
  */
 export async function resetAndStartOver(): Promise<void> {
   closeDatabaseForRecovery();
-  cleanUpAnyPriorAttempt();
+  cleanUpPriorTempAttempt();
 
-  const dbFile = getDbFile();
-  deleteIfExists(dbFile);
-  for (const sibling of getWalSiblings(dbFile)) deleteIfExists(sibling);
-  deleteIfExists(getRecoveryOldFile());
+  deleteDbFileWithWalSiblings(getDbFile());
+  deleteDbFileWithWalSiblings(getRecoveryOldFile());
 
   try {
     await deleteStoredDatabaseKey();

@@ -1,15 +1,20 @@
 /**
  * UI/UX §21 Screen 11 — Recovery. Shown by `DatabaseContext` in place of
- * the rest of the app when the DB file exists but its key can't be read
- * (`DatabaseKeyUnavailableError`, §8.5). Rendered *before* `AppLockProvider`
- * ever mounts (`DatabaseContext`'s error branch replaces `children`
- * entirely) — "App Lock を経ずに到達する": whether App Lock should apply
- * lives in the encrypted DB itself, unreadable here, and there's no data
- * yet for a lock to protect.
+ * the rest of the app when the DB file can't be decrypted
+ * (`DatabaseKeyUnavailableError` or `DatabaseCorruptOrWrongKeyError`,
+ * §8.5). Rendered *before* `AppLockProvider` ever mounts (`DatabaseContext`'s
+ * error branch replaces `children` entirely) — "App Lock を経ずに到達する":
+ * whether App Lock should apply lives in the encrypted DB itself,
+ * unreadable here, and there's no data yet for a lock to protect.
  *
  * 文言のルール (§21): state what happened as fact, not as the person's
- * mistake; offer exactly the two available actions; don't hide that
- * recovery might not be possible.
+ * mistake; don't hide that recovery might not be possible. The mockup
+ * shows exactly the two destructive actions, but a "Try again" is added
+ * ahead of them — `DatabaseKeyUnavailableError` specifically can also
+ * mean a single, transient SecureStore read came back empty (see
+ * `database/key.ts`'s `getOrCreateDatabaseKey`), not only a genuinely
+ * lost key, and neither destructive action should be the only way out of
+ * a failure that might just need retrying.
  */
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -18,7 +23,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { IntersectPlus } from './IntersectPlus';
 import { restoreFromBackup, resetAndStartOver } from '../services/RecoveryService';
-import { RecoveryImportInvalidError } from '../lib/errors';
+import { RecoveryImportInvalidError, RecoveryVerificationFailedError } from '../lib/errors';
 import { logError } from '../lib/log';
 
 type Step = 'choice' | 'confirmDelete' | 'busy';
@@ -29,8 +34,15 @@ function describeError(error: unknown): string {
     const more = error.validationErrors.length > shown.length ? `\n…and ${error.validationErrors.length - shown.length} more` : '';
     return `This file doesn't look like a Solo + Us backup:\n${shown.join('\n')}${more}`;
   }
-  if (error instanceof Error) return error.message;
-  return 'Something went wrong.';
+  if (error instanceof RecoveryVerificationFailedError) {
+    // Author-controlled message (see RecoveryService), safe to show as-is.
+    return error.message;
+  }
+  // Any other error (a native SQLite/filesystem error, ...) may embed a
+  // raw file path or fragment of SQL — shown to the device's own owner
+  // here, not a third party, but still not worth surfacing verbatim when
+  // a plain explanation says everything they actually need to know.
+  return 'Something went wrong while working with this file. Please try again.';
 }
 
 export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
@@ -94,6 +106,21 @@ export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
 
         {step === 'choice' && (
           <View style={styles.actions}>
+            {/* Not in the UI/UX §21 mockup (which shows only the two
+                destructive options) — added because `DatabaseKeyUnavailableError`
+                can also mean SecureStore returned nothing for a single,
+                transient read (see database/key.ts's own doc comment on
+                `getOrCreateDatabaseKey`), not only a genuinely lost key.
+                Without this, a transient failure would force a choice
+                between two irreversible actions that were never actually
+                necessary. */}
+            <Pressable
+              onPress={onRecovered}
+              style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Try again</Text>
+            </Pressable>
             <Pressable
               onPress={handleRestore}
               style={[styles.button, { backgroundColor: colors.solo }]}

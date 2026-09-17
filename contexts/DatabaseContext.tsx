@@ -15,7 +15,7 @@ import { getDatabase, wasRestoredFromFailedMigration } from '../database/connect
 import { clearAllClaims } from '../repositories/HealthSyncJobRepository';
 import { hasSeenPrivacyIntro } from '../lib/onboarding';
 import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
-import { DatabaseKeyUnavailableError, MigrationRestoreFailedError } from '../lib/errors';
+import { DatabaseCorruptOrWrongKeyError, DatabaseKeyUnavailableError, MigrationRestoreFailedError } from '../lib/errors';
 import { useTheme } from '../constants/theme';
 import { RecoveryScreen } from '../components/RecoveryScreen';
 
@@ -70,16 +70,19 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   }
 
   if (state.status === 'error') {
-    // §8.5/§8.8 (D-26): the one known, actionable error type — the DB file
-    // exists but its key can't be read — gets the full Recovery screen
-    // (restore from backup, or delete and start over), reached *before*
-    // AppLockProvider ever mounts (§21 "App Lock を経ずに到達する": whether
-    // App Lock should apply lives in the encrypted DB, unreadable here).
-    // Other error types (a downgrade, a v2+ migration+restore double
-    // failure, ...) keep the plain fallback below — Recovery's bootstrap
-    // is specifically about an unreadable key, not every way `getDatabase()`
-    // can fail, and retrying those the same way wouldn't help.
-    if (state.error instanceof DatabaseKeyUnavailableError) {
+    // §8.5/§8.8 (D-26): the two known, actionable "can't decrypt" error
+    // types get the full Recovery screen (retry, restore from backup, or
+    // delete and start over), reached *before* AppLockProvider ever
+    // mounts (§21 "App Lock を経ずに到達する": whether App Lock should
+    // apply lives in the encrypted DB, unreadable here). Both are
+    // "records unreachable" from the person's side even though they fail
+    // at different points internally (no key read at all, vs. a key that
+    // was read but doesn't decrypt this file) — §8.5's "復号できない"
+    // covers both. Other error types (a downgrade, a v2+ migration+
+    // restore double failure, ...) keep the plain fallback below —
+    // Recovery's bootstrap doesn't help with those, and retrying the same
+    // way wouldn't either.
+    if (state.error instanceof DatabaseKeyUnavailableError || state.error instanceof DatabaseCorruptOrWrongKeyError) {
       return <RecoveryScreen onRecovered={attemptOpen} />;
     }
 

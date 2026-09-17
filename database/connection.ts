@@ -15,6 +15,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { generateNewDatabaseKey, getOrCreateDatabaseKey } from './key';
 import { migration001Initial } from './migrations/001_initial';
 import { runMigrations, type Migration } from './migrations';
+import { DatabaseCorruptOrWrongKeyError } from '../lib/errors';
 
 const DB_FILE_NAME = 'solo-plus-us.sqlite';
 const DB_DIR_NAME = 'solo-plus-us-db';
@@ -131,6 +132,21 @@ async function createMigrationBackup(db: DB): Promise<void> {
 
 function deleteMigrationBackupIfPresent(): void {
   deleteIfExists(getBackupFile());
+}
+
+/**
+ * §8.5 — a best-effort heuristic for "the DB file exists, a key *was*
+ * read, but it can't decrypt this file" (wrong/stale key, or corruption).
+ * SQLite's own header-validation failure is conventionally worded "file
+ * is not a database" — exactly what SQLCipher also produces when the
+ * supplied key can't verify the header, since without the right key every
+ * byte (including where the plaintext header would be) looks like random
+ * data. Unverified on-device (see README) — this app cannot currently
+ * build to a device to confirm op-sqlite/SQLCipher's exact wording here.
+ */
+function looksLikeDecryptFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not a database/i.test(message);
 }
 
 /**
@@ -334,7 +350,7 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
       // leak one connection per attempt. A no-op if `restoreBackup`
       // above already closed it before failing.
       closeOnce();
-      throw error;
+      throw looksLikeDecryptFailure(error) ? new DatabaseCorruptOrWrongKeyError(error) : error;
     }
     // §7.2: reopen against the restored (pre-migration) file so the app
     // stays usable, but record that this happened — see
