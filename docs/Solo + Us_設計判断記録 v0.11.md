@@ -355,7 +355,12 @@ Health Connect のデータ型宣言（Health apps declaration）と Play Consol
 - App Lock：**v1.0 必須**
 - Export / Import：**v1.0 必須・無料**
 - Health Connect：**v1.0 系で提供**（D-12 のゲートに従う）
-- Insights タブ：v1.0 では合計／内訳／平均間隔まで。年次・曜日・時間帯・All Time は v1.1
+- Insights タブ：v1.0 では合計／内訳／平均間隔（全期間）まで。期間セレクタ（Month/Year
+  トグル）・月次棒グラフ・曜日・時間帯は v1.1
+  （Phase 3 実装時に修正——当初「All Time も v1.1」としていたが、v1.0 の「合計／内訳／
+  平均間隔」がそもそも全期間集計である以上、All Time 自体は v1.0 に含まれる。v1.1 なのは
+  Month/Year の期間セレクタと、それに伴う年次表示・月次棒グラフ・曜日/時間帯統計。
+  要件定義書 §25 の該当行もあわせて修正済み）
 
 **理由**
 

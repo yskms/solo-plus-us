@@ -748,6 +748,11 @@ OVER TIME
 
 長期利用時に、この画面がSolo + Usの中心価値になる。
 
+**この画面（セレクタ本体・Month/Year 切り替え・上記の年ごとの OVER TIME 内訳）は v1.1**
+（§27 参照）。v1.0 の Insights は常に全期間集計で、セレクタは無い——「All Time」という
+*選択肢*と、選択後に出る年ごとの内訳（OVER TIME）が v1.1 なのであって、全期間の合計
+そのもの（TOTAL ACTIVITIES、§14）は v1.0 に含まれる。両者を混同しないこと。
+
 ---
 
 # 16. Insight Language Rules
@@ -1436,13 +1441,13 @@ Calendar / 月次統計 / Recent history
 App Lock / **Recovery 画面** / Recents protection  
 日時編集 UI（過去日時への記録・編集。§8「Just now」からの日時変更入口、基本設計 §4.4/§11.4）  
 Export / Import の UI  
-Insights（合計・内訳・平均間隔）
+Insights（合計・内訳・平均間隔、全期間）
 
 ### Phase 4 — Health & Release
 
 Health Connect（clientRecordId 確認 → 同期 → リトライ → 削除同期）  
 Health apps declaration 提出 / ストア申請  
-Insights（年次・曜日・時間帯・All Time）
+Insights（期間セレクタ・月次棒グラフ・曜日・時間帯）
 
 ---
 

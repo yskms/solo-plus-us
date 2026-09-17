@@ -83,3 +83,43 @@ describe('ActivityRepository.restoreActivityRow — same rule applies to Import'
     ).resolves.toBeUndefined();
   });
 });
+
+describe('ActivityRepository.countAllActivities / getActivityTimeSpan — §14 Insights', () => {
+  it('returns all-zero counts and a null time span for an empty database', async () => {
+    await expect(ActivityRepository.countAllActivities(db)).resolves.toEqual({ total: 0, solo: 0, partnered: 0 });
+    await expect(ActivityRepository.getActivityTimeSpan(db)).resolves.toBeNull();
+  });
+
+  it('counts every activity regardless of date, split by context', async () => {
+    // occurredLocalDate/Time must stay consistent with occurredAtUtc + the
+    // fixture's +540min (JST) offset — see assertValidOccurredFields.
+    await ActivityRepository.createActivity(
+      db,
+      validInput({ context: 'solo', occurredAtUtc: '2020-01-01T00:00:00Z', occurredLocalDate: '2020-01-01', occurredLocalTime: '09:00' }),
+    );
+    await ActivityRepository.createActivity(db, validInput({ context: 'partnered', occurredAtUtc: '2026-09-14T14:42:00Z' }));
+    await ActivityRepository.createActivity(
+      db,
+      validInput({ context: 'partnered', occurredAtUtc: '2026-09-15T14:42:00Z', occurredLocalDate: '2026-09-15' }),
+    );
+
+    await expect(ActivityRepository.countAllActivities(db)).resolves.toEqual({ total: 3, solo: 1, partnered: 2 });
+  });
+
+  it('reports the oldest and newest occurredAtUtc across all activities', async () => {
+    await ActivityRepository.createActivity(
+      db,
+      validInput({ occurredAtUtc: '2024-06-01T00:00:00Z', occurredLocalDate: '2024-06-01', occurredLocalTime: '09:00' }),
+    );
+    await ActivityRepository.createActivity(db, validInput({ occurredAtUtc: '2026-09-14T14:42:00Z' }));
+    await ActivityRepository.createActivity(
+      db,
+      validInput({ occurredAtUtc: '2025-01-01T00:00:00Z', occurredLocalDate: '2025-01-01', occurredLocalTime: '09:00' }),
+    );
+
+    await expect(ActivityRepository.getActivityTimeSpan(db)).resolves.toEqual({
+      oldestOccurredAtUtc: '2024-06-01T00:00:00Z',
+      newestOccurredAtUtc: '2026-09-14T14:42:00Z',
+    });
+  });
+});

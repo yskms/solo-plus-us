@@ -10,8 +10,9 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 ## ステータス
 
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
-Repository → Quick Record → Undo → 履歴 → Export/Import の往復）はクローズ済み。
-現在は **Phase 2**（Calendar）に着手中。詳細は下記「Phase 1 実装状況」「Phase 2 実装状況」を参照。
+Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
+クローズ済み。現在は **Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
+日時編集 UI → Export/Import の UI）の Insights に着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -401,3 +402,89 @@ lib/__tests__/relativeDate.test.ts   formatMonthDay を追加
   **Insights（Phase 3）で Solo/Partnered を色分けしたグラフ（棒グラフ等）を作る際は、模様や
   ラベルなど色以外の手段を併用するか、明るさが十分に異なるグラフ専用の配色を別途用意すること**
   （UI/UX §24 A3「色に頼らない識別」・A4「グラフと同じ情報をテキストでも取得できる」に関わる）
+
+## Phase 3 実装状況
+
+`phase3/insights` ブランチ。まず Insights 画面（UI/UX §14）から着手。
+
+### スコープの判断：Insights は v1.0 分のみ、集計期間は全期間で確定
+
+要件定義書 §25 の MVP 表は元々 Insights を2行に分けており、「All Time」の文字は
+v1.1 側の行にあった。
+
+```
+Insights（合計・内訳・平均間隔）         v1.0 ●
+Insights（年次・曜日・時間帯・All Time） v1.1
+```
+
+v1.0 の行自体には集計期間が明記されておらず、実装当初は全期間（All Time）で作った
+ため、この表と食い違っていた（レビューで指摘）。ユーザーと相談のうえ、**全期間を
+v1.0 として確定し、MVP 表を修正**した（「All Time」を v1.0 側の行に移動）。
+
+```
+Insights（合計・内訳・平均間隔、全期間）           v1.0 ●
+Insights（期間セレクタ・月次棒グラフ・曜日・時間帯） v1.1
+```
+
+UI/UX §14/§15 のモックアップ（期間セレクタ・月次棒グラフ・最頻曜日・最頻時間帯）は
+両方の機能を1画面に描いているが、期間セレクタ本体（Month/Year トグル）・月次棒グラフ・
+最頻曜日/最頻時間帯は v1.1 のまま。Today の「THIS MONTH」（当月のみ）とは異なり、
+Insights は全期間を対象にする点が新規価値になる。画面には「All time」であることを
+明示するキャプションを追加した（期間セレクタが無いため、UI/UX §14 モックの年選択
+ドロップダウンだけを見て「今年の合計」と誤解されないように）。
+
+### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `repositories/ActivityRepository.ts` | `countAllActivities`（日付範囲なしの全件集計）、`getActivityTimeSpan`（`MIN`/`MAX(occurred_at_utc)`）を追加 |
+| `services/StatisticsService.ts` | `getInsightsSnapshot`：件数と時間範囲を1つのトランザクションで読み、平均間隔まで計算して返す（`ExportService.buildExportPayload` と同じ理由——2つの別々の読み取りの間に記録・削除が入ると、件数と最古/最新の時刻が別時点の値になり平均間隔がずれる） |
+| `lib/statistics.ts` | `averageIntervalDays`（§14「(最新−最古)÷(件数−1)の実時間差、2件未満は null」の純粋関数）、`formatAverageIntervalDays`（§14 表示規則「空欄にせず—を出す」。1日未満は時間単位で表示し、丸めた値がちょうど 1.0 のときだけ単数形にする） |
+| `app/(tabs)/insights.tsx` | TOTAL ACTIVITIES（全期間の合計・Solo/Partnered 内訳）・YOUR PATTERNS（平均間隔）・「All time」キャプション。Calendar と同じ `loading`/`ready`/`error` の3状態、単一 `useFocusEffect` パターンを最初から採用 |
+
+### テスト
+
+```
+lib/__tests__/statistics.test.ts                 averageIntervalDays（0/1/2件以上、(count-1)で割ること、実時間差）、
+                                                  formatAverageIntervalDays（時間/日の切り替え、単数/複数形の境界）
+test/__tests__/activityRepository.integration.test.ts  countAllActivities/getActivityTimeSpan を追加（既存ファイルに追加）
+```
+
+### レビューで見つかり、修正したもの（1回目）
+
+1. **【中】実装した「全期間」が MVP 表では v1.1 に分類されていた**：上記「スコープの判断」参照。
+   ユーザーと相談のうえ全期間を v1.0 として確定し、要件定義書 §25 の MVP 表を修正した
+2. **【中】画面に集計期間が表示されていなかった**：「TOTAL ACTIVITIES」の見出しだけでは
+   全期間の集計であることが分からず、UI/UX §14 モックの年選択ドロップダウンと合わせて
+   「今年の合計」と誤解されうる状態だった。「All time」キャプションを画面に追加
+3. **【低】件数と時間範囲を別々のトランザクションなしの読み取りで取得していた**：
+   `countAllActivities` と `getActivityTimeSpan` を `Promise.all` で並行に読んでおり、
+   間に記録・削除が入ると平均間隔が一時的にずれる状態だった。`ExportService` と同じ
+   理由で、`StatisticsService.getInsightsSnapshot` が1つのトランザクション内で両方を
+   読むよう修正
+4. **【低】1日未満の間隔が「0.0 days」と表示されていた**：記録が30分差でも「0.0 days」
+   となり同時刻の記録のように読めた。1日未満は時間単位（例: 「0.5 hours」）で表示する
+   よう修正。あわせて「1.0 days」のような不自然な複数形も、丸めた値がちょうど 1.0 の
+   ときだけ単数形（「1.0 day」/「1.0 hour」）になるよう修正
+
+### レビューで見つかり、修正したもの（2回目）
+
+1回目の「全期間を v1.0 として確定」が要件定義書 §25 にしか反映されておらず、正本の
+優先順位（設計判断記録 > 各設計文書の本文）に反する食い違いが残っていた、という指摘。
+
+1. **【中】設計判断記録・UI/UX 仕様に「All Time は v1.1」が残っていた**：
+   設計判断記録 D-13、UI/UX §27 Phase 4 の該当行が要件定義書 §25 の修正と食い違っていた。
+   両方とも「All Time」を v1.0 側に修正。あわせて UI/UX §15（Period Selector 本体・
+   Month/Year 切り替え・年ごとの OVER TIME 内訳）は v1.1 のままであり、v1.0 の全期間
+   合計（§14 TOTAL ACTIVITIES）とは別物であることを §15 に明記した
+2. **【低】1時間未満の間隔が「0.0 hours」と表示される**：記録が1分差でも「0.0 hours」と
+   なり、1回目に直した「0.0 days」と同じ問題が1段階下に残っていた。`occurred_at_utc` が
+   分単位精度（§4.2）であることに合わせ、1時間未満は分単位（例: 「1.0 minute」）で
+   表示するよう修正
+
+### Known gaps
+
+- **Insights の v1.1 分**：期間セレクタ（Month/Year トグル）・月次棒グラフ・最頻曜日・
+  最頻時間帯は要件定義書 §25 で v1.1 と明記されているため未着手
+- **実機での見た目の確認が未実施**：Phase 1/2 と同じ制約（iOS は Xcode/Swift、Android は
+  エミュレータ未セットアップ・ディスク容量不足）が引き続き残っている
