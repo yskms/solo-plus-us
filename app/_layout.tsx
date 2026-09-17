@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import { DatabaseProvider, useNeedsOnboarding } from '../contexts/DatabaseContext';
 import { DataRevisionProvider } from '../contexts/DataRevision';
 import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
+import { AppLockProvider } from '../contexts/AppLock';
 import { UndoSnackbar } from '../components/UndoSnackbar';
 import { MigrationRestoredBanner } from '../components/MigrationRestoredBanner';
 
@@ -51,20 +52,30 @@ export default function RootLayout() {
     <DatabaseProvider>
       <DataRevisionProvider>
         <RecordFeedbackProvider>
-          <View style={{ flex: 1 }}>
-            <OnboardingRedirect />
-            <MigrationRestoredBanner />
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
-              <Stack.Screen
-                name="record"
-                options={{ presentation: 'modal', headerShown: false }}
-              />
-              <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
-            </Stack>
-            <UndoSnackbar />
-          </View>
+          <AppLockProvider>
+            <View style={{ flex: 1 }}>
+              <OnboardingRedirect />
+              <MigrationRestoredBanner />
+              <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
+                {/* Not `presentation: 'modal'` — see contexts/AppLock.tsx's file doc
+                    comment. A modal-family presentation (`modal`/`formSheet`/etc.) is
+                    react-native-screens presenting from a separate native
+                    ViewController/ Activity, outside the root view hierarchy an
+                    overlay there can reliably cover; the default `card` push keeps
+                    this screen in the same native stack as everything else, which
+                    is what makes that overlay reliable without needing to track
+                    this screen's own close animation. UI/UX §8 allows either
+                    ("Bottom Sheet または Modal") — this isn't a spec deviation. */}
+                <Stack.Screen name="record" options={{ headerShown: false }} />
+                <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
+                <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
+                <Stack.Screen name="settings/app-lock" options={{ title: 'App Lock' }} />
+              </Stack>
+              <UndoSnackbar />
+            </View>
+          </AppLockProvider>
         </RecordFeedbackProvider>
       </DataRevisionProvider>
     </DatabaseProvider>

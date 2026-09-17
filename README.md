@@ -11,8 +11,9 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
 Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
-クローズ済み。現在は **Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
-日時編集 UI → Export/Import の UI）の Insights に着手中。詳細は下記の各「実装状況」を参照。
+クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
+日時編集 UI → Export/Import の UI）のうち Insights はクローズ済み、現在は App Lock に
+着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -488,3 +489,273 @@ test/__tests__/activityRepository.integration.test.ts  countAllActivities/getAct
   最頻時間帯は要件定義書 §25 で v1.1 と明記されているため未着手
 - **実機での見た目の確認が未実施**：Phase 1/2 と同じ制約（iOS は Xcode/Swift、Android は
   エミュレータ未セットアップ・ディスク容量不足）が引き続き残っている
+
+### App Lock
+
+`phase3/app-lock` ブランチ。基本設計 §18 の Phase 3 順序（Insights → App Lock → Recovery
+画面 → 画面マスク → 日時編集 UI → Export/Import の UI）に従い、Insights の次に着手。
+
+#### スコープの判断：Settings 画面は App Lock 分のみ先に作る
+
+UI/UX §17 の Settings 画面は PRIVACY/HEALTH/DATA/TRACKING/PREFERENCES/ABOUT の6セクション
+から成るが、App Lock 以外はまだどれも実装されていない。ユーザーと相談のうえ、
+**Settings 画面全体を先にスキャフォールドせず、App Lock 行だけを先に作る**ことにした。
+他のセクション（Health Connect・Data・Activity Details・Preferences・About）は、
+それぞれの Phase 3/4 の sub-item に着手するときに1行ずつ追加していく。「Coming soon」の
+プレースホルダー行は作らない（デッドリンクを残さない）。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `lib/appLockTiming.ts` | `shouldLockOnResume`：バックグラウンド復帰時にロックすべきかどうかの純粋関数。コールドスタート（`backgroundedAtMs === null`）は常にロック扱い |
+| `lib/localAuthMessages.ts` | `describeAuthError`：`expo-local-authentication` の失敗コードを人が読める文言に変換する純粋関数（lockout のみ具体的な文言、cancel 系は非表示） |
+| `contexts/AppLock.tsx` | `AppLockProvider`：`AppState` でバックグラウンド/フォアグラウンド遷移を監視し、`appLock.enabled`/`timing`（Phase 1 で追加済みの設定）に従ってロック画面を表示。DB 暗号鍵の可読性とは完全に独立（§8.3）——ロック中も DB 接続自体は保持されたまま、UI の描画だけを止める。認証試行そのものもここに集約（`attemptUnlock`）し、端末に認証手段が無くなった場合は `appLock.enabled` を自動 OFF にする。ロック時に `Keyboard.dismiss()` を呼び、`isLocked()`（同期的な point-in-time チェック）を context 経由で公開（7回目参照） |
+| `components/LockScreen.tsx` | ロック画面（ブランドマーク・🔒・「Unlock with device authentication」、失敗理由の表示）。認証試行自体は `AppLockProvider` 側が持ち、ここは表示専用 |
+| `components/LoadErrorOverlay.tsx` | App Lock 設定の読み込みに失敗した場合のエラー表示 + 再試行 |
+| `app/settings/index.tsx` | Settings 画面（App Lock 行のみ） |
+| `app/settings/app-lock.tsx` | Use App Lock トグル、LOCK タイミング選択（Immediately/After 1 minute/After 5 minutes）。ON にする前に `getEnrolledLevelAsync()` で端末に認証手段が無い場合は拒否。OFF にする際も認証を要求 |
+| `app/(tabs)/index.tsx` | Today の右上に ⚙ アイコンを追加（§7 モックアップ通り）、`/settings` への導線 |
+| `app/_layout.tsx` | `AppLockProvider` を `RecordFeedbackProvider` の内側・`Stack` の外側に配線。ロック中も `children`（`Stack` 全体）はマウントしたまま、オーバーレイで覆う形（下記「レビューで見つかり、修正したもの」#3 参照）。`record` 画面は `presentation: 'modal'` を使わない（6回目参照） |
+| `app/activity/[id].tsx` | 削除確認 `Alert` の「Delete」`onPress` の先頭で `isLocked()` を確認し、ロック中は何もしない（7回目参照。`Alert` はシステムダイアログでロック画面より上に表示されるため） |
+
+#### テスト
+
+```
+lib/__tests__/appLockTiming.test.ts     shouldLockOnResume（無効時は常に false、コールドスタートは常に true、
+                                         immediately/1m/5m の境界値）
+lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文言、cancel系は非表示、その他は汎用文言）
+```
+
+`contexts/AppLock.tsx`・`components/LockScreen.tsx` 自体は `AppState`/`expo-local-authentication`
+（ネイティブ）依存のため Jest では検証できない——判定ロジックを `lib/appLockTiming.ts`/
+`lib/localAuthMessages.ts` に純粋関数として切り出すことで、そこだけはテスト可能にした。
+
+#### レビューで見つかり、修正したもの（1回目）
+
+利用者が自分の記録に二度と入れなくなる経路が2つ見つかった（優先度：高）。
+
+1. **【高】端末の認証をすべて外すと永久に開けなくなる**：App Lock を ON にする時点でしか
+   認証手段の有無を確認していなかった。ON にした後で端末のパスコード・生体認証を
+   すべて外すと `authenticateAsync` が常に失敗し、独自 PIN も無い設計（D-08）のため
+   二度と解除できず、唯一の脱出手段（アプリ削除）は DB ごと全データを失う。ロック画面
+   表示のたびに `getEnrolledLevelAsync()` を確認し、`SecurityLevel.NONE` なら
+   App Lock を自動的に OFF にしてロックを解除するよう修正（`disableAppLockDueToNoEnrollment`）。
+   D-08 の想定漏れとして設計判断記録に追記した
+2. **【高】認証ダイアログの表示自体がロックを再度かけ直すおそれがある**：iOS の Face ID
+   ダイアログは `active → inactive → active`、Android の端末パスコード画面は別 Activity
+   になるため、認証中に `AppState` が変化しうる。これを「バックグラウンドに行った」と
+   誤認すると、認証成功の直後に再ロックし、ロック画面のたびに認証ダイアログが自動で
+   出て同じことを繰り返す無限ループになりうる。認証試行中は `AppState` の変化を無視する
+   フラグ（`authenticatingRef`、React state ではなく ref——リスナーが同期的に参照するため）
+   を追加し、あわせて `inactive` 単体（Control Center 等）ではタイマーを開始しないよう
+   修正（`background` のみを対象に）。`inactive` への対応は別項目の「画面マスク」に譲る
+3. **【中】ロックのたびに画面の状態と編集中の内容が消える**：ロック中は `children` の
+   代わりに `LockScreen` を返していたため、`Stack` 以下が毎回アンマウントされ、
+   Activity Detail でメモ入力中に一瞬他のアプリへ切り替えただけで入力中の内容が失われる
+   状態だった。`children` は常時マウントしたまま、`LockScreen` を最前面にオーバーレイする
+   形に変更。オーバーレイ表示中は `pointerEvents="none"` でタッチを止め、
+   `accessibilityElementsHidden`/`importantForAccessibility="no-hide-descendants"` で
+   スクリーンリーダーからも隠す
+4. **【中】設定の読み込みに失敗すると画面全体が真っ白なまま**：初回の
+   `refreshAppLockSettings()` に catch が無く、失敗すると `null` を描画し続けていた
+   （Calendar で直したのと同じ種類の問題）。`loading`/`ready`/`error` の3状態にし、
+   失敗時は再試行ボタン付きのエラー表示（`LoadErrorOverlay`）を出すよう修正
+5. **【低】App Lock の OFF に認証が要らなかった**：設計書に明記が無いため判断が必要
+   だったが、ON にする操作と対称になるよう、OFF にする際も `authenticateAsync` を
+   要求するよう修正
+6. **【低】ロック画面の解除ボタンのアクセシビリティ情報が無く、失敗理由も伝えていなかった**：
+   `accessibilityRole`/`accessibilityLabel` を追加。`lib/localAuthMessages.ts` の
+   `describeAuthError` で lockout 等の失敗理由をロック画面に表示するよう修正
+
+#### レビューで見つかり、修正したもの（2回目）
+
+1回目の修正自体から生まれた抜けが中心。
+
+1. **【中〜高】ネイティブのモーダル画面がロック画面より上に表示されるおそれ**：
+   `app/record.tsx` は `presentation: 'modal'` で、iOS のネイティブスタックでは root view
+   とは別の階層に表示される。root に重ねる `absoluteFill` の `View` オーバーレイでは、
+   記録用モーダルを開いたままバックグラウンドへ行って戻ってきた場合にモーダルの方が
+   上に残り、ロック中でも記録操作ができてしまうおそれがあった。オーバーレイを React
+   Native 標準の `Modal`（`transparent={false}`、Android の戻るボタンで閉じられないよう
+   `onRequestClose` を no-op に）の中で描画するよう変更。ネイティブの Modal 提示は他の
+   ネイティブ提示より確実に上に来る想定だが、実機未確認（Known gaps 参照）
+2. **【中】設定画面での OFF 確認の認証が、再ロック防止の仕組みの対象外だった**：
+   `app/settings/app-lock.tsx` が `LocalAuthentication.authenticateAsync` を直接呼んでおり、
+   `AppLockProvider` の `authenticatingRef` が立たなかった。Android で端末 PIN 画面が別
+   Activity として開くと一度 `background` になり、「Immediately」設定では OFF 確認の認証
+   直後にロックがかかり直し、ロック画面がもう一度認証を要求する二重認証になりえた。
+   `AppLockProvider` から `authenticate()` を関数として公開し（`authenticatingRef` を
+   経由）、設定画面もこれを使う形に統一
+3. **【中】`not_enrolled` を返されただけで App Lock を自動 OFF にしていた**：
+   Android では生体認証が未登録でパスコードのみ設定されている端末でも `not_enrolled` が
+   返る場合があり（ライブラリ/OS バージョン依存、実機要確認）、その場合は
+   `getEnrolledLevelAsync()` が `SECRET`（パスコードあり）を返しているのに App Lock が
+   誤って OFF になる状態だった。エラーコードだけで判断せず、OFF にする前に
+   `getEnrolledLevelAsync()` をもう一度呼び、`NONE` のときだけ OFF にするよう修正
+4. **【低】`getEnrolledLevelAsync()` 自体が例外を投げると、ロック画面に何も表示されない**：
+   `catch` で `logError` するだけで `authError` を設定していなかった。汎用のエラー
+   コード（`'unknown'`）を設定し、`describeAuthError` の汎用文言が出るよう修正
+
+#### レビューで見つかり、修正したもの（3回目）
+
+2回目で入れた `Modal` 化自体に、ロックが素通りになりうる抜けがあった。
+
+1. **【高・実機で最優先に確認】記録用モーダルが開いていると `Modal` のロック画面が
+   表示されない可能性**：RN の `Modal` は、配置された View を持つ ViewController から
+   `presentViewController` を呼んで表示する。`AppLockProvider` の `Modal` は root の
+   階層にあるため、表示元は root の ViewController になるが、`record`（`presentation:
+   'modal'`）がネイティブモーダルとして表示中だと、その ViewController は既に別画面を
+   表示中の状態にある。UIKit ではこの状態で2つ目の提示を試みても警告が出るだけで
+   表示されない。結果、ロック画面が出ないままロック用モーダルは `visible: true` を
+   保持し続け、下の `record` 画面はそのまま操作でき、閉じても再試行されない——
+   前回の「モーダルがロック画面より上に残る」よりも保護が弱い状態だった。対策として、
+   バックグラウンド復帰時に現在の pathname が `/record` であれば `router.dismiss()` で
+   先に閉じてからロックするよう修正（`activity/[id]` 等、通常の push 画面は対象外——
+   `record.tsx` には保持すべき下書き状態が無いことを確認したうえで、pathname を厳密に
+   チェックして record 以外は触らないようにした）
+2. **【低】自動 OFF のお知らせ（`Alert.alert`）が表示されない可能性**：
+   `disableAppLockDueToNoEnrollment` 内の `Alert.alert` が、ロック `Modal` の非表示と
+   ほぼ同時に呼ばれていた。iOS では画面の表示/非表示の遷移が重なると Alert が
+   表示されないことがある。`Alert.alert` の呼び出しをその場から `pendingAlertRef` へ
+   一旦退避し、`showingOverlay` が `true→false` に変わったことを検知する effect から
+   呼ぶよう変更（Modal が実際に閉じてから通知するため、確実性が上がる）
+
+#### レビューで見つかり、修正したもの（4回目）
+
+3回目の2件とも、「表示/非表示の切り替えが完了するのを待たずに次の処理をしていた」
+という同じ理由でまだ失敗しうる状態だった。
+
+1. **【中〜高】モーダルを閉じる処理が完了する前にロック画面を表示しようとしていた**：
+   `router.dismiss()` はネイティブの閉じるアニメーションを開始するだけで、完了を
+   待たない。直後に `setLocked(true)` すると、`record` がまだ閉じている途中で
+   ロック `Modal` の `presentViewController` が呼ばれ、3回目の#1と同じ理由（UIKit は
+   遷移中の2つ目の提示を表示しない）で失敗しうる状態だった。`awaitingModalDismiss`
+   状態を導入し、`pathname` が `/record` でなくなったことを effect で検知してから
+   `setLocked(true)` するよう変更（3秒のタイムアウトを安全弁として追加——`dismiss()`
+   が何らかの理由で解決しない場合に無期限に待ち続けないため）。待機中に Today 等の
+   内容が一瞬見えることを避けるため、`children` を包む通常の `View` に
+   `awaitingModalDismiss` 中も不透明な背景色を即座に重ねるようにした（ネイティブの
+   提示を待たない、同一レンダー内での対処）
+2. **【低】お知らせを出すタイミングが、まだ Modal が閉じ終わる前だった**：`showingOverlay`
+   の変化を検知する effect は React が変更を反映した直後に動くが、ネイティブの Modal が
+   実際に閉じ終わるのはその後になる。RN の `Modal` の `onDismiss`（iOS 限定、閉じ終わった
+   後に呼ばれる）を使うよう変更。Android は `Modal` が ViewController の表示ではないため
+   `onDismiss` を持たず、`showingOverlay` の effect のままで問題ない——`flushPendingAlert`
+   は冪等なので両方から呼ばれても安全
+
+#### レビューで見つかり、修正したもの（5回目）
+
+4回目の3箇所とも、「完了した」と判断する合図が実際のネイティブの完了より早く、
+方針は正しいが実装が伴っていなかった。
+
+1. **【高】`pathname` はモーダルを閉じ始めた時点で変わるので、完了の合図にならない**：
+   `pathname`（React Navigation の state 由来）は `router.dismiss()` の直後に更新される
+   一方、ネイティブスタックは閉じるアニメーションの間 `record` を描画し続ける。そのため
+   `pathname !== '/record'` は次の描画ですぐ成り立ち、`setLocked(true)` が閉じている
+   途中で呼ばれてしまい、4回目の#1で直したはずの問題が実質的に残っていた。`pathname`
+   ではなく `record.tsx` 自身のマウント/アンマウント（ネイティブスタックは閉じる
+   アニメーションが終わってからアンマウントする）を合図にするよう変更。
+   `registerRecordScreenMounted`/`Unmounted` を `AppLockProvider` から公開し、
+   `record.tsx` が自身のマウント effect から呼ぶ形にした
+2. **【中】「一瞬見える隙間」を塞ぐはずの背景色が、実際には中身を隠していなかった**：
+   `children` を包む親 `View` に付けた背景色は子の後ろに描かれるため、中身はそのまま
+   見えていた。`children` の後ろにある通常の `View`（兄弟要素、`absoluteFill`）を
+   条件付きで重ねる形に変更（親の背景色ではなく、後から描画される兄弟要素にした）
+3. **【中】iOS では effect が先に動き、`onDismiss` が空振りしていた**：
+   `showingOverlay` が `false` になった直後に動く effect が、`onDismiss` より先に
+   `flushPendingAlert()` を呼んでいた（`flushPendingAlert` は最初に呼ばれた方が
+   お知らせを出す作りのため）。結果、iOS でも常に effect 側が先に呼ばれ、4回目で
+   追加した `onDismiss` が実質使われていなかった。effect 側の呼び出しを
+   `Platform.OS === 'android'` に限定し、iOS は `onDismiss` のみに一本化
+
+3件とも「実機での確認でしか最終判断できない」種類の修正のため、
+Known gaps の実機確認項目に含めたまま、この単独の指摘は実機確認が済むまで
+未解決（要検証）として扱う。
+
+#### レビューで見つかり、修正したもの（6回目）：根本原因ごと除去
+
+5回目までの3ラウンドは、いずれも「ロック中も `record.tsx` のネイティブモーダルが
+ロック画面より上に残る（or ロック画面自体が出ない）」問題に対し、"何らかの合図で
+ネイティブの遷移完了を検知してから動く" という方針で対処してきた。ところが
+`onDismiss`・`pathname`・`record.tsx` のマウント/アンマウントと、3ラウンド連続で
+「この合図はネイティブの完了より後に来るはず」という前提に頼り、うち2回は前提が
+外れていた（`pathname` は state 更新時点、`onDismiss` は effect に先を越されて
+いた）。3回目の前提（マウント/アンマウントは閉じるアニメーション後）もコードの
+読み合わせだけでは確認できず、同じ種類の見落としを繰り返すおそれが指摘された。
+
+**対応**：合図を探すのをやめ、問題の原因（`record.tsx` が root とは別のネイティブ
+階層に描画される `presentation: 'modal'` であること）自体を無くした。UI/UX §8 は
+Add Activity の画面を「Bottom Sheet **または** Modal」と明記しており、ネイティブ
+モーダルは必須ではない。`app/_layout.tsx` の `record` から `presentation: 'modal'`
+を外し、他の画面と同じ既定の `card`（root と同じネイティブスタック内の push）に
+変更した。これにより、
+
+- `record` が root の外に別階層を持たなくなり、「表示中の画面があると2つ目を
+  表示できない」という衝突自体が起きなくなる
+- ロック画面側も `Modal` にする必要がなくなり、`children` の後ろに重ねる通常の
+  `View`（絶対配置の兄弟要素）だけで確実に覆える
+- `awaitingModalDismiss`・`registerRecordScreenMounted`/`Unmounted`・3秒の
+  タイムアウト・`onDismiss` と Android 用 effect の使い分けが、すべて不要になった
+  （`contexts/AppLock.tsx` から削除。`app/record.tsx` の mount/unmount 連携も削除）
+- `Alert.alert` も、競合するネイティブ遷移が無くなったため、他の画面と同様
+  その場で直接呼ぶ形に戻した（`pendingAlertRef` の退避が不要になった）
+- Android のハードウェア戻るボタンは、`Modal` の `onRequestClose` が無くなった
+  代わりに `BackHandler` でロック中は無視するよう追加した（新規に必要になった対応）
+
+App Lock の実装の中で最も壊れやすく、実機でしか確かめようがなかった部分（ネイティブ
+モーダルの遷移完了検知）をまるごと除去した形になる。記録画面はボタン2つだけの
+シンプルな画面のため、見た目の変化はほぼ無い（スライドの方向が変わる程度）。
+
+#### レビューで見つかり、修正したもの（7回目）
+
+ネイティブのモーダルは無くなったが、同じく「root の外」に出るものが2つ残っていた。
+
+1. **【低〜中】ロック中も、開いていた削除確認ダイアログを操作できる**：
+   `Alert.alert` はシステムダイアログとして、アプリの画面より常に上に表示される
+   （`record.tsx` の旧モーダルと同じ「root の外」の問題だが、RN には Alert を
+   コードから閉じる API が無いため、閉じて回避する手段が無い）。Activity Detail で
+   削除確認ダイアログ（`confirmDelete`）を開いたままバックグラウンドへ行き、戻って
+   ロックがかかっても、ダイアログはロック画面の上に残ったまま「Delete」を押せる
+   状態だった——認証なしで記録を削除できる経路。`AppLockProvider` に
+   `isLocked()`（その場で読む同期的なチェック。`enabled && locked` を毎レンダー
+   ミラーする ref 経由）を追加し、「Delete」の `onPress` の先頭で確認して
+   ロック中なら何もしないよう修正。他の `Alert` は操作を伴わないお知らせのみのため、
+   対象はこの削除確認だけ（`style: 'destructive'` を検索して確認）
+2. **【低】ロックしてもキーボードが残り、見えない入力欄に入力できる**：
+   Activity Detail でメモ入力中にロックがかかっても、キーボードは別のネイティブ
+   レイヤーのため、ロック画面の上に残ったままフォーカスも外れず、見えないメモ欄に
+   文字を打てる状態だった（予測変換候補に入力中の内容が表示される可能性もある）。
+   `setLocked(true)` の箇所で `Keyboard.dismiss()` を呼ぶよう修正
+
+これで App Lock のコード側で残る指摘は無く、あとは実機での確認項目のみになる。
+あわせて、`isLockedRef` を `setLocked(true)` と同時に直接更新するよう1行追加した
+（任意の補足対応。`useRef` は毎レンダー更新のため、`setLocked(true)` から次の描画
+までのごく短い間だけ `isLocked()` が古い値を返しうる隙間があった。実害はほぼ無いが、
+コストが小さいため対応した）。
+
+#### Known gaps
+
+- **実機での動作確認が未実施**（App Lock）：Phase 1/2 と同じ制約に加え、生体認証・
+  端末パスコードの実機テストがそもそも必要。これまでのレビューで「コードの読み合わせ
+  だけでは判断できない」とされた項目を確認する。
+
+  | # | 確認する操作 | 期待する結果 |
+  |---|---|---|
+  | 1 | 生体認証を無効にした端末でロックを解除する（iOS / Android） | 端末のパスコードで解除できる（§24 の受け入れ基準） |
+  | 2 | App Lock を ON にした後、端末のパスコードと生体認証をすべて外す | 自動で OFF になり、お知らせが表示される |
+  | 3 | 「Immediately」で Face ID による解除（iOS） | 解除した直後に再ロックされない |
+  | 4 | 「Immediately」で端末 PIN による解除（Android。PIN 入力は別の画面） | 解除した直後に再ロックされない |
+  | 5 | 「Immediately」で App Lock を OFF にする（Android の PIN 入力） | 二重に認証を求められない |
+  | 6 | 削除の確認ダイアログを開いたままロックし、「Delete」を押す | 削除されない |
+  | 7 | メモを入力中にロックして、解除する | キーボードが閉じ、入力中の内容が残っている |
+  | 8 | ロック中に Android の戻るボタンを押す | ロック画面が閉じない |
+  | 9 | 記録画面を開いたままロックする | 他の画面と同じくロック画面で覆われる |
+- **画面マスク（Recent Apps でのマスク）は未実装**：基本設計 §18 で App Lock の次の
+  sub-item として明示的に分けられているため、今回は含めていない。ロック画面自体は
+  実装したが、OS の Recent Apps スイッチャーに表示されるスナップショットに直前の
+  画面内容が写り込む可能性は、この機能が入るまで残る（`inactive` への対応もここに含む）
+- **オンボーディング後の App Lock 案内は未実装**：UI/UX §6「Continue後、必要なら
+  App Lock 設定を案内する」は今回のスコープに含めていない
+- **Settings の他セクション**：Health Connect・Data（Export/Import/Delete）・
+  Activity Details・Preferences・About は未着手（上記「スコープの判断」参照）

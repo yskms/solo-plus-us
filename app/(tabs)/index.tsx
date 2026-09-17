@@ -73,6 +73,14 @@ export default function TodayScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Text style={[styles.appName, { color: colors.textPrimary }]}>Solo + Us</Text>
+          <Pressable
+            onPress={() => router.push('/settings')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+          >
+            <Text style={[styles.settingsIcon, { color: colors.textPrimary }]}>⚙</Text>
+          </Pressable>
         </View>
         <Text style={[styles.dateLine, { color: colors.textSecondary }]}>{weekdayHeader()}</Text>
 
@@ -133,6 +141,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, paddingBottom: 120, gap: spacing.md },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   appName: { fontSize: 22, fontWeight: '700' },
+  settingsIcon: { fontSize: 22 },
   dateLine: { fontSize: 14 },
   card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: spacing.md, gap: spacing.sm },
   sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
