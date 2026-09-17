@@ -12,8 +12,8 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
 Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
 クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → 画面マスク →
-日時編集 UI → Export/Import の UI）のうち Insights はクローズ済み、現在は App Lock に
-着手中。詳細は下記の各「実装状況」を参照。
+日時編集 UI → Export/Import の UI）のうち Insights・App Lock はクローズ済み、現在は
+Recovery 画面に着手中。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -759,3 +759,46 @@ App Lock の実装の中で最も壊れやすく、実機でしか確かめよ�
   App Lock 設定を案内する」は今回のスコープに含めていない
 - **Settings の他セクション**：Health Connect・Data（Export/Import/Delete）・
   Activity Details・Preferences・About は未着手（上記「スコープの判断」参照）
+
+### Recovery 画面
+
+`phase3/recovery` ブランチ。基本設計 §18 の Phase 3 順序に従い、App Lock の次に着手。
+「DB ファイルは存在するが暗号鍵が読み出せない」状態（端末移行・OS バックアップ復元等で
+現実に起こりうる、§8.5）に対する専用画面と、§8.8 の Recovery bootstrap（通常の
+Import フローとは独立した、9 ステップの安全な切り替え手順）を実装。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `database/connection.ts` | `getDbDirectory`/`getDbFile`/`getWalSiblings`/`deleteIfExists` を export（`RecoveryService` が直接ファイル操作するため）。`openAndMigrateFreshAt(fileName, key)` を追加——任意のファイル名で新規 DB を開き最新スキーマまで migrate する（既存データが無いため backup/restore 分岐は不要、Recovery の一時 DB 専用） |
+| `database/key.ts` | `deleteStoredDatabaseKey` を追加（「削除してやり直す」経路専用） |
+| `lib/errors.ts` | `RecoveryImportInvalidError`（バックアップファイルの検証失敗、per-field のエラー一覧を保持）、`RecoveryVerificationFailedError`（import 後の件数検証失敗）を追加 |
+| `services/RecoveryService.ts` | `restoreFromBackup`：§8.8 の9ステップ（①旧接続を閉じる→②新しい鍵+一時DB→③一時DBへimport→④閉じて開き直し件数確認→⑤旧DBを退避→⑥一時DBを正式な位置へ→⑦開き直して確認→⑧新しい鍵を確定→⑨旧DBを破棄）をそのまま実装。**8まで旧DB・旧鍵に一切触れない**——失敗時は常に旧DBが手つかずで残る。`resetAndStartOver`：DBファイル削除のみで次回起動時に新規鍵が生成される（`getOrCreateDatabaseKey` の既存ロジックによる） |
+| `components/RecoveryScreen.tsx` | UI/UX §21 のモックアップ通り。「バックアップから復元する」（`expo-document-picker` でJSONを選択）/「データを削除してやり直す」（確認ステップを挟む）の2択 |
+| `contexts/DatabaseContext.tsx` | `DatabaseKeyUnavailableError` の場合のみ `RecoveryScreen` を表示するよう分岐（他のエラー種別は従来通りの簡易フォールバック）。`AppLockProvider` より前段（`children` の外）で表示されるため、§21「App Lock を経ずに到達する」を自然に満たす。開くロジックを `attemptOpen` として切り出し、Recovery 成功後に呼び直せるようにした |
+| `app.json` | `expo-document-picker` を plugins に追加（`expo config --json` で解決を確認。実際の効果は `ios.usesIcloudStorage` 未設定のため現状 no-op だが、素のまま prebuild すると警告が出るため登録） |
+
+#### テスト
+
+`RecoveryService.ts`/`RecoveryScreen.tsx` は op-sqlite・expo-file-system・expo-document-picker
+（すべてネイティブ）に依存するため Jest では検証できない——`connection.ts` と同じ制約。
+9ステップの分岐が単純な順次処理（複雑な条件分岐を持つ純粋関数として切り出せる部分が無い）
+なため、今回は純粋関数の抽出はしていない。既存の `services/importValidation.ts`
+（バックアップ JSON の検証）・`services/ImportService.ts`（`performReplaceImport`）は
+Phase 1 で実装・テスト済みのものをそのまま再利用しており、そちらのテストは引き続き有効。
+
+#### Known gaps
+
+- **実機での動作確認が未実施**：§8.8 の9ステップ全体（特に④⑦の件数検証、⑤⑥のファイル
+  移動）は実機でしか確認できない。`expo-document-picker` での JSON 選択・読み込みも
+  同様
+- **セーフティ Export の例外は未実装**：§8.8「Recovery 時はセーフティ Export を実施
+  できない（元 DB を復号できないため）」の例外自体は該当しない（Recovery はそもそも
+  セーフティ Export を呼び出さない）ため対応不要だが、§13.3 の通常の破壊的操作前
+  セーフティ Export 自体がまだ実装されていない（Export/Import の UI は未着手の
+  sub-item）
+- **失敗時の自動ロールバックは無い**：④（一時DB検証）より後、⑦（正式DB検証）で
+  失敗した場合、旧DBは `oldAsideFile` に手つかずで残るが、自動で旧DBへ戻す処理はない
+  （設計としては安全——人間が状況を見て判断できる状態を保っている——が、UI からの
+  「元に戻す」導線は無い）

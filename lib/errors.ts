@@ -77,3 +77,36 @@ export class MigrationRestoreFailedError extends Error {
     this.restoreError = restoreError;
   }
 }
+
+/**
+ * §8.8 Recovery bootstrap — the chosen backup file failed the same
+ * validation a normal Import would apply (`services/importValidation`).
+ * A distinct type (not a plain `ValidationError`) so `RecoveryScreen` can
+ * show the per-field report rather than a single message. `errors` is
+ * typed structurally (not imported from `services/importValidation`) to
+ * keep `lib/` free of a dependency on `services/` — the shape is small
+ * and stable enough not to need the shared type.
+ */
+export class RecoveryImportInvalidError extends Error {
+  readonly validationErrors: { path: string; message: string }[];
+
+  constructor(validationErrors: { path: string; message: string }[]) {
+    super(`Backup file failed validation (${validationErrors.length} issue(s)).`);
+    this.name = 'RecoveryImportInvalidError';
+    this.validationErrors = validationErrors;
+  }
+}
+
+/**
+ * §8.8 step 4/7 — the temporary (or, after switching, the real) database
+ * was reopened after import but its row count didn't match the backup
+ * file. Whichever step this happens at, nothing about the *original*
+ * (still-undecryptable) database has been touched yet — see
+ * `RecoveryService` for exactly what's still safe at each point.
+ */
+export class RecoveryVerificationFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RecoveryVerificationFailedError';
+  }
+}

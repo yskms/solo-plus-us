@@ -93,3 +93,14 @@ export async function hasExistingDatabaseKey(): Promise<boolean> {
   });
   return existing != null;
 }
+
+/**
+ * Recovery's "delete and start over" path (§8.5) only, never called from
+ * the normal open flow. Clears whatever key (if any) is stored, so the
+ * next `getDatabase()` call — after the DB file is also deleted —
+ * generates a genuinely fresh key rather than risk reusing one that may
+ * not correspond to anything anymore.
+ */
+export async function deleteStoredDatabaseKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(KEY_STORAGE_KEY);
+}
