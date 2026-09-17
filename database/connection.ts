@@ -149,17 +149,37 @@ function restoreMigrationBackup(): void {
 let dbSingleton: DB | null = null;
 let openPromise: Promise<DB> | null = null;
 
+/**
+ * §7.2's exact wording is "復元して**起動を継続してエラーを表示する**" — restore,
+ * keep running, *and show an error*. `openAndMigrate` still has to return a
+ * working `DB` in this case (that's the "keep running" part — v1 is the
+ * only migration today, so this never fires, but v2+ would otherwise
+ * silently run the app against an old schema its own queries don't
+ * expect). This flag is how it also satisfies "show an error" without
+ * throwing away the connection: the caller (`DatabaseContext`) checks it
+ * after a successful `getDatabase()` and surfaces a notice.
+ */
+let restoredFromBackupOnLastOpen = false;
+
+export function wasRestoredFromFailedMigration(): boolean {
+  return restoredFromBackupOnLastOpen;
+}
+
 async function openAndMigrate(encryptionKey: string): Promise<DB> {
   const dir = getDbDirectory();
   if (!dir.exists) {
     dir.create({ intermediates: true });
   }
 
+  restoredFromBackupOnLastOpen = false;
   let db = openConnection(encryptionKey);
-  await applyPragmas(db);
-
   let restoredFromBackup = false;
+
   try {
+    // Deliberately inside the try: a wrong/corrupt key typically doesn't
+    // fail at open() itself (SQLCipher validates lazily, on first real
+    // read), so a decrypt failure surfaces here, not before this block.
+    await applyPragmas(db);
     await runMigrations(db, MIGRATIONS, {
       getUserVersion: () => readUserVersion(db),
       backup: {
@@ -174,19 +194,22 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
     });
   } catch (error) {
     if (!restoredFromBackup) {
-      // No existing data to fall back to (fresh install, or the failure
-      // happened before backup/restore ran at all) — nothing safe to
-      // continue with. §7.1's "downgrade → don't open" and any other
-      // migration failure both surface here unchanged.
+      // No existing data to fall back to (fresh install, downgrade
+      // detected, decrypt failure, or the failure happened before
+      // backup/restore ran at all) — nothing safe to continue with.
+      // Close the handle so a caller that retries `getDatabase()` doesn't
+      // leak one connection per attempt.
+      db.close();
       throw error;
     }
-    // §7.2: "失敗時は復元して起動を継続する" — the file is back to its
-    // pre-migration state, but `db` above was closed as part of that
-    // restore and is no longer valid. Open a fresh connection against the
-    // restored file and hand that back, without retrying the migration
-    // that just failed (retrying here would fail identically and loop).
+    // §7.2: reopen against the restored (pre-migration) file so the app
+    // stays usable, but record that this happened — see
+    // `wasRestoredFromFailedMigration` above. Does not retry the
+    // migration that just failed (retrying here would fail identically
+    // and loop).
     db = openConnection(encryptionKey);
     await applyPragmas(db);
+    restoredFromBackupOnLastOpen = true;
   }
 
   return db;

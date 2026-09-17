@@ -63,7 +63,7 @@ DB 設計には影響しないため Phase 1 は着手できる。
 
 ## Phase 1 実装状況
 
-`phase1/foundation` ブランチ。131 件のテストが通り、`tsc --noEmit` はエラーなし。
+`phase1/foundation` ブランチ。134 件のテストが通り、`tsc --noEmit` はエラーなし。
 
 ### ビルド構成
 
@@ -89,12 +89,12 @@ DB 設計には影響しないため Phase 1 は着手できる。
 
 | 層 | 内容 |
 |---|---|
-| `database/` | `schema.ts`（v1 DDL）、`key.ts`（SecureStore 鍵管理、D-06。DB ファイルの有無を鍵生成前に確認し、既存 DB に対する鍵の誤生成を防止）、`connection.ts`（PRAGMA・§7.2 バックアップ付き migration 起動。復元時は接続を閉じてから `-wal`/`-shm` ごと削除し、再オープンして継続）、`migrations/`（runner + 初期 migration + ダウングレード検出） |
+| `database/` | `schema.ts`（v1 DDL）、`key.ts`（SecureStore 鍵管理、D-06。DB ファイルの有無を鍵生成前に確認し、既存 DB に対する鍵の誤生成を防止）、`connection.ts`（PRAGMA・§7.2 バックアップ付き migration 起動。失敗時は必ず接続を閉じ、復元時は `-wal`/`-shm` ごと削除して再オープン。復元が起きたことを `wasRestoredFromFailedMigration()` で通知）、`migrations/`（runner + 初期 migration + ダウングレード検出） |
 | `repositories/` | `ActivityRepository` / `HealthSyncRepository` / `HealthSyncJobRepository`。§9.5 の claim/finalize、§10.1 の削除分岐を含む |
 | `services/` | `syncJobPlanner`（§9.3/§10.1 を純粋関数化）、`ActivityService`（record/update/delete/undo の transaction 統括）、`SettingsRepository`、`ExportService`（読み出しをトランザクションで一貫させる） / `ImportService`（JSON schema v1、strict restore） |
-| `lib/` | `datetime.ts`（UTC 固定長表記、DST を考慮した offset 解決、`occurredAtUtc` の秒 `:00` 不変条件）、`id.ts`（UUID v4）、`relativeDate.ts` |
-| `contexts/` | `DatabaseContext`（鍵喪失時に専用の見出しを表示）、`DataRevision`（画面遷移を伴わない Undo でも Today を再読込させる）、`RecordFeedback`（Undo 失敗時にエラーを握り潰さない） |
-| UI | Onboarding（Privacy Intro）、Today（月次集計・直近履歴・FAB、Undo 後に再読込）、Add Activity（Solo/Partnered 即記録・失敗時にアラート）、Undo Snackbar、Activity Detail（編集・削除・失敗時にアラート、duration の丸め誤差による黙った改変を防止） |
+| `lib/` | `datetime.ts`（UTC 固定長表記、DST を考慮した offset 解決、`occurredAtUtc` の秒 `:00` 不変条件）、`id.ts`（UUID v4）、`relativeDate.ts`、`log.ts`（§8.7: リリースビルドでは `error.name` のみ出力） |
+| `contexts/` | `DatabaseContext`（鍵喪失/スキーマ不整合を区別した見出しを表示、migration 復元の通知を提供）、`DataRevision`（画面遷移を伴わない Undo でも Today を再読込させる）、`RecordFeedback`（Undo 失敗時に Alert で通知） |
+| UI | Onboarding（Privacy Intro）、Today（月次集計・直近履歴・FAB、Undo 後に再読込）、Add Activity（Solo/Partnered 即記録・失敗時にアラート）、Undo Snackbar、`MigrationRestoredBanner`、Activity Detail（編集・削除・失敗時にアラート、duration の丸め誤差による黙った改変を防止、1分未満の実秒数を注記表示） |
 
 ### テスト
 
@@ -106,7 +106,7 @@ SQLCipher 固有の挙動（`VACUUM INTO` の暗号化・実際の復元フロ�
 バインディングかつ native module 依存のため、引き続き実機検証が必要）。
 
 ```
-lib/__tests__/                    datetime, relativeDate
+lib/__tests__/                    datetime, relativeDate, log（§8.7 リリースビルドでのログ抑制）
 database/__tests__/               key（鍵の有無 × DB ファイルの有無の分岐）
 database/migrations/__tests__/    runner のシーケンス・バックアップ呼び出し・ダウングレード検出
 services/__tests__/               syncJobPlanner, importValidation
@@ -139,6 +139,27 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 11. 記録・保存・削除・オンボーディングの各操作にエラー処理を追加。`getDatabase()` は失敗を
     永続化せず、次回呼び出しで再試行できるよう修正
 
+### さらに次のレビューで見つかり、修正したもの
+
+12. **復元後、古いスキーマの DB を正常な DB として返していた**：§7.2 は「復元して起動を継続し
+    **エラーを表示する**」だが、エラー表示部分が抜けていた。`wasRestoredFromFailedMigration()` を
+    追加し、`DatabaseContext`/`MigrationRestoredBanner` で通知するよう修正（v1 のみの現状では
+    到達しないが、v2 を出す前に必要な配線）
+13. **起動失敗時に接続を閉じていない**：ダウングレード検出・復号失敗・平文検知など、復元以外の
+    失敗経路で `db.close()` を呼んでいなかった。`getDatabase()` の再試行のたびに接続が増える
+    状態だったため、失敗時は必ず閉じてから例外を投げるよう修正
+14. **Undo 失敗が利用者に見えない**：Snackbar を消して `console.error` するだけで、利用者からは
+    成功時と区別がつかなかった。他の操作と同様に Alert を出すよう修正
+15. **エラーメッセージがそのままログに出る**：`ValidationError` 等のメッセージには入力値
+    （`occurredAtUtc` の値など）が含まれるため、§8.7 に反する。`lib/log.ts` を追加し、
+    リリースビルドでは `error.name` のみを出力するよう統一
+16. **1分未満の duration が「0」と表示される**：保存時のデータ破壊は既に修正済みだが、表示は
+    丸めたままで「未記録」と誤読されうる状態だった。未編集時は実際の秒数を注記として表示
+17. **設計への申し送り追加**：D-35 で「同期しない」と破棄した `create` ジョブ（`attempts > 0`）は、
+    ジョブ・mapping とも消えるため、後で Activity を削除しても外部への削除は queue されない。
+    #10 と同種の「declined/uncertain な同期状態」概念が必要で、Phase 4 の設計判断として
+    `discardJob` のコメントに記録（コード修正はせず、安全側の現状維持）
+
 ### Known gaps（意図的に未実装）
 
 - **iOS のバックアップ除外**（D-07 の後半）：Android の `allowBackup=false` + `dataExtractionRules` は
@@ -159,9 +180,11 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 - **App Lock / Recovery 画面**：DB を開けなかった場合、`DatabaseContext` は鍵喪失かどうかで見出しを
   出し分ける簡易画面を出すのみ。§8.8 の Recovery bootstrap（別鍵での一時 DB 作成・検証・差し替え）は
   未実装
-- **`connection.ts` の実機検証**：`VACUUM INTO` によるバックアップの暗号化確認、復元フローの
-  ファイル操作、実際の migration ダウングレード時の挙動は、op-sqlite が native module のため
-  Jest では検証できず、実機（またはシミュレータ）でのみ確認できる
+- **`connection.ts` の実機検証**：`@op-engineering/op-sqlite` の import 自体が Jest の変換対象外
+  （ESM 構文で SyntaxError）のため、`connection.ts` は一切ユニットテストできない。`VACUUM INTO`
+  によるバックアップの暗号化確認、復元フローのファイル操作、失敗時に確実に `db.close()` される
+  ことの確認、`wasRestoredFromFailedMigration()` の通知が実際に画面へ届くことは、実機（または
+  シミュレータ）でのみ確認できる
 - **実機 / シミュレータでの起動確認**：`pod install` の成功までは確認済み。Xcode の Swift
   ツールチェーンが古く（上記参照）、`expo run:ios` によるビルド・起動は未実施。Android 側の
   実機 / エミュレータ起動、Gradle ビルド（SQLCipher 分岐の実行）も未実施

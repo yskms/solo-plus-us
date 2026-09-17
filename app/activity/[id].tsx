@@ -16,6 +16,7 @@ import { useDatabase } from '../../contexts/DatabaseContext';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as ActivityService from '../../services/ActivityService';
 import { contextLabel } from '../../lib/labels';
+import { logError } from '../../lib/log';
 import type { Activity } from '../../types/Activity';
 
 function formatDateTime(activity: Activity): string {
@@ -187,7 +188,7 @@ export default function ActivityDetailScreen() {
       router.back();
     } catch (error) {
       Alert.alert('Could not save', 'Your changes were not saved. Please try again.');
-      console.error('updateActivity failed', error);
+      logError('updateActivity failed', error);
     } finally {
       setSaving(false);
     }
@@ -205,7 +206,7 @@ export default function ActivityDetailScreen() {
             router.back();
           } catch (error) {
             Alert.alert('Could not delete', 'Please try again.');
-            console.error('deleteActivity failed', error);
+            logError('deleteActivity failed', error);
           }
         },
       },
@@ -239,6 +240,17 @@ export default function ActivityDetailScreen() {
             placeholderTextColor={colors.textTertiary}
             style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border }]}
           />
+          {!durationTouched && activity.durationSeconds != null && activity.durationSeconds < 60 && (
+            // This field only edits whole minutes. Recorded durations under
+            // a minute round to "0" here, which reads as "not recorded" —
+            // say the real value so it isn't misread that way. Untouched,
+            // saving still keeps the exact original value (see
+            // `durationTouched` above); this is display-only.
+            <Text style={[styles.fieldCaption, { color: colors.textTertiary }]}>
+              Recorded as {activity.durationSeconds} seconds (less than 1 minute). Editing this field will replace it
+              with a whole number of minutes.
+            </Text>
+          )}
         </View>
 
         <MoodRow label="Mood before" value={moodBefore} onChange={setMoodBefore} colors={colors} />
@@ -278,6 +290,7 @@ const styles = StyleSheet.create({
   contextTitle: { fontSize: 22, fontWeight: '700' },
   fieldBlock: { gap: spacing.xs },
   fieldLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  fieldCaption: { fontSize: 12, lineHeight: 16 },
   dateTimeText: { fontSize: 16, fontWeight: '500' },
   segmentedRow: { flexDirection: 'row', gap: spacing.xs },
   segment: {

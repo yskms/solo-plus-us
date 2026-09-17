@@ -57,6 +57,11 @@ export function planForRecord(): SyncJobPlan {
  * here. Until then, editing never opportunistically starts syncing a
  * previously-unsynced-for-this-provider Activity; only a fresh record, or
  * an explicit future "sync now" action, does.
+ *
+ * Same underlying gap shows up from the other direction in
+ * `HealthSyncJobRepository.discardJob`'s doc comment: discarding a
+ * `create` job also ends up in this "no job, no mapping" state, and can
+ * lose track of "may have reached the provider" the same way.
  */
 export function planForEdit(current: CurrentJobState | null, mappingExists: boolean): SyncJobPlan {
   if (current) {

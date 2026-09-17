@@ -14,9 +14,11 @@
  * never the only thing making it safe.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Alert } from 'react-native';
 import * as ActivityService from '../services/ActivityService';
 import { useDatabase } from './DatabaseContext';
 import { useDataRevision } from './DataRevision';
+import { logError } from '../lib/log';
 import type { Activity } from '../types/Activity';
 
 const VISIBLE_MS = 5000;
@@ -61,6 +63,11 @@ export function RecordFeedbackProvider({ children }: { children: ReactNode }) {
    * actually succeeds: dismissing first (as an earlier version of this
    * function did) means a failed Undo silently leaves the Activity in
    * place while looking, to the user, exactly like Undo worked.
+   *
+   * On failure, an Alert is required, not just a log line — the Snackbar
+   * still has to go away either way (it can't keep offering an Undo that
+   * just failed), and without the Alert that's indistinguishable from
+   * Undo having succeeded.
    */
   const undo = useCallback(async () => {
     if (!state) return;
@@ -71,7 +78,8 @@ export function RecordFeedbackProvider({ children }: { children: ReactNode }) {
       bump();
     } catch (error) {
       dismiss(); // don't leave a Snackbar whose Undo button just failed sitting there forever
-      console.error('Undo failed', error);
+      logError('Undo failed', error);
+      Alert.alert('Undo failed', 'The record was not removed. Please try deleting it from its detail page.');
     }
   }, [state, dismiss, bump, db]);
 

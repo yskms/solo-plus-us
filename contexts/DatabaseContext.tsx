@@ -11,7 +11,7 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { DB } from '@op-engineering/op-sqlite';
 import { StyleSheet, Text, View } from 'react-native';
-import { getDatabase } from '../database/connection';
+import { getDatabase, wasRestoredFromFailedMigration } from '../database/connection';
 import { clearAllClaims } from '../repositories/HealthSyncJobRepository';
 import { hasSeenPrivacyIntro } from '../lib/onboarding';
 import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
@@ -20,7 +20,7 @@ import { useTheme } from '../constants/theme';
 
 type DatabaseState =
   | { status: 'loading' }
-  | { status: 'ready'; db: DB; needsOnboarding: boolean }
+  | { status: 'ready'; db: DB; needsOnboarding: boolean; migrationRestored: boolean }
   | { status: 'error'; error: unknown };
 
 const DatabaseContext = createContext<DatabaseState | null>(null);
@@ -39,7 +39,12 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
         // persisted — never re-derived from locale on every read.
         await ensureLocaleDefaultsPersisted(db);
         const needsOnboarding = !(await hasSeenPrivacyIntro(db));
-        if (!cancelled) setState({ status: 'ready', db, needsOnboarding });
+        // §7.2 "起動を継続してエラーを表示する": a failed migration that fell
+        // back to the pre-migration schema still returns a usable `db` —
+        // this is how that gets surfaced instead of looking indistinguishable
+        // from a fully healthy open.
+        const migrationRestored = wasRestoredFromFailedMigration();
+        if (!cancelled) setState({ status: 'ready', db, needsOnboarding, migrationRestored });
       } catch (error) {
         if (!cancelled) setState({ status: 'error', error });
       }
@@ -95,6 +100,11 @@ export function useDatabase(): DB {
 
 export function useNeedsOnboarding(): boolean {
   return useDatabaseState().needsOnboarding;
+}
+
+/** §7.2 — true only after a failed migration was restored from backup; the app is running on an older schema than this build expects. Unreachable today (v1 is the only migration), kept ready for v2+. */
+export function useMigrationRestoredNotice(): boolean {
+  return useDatabaseState().migrationRestored;
 }
 
 const styles = StyleSheet.create({

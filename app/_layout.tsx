@@ -9,6 +9,7 @@ import { DatabaseProvider, useNeedsOnboarding } from '../contexts/DatabaseContex
 import { DataRevisionProvider } from '../contexts/DataRevision';
 import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
 import { UndoSnackbar } from '../components/UndoSnackbar';
+import { MigrationRestoredBanner } from '../components/MigrationRestoredBanner';
 
 /** First-ever launch only: sends the person to the Privacy Introduction before anything else. */
 function OnboardingRedirect() {
@@ -52,6 +53,7 @@ export default function RootLayout() {
         <RecordFeedbackProvider>
           <View style={{ flex: 1 }}>
             <OnboardingRedirect />
+            <MigrationRestoredBanner />
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />

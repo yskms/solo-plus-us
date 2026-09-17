@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { markPrivacyIntroSeen } from '../../lib/onboarding';
+import { logError } from '../../lib/log';
 import { IntersectPlus } from '../../components/IntersectPlus';
 
 const POINTS = [
@@ -33,7 +34,7 @@ export default function PrivacyIntroScreen() {
     } catch (error) {
       setContinuing(false);
       Alert.alert('Something went wrong', 'Please try again.');
-      console.error('markPrivacyIntroSeen failed', error);
+      logError('markPrivacyIntroSeen failed', error);
     }
   };
 

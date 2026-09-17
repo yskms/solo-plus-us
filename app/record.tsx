@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
+import { logError } from '../lib/log';
 import * as ActivityService from '../services/ActivityService';
 import type { ActivityContext } from '../types/Activity';
 
@@ -31,7 +32,7 @@ export default function RecordScreen() {
       announceRecorded(activity);
     } catch (error) {
       Alert.alert('Could not record', 'Please try again.');
-      console.error('recordActivity failed', error);
+      logError('recordActivity failed', error);
     } finally {
       setSaving(false);
     }
