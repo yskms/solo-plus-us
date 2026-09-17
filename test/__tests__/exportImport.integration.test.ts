@@ -209,4 +209,30 @@ describe('Export → Import round trip', () => {
     expect(lines[0]).not.toContain('createdAt');
     expect(lines[0]).not.toContain('updatedAt');
   });
+
+  it('neutralizes CSV formula injection in note (OWASP CSV injection: leading =, +, -, @)', async () => {
+    await ActivityService.recordActivity(sourceDb, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+      note: '=SUM(A1:A10)',
+    });
+    await ActivityService.recordActivity(sourceDb, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-15T14:42:00Z'),
+      note: '+1 234 567 8900',
+    });
+    await ActivityService.recordActivity(sourceDb, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-16T14:42:00Z'),
+      note: 'a note that starts with a letter',
+    });
+
+    const exportFile = await buildExportPayload(sourceDb);
+    const csv = serializeExportCsv(exportFile);
+
+    expect(csv).toContain("'=SUM(A1:A10)");
+    expect(csv).toContain("'+1 234 567 8900");
+    expect(csv).toContain('a note that starts with a letter'); // unaffected — no leading formula-trigger character
+    expect(csv).not.toMatch(/(?<!')=SUM/); // never appears unprefixed
+  });
 });

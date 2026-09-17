@@ -34,11 +34,23 @@ import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import { StorageAccessFramework } from 'expo-file-system/legacy';
 import { serializeExportFile } from './ExportService';
+import { nowUtcIso } from '../lib/datetime';
 import type { ExportFileV1 } from '../types/Export';
 import { SafetyExportFailedError } from '../lib/errors';
 
-const SAFETY_EXPORT_FILE_BASE_NAME = 'solo-plus-us-safety-export';
-const SAFETY_EXPORT_FILE_NAME = `${SAFETY_EXPORT_FILE_BASE_NAME}.json`;
+/**
+ * Timestamped, not fixed — a fixed name would silently overwrite the
+ * previous safety backup on iOS (`File#write` has no "fail if exists"
+ * option in use here) while Android's SAF auto-renames on collision,
+ * leaving the two platforms with different retention behavior for the
+ * same feature. Timestamping keeps every safety backup as its own file
+ * on both platforms — there's no delete UI for these yet (README "Known
+ * gaps"), so this trades a small amount of accumulated storage for not
+ * silently discarding a previous safety copy.
+ */
+function safetyExportFileBaseName(): string {
+  return `solo-plus-us-safety-export-${nowUtcIso().replace(/:/g, '-')}`;
+}
 
 export interface SafetyExportResult {
   /** Where the verified copy ended up — a `file://` URI on iOS, a SAF `content://` URI on Android. */
@@ -62,7 +74,7 @@ function verifyActivityCount(readBackJson: string, expectedCount: number): void 
 }
 
 async function performSafetyExportIOS(file: ExportFileV1, json: string): Promise<SafetyExportResult> {
-  const target = new File(Paths.document, SAFETY_EXPORT_FILE_NAME);
+  const target = new File(Paths.document, `${safetyExportFileBaseName()}.json`);
   try {
     target.write(json);
   } catch (error) {
@@ -88,7 +100,7 @@ async function performSafetyExportAndroid(file: ExportFileV1, json: string): Pro
 
   let fileUri: string;
   try {
-    fileUri = await StorageAccessFramework.createFileAsync(permission.directoryUri, SAFETY_EXPORT_FILE_BASE_NAME, 'application/json');
+    fileUri = await StorageAccessFramework.createFileAsync(permission.directoryUri, safetyExportFileBaseName(), 'application/json');
     await StorageAccessFramework.writeAsStringAsync(fileUri, json);
   } catch (error) {
     throw new SafetyExportFailedError('Could not save the safety backup.', error);

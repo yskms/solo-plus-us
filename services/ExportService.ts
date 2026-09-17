@@ -84,9 +84,21 @@ const CSV_COLUMNS = [
   'note',
 ] as const;
 
+// OWASP CSV injection: a field beginning with =, +, -, @ (or a tab/CR) can
+// make spreadsheet software (Excel, Google Sheets) interpret it as a
+// formula when the file is later opened. `note` is the only free-text
+// field here, but this is applied uniformly rather than special-cased —
+// no other field could naturally start with these characters. Severity is
+// low (this is a person opening their own export, not an untrusted third
+// party's), but a leading `'` neutralizes it at no real cost.
+const FORMULA_INJECTION_PREFIX = /^[=+\-@\t\r]/;
+
 function csvField(value: string | number | boolean | null): string {
   if (value === null) return '';
-  const text = String(value);
+  let text = String(value);
+  if (FORMULA_INJECTION_PREFIX.test(text)) {
+    text = `'${text}`;
+  }
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

@@ -986,6 +986,45 @@ UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・�
 | `app/settings/data.tsx`（新規） | UI/UX §20 Screen 10（Export：JSON/CSV ボタン）＋ §13.3 の Import フロー（`ImportPreview`/`DestructiveConfirm` 相当、モックアップには無いが §25 のコンポーネント一覧と件数プレビューの文言例から実装）。ステップは `menu → modeChoice → confirmReplace/busy`——`RecoveryScreen.tsx` と同じ、ステップ状態を1ファイルで持つ構成。「追加のみ」はセーフティ Export 不要（非破壊的なため）で直接実行、「すべて置換」は確認画面を挟んでからセーフティ Export → 置換の順で実行。Import 完了後は `useDataRevision().bump()` を呼び、他画面（Today/Calendar 等）に変更を伝える |
 | `app/settings/index.tsx`/`app/_layout.tsx` | DATA セクションに「Export & Import」の1行を追加（UI/UX §17 の Export/Import/Delete の3行ではなく1行——Delete が無いため）。ルートタイトルは "Data" |
 
+#### レビューで見つかり、修正したもの
+
+セーフティ Export・CSV・置換復元の正しさ自体は確認された。「利用者に事実を伝える」
+部分の抜けが優先度：中で2件見つかった。
+
+1. **【中】セーフティ Export の保存先が利用者に伝わらない（iOS でより重要）**：
+   `performSafetyExport` が返す `location` を呼び出し側が捨てており、完了後の通知にも
+   失敗時の通知にも保存先が出ていなかった。Android はユーザー自身が選んだ場所なので
+   まだ探せるが、iOS はそもそも選べない（Documents 直下に自動で書く）ため、平文の
+   JSON がどこにできたのか画面上で確認する手段が一つも無かった。§13.3 が求めるのは
+   「あることを確認できるバックアップ」であり、位置を伝えない実装ではこの目的を
+   満たさない。確認画面（`confirmReplace`）に事前の通知、完了後・失敗時の通知にも
+   同じ事実を追加した。あわせて、iOS の代替実装が iCloud/iTunes バックアップへ平文
+   コピーを上げてしまう点（D-07 の脅威モデルとの緊張関係）も画面上で明示するよう
+   にした。設計上の逸脱でもあるため、設計判断記録 D-27 に追記として残した
+2. **【中】Export 画面に「共有先では平文になる」旨の明示がない（§12.4）**：EXPORT
+   セクションの説明文に、書き出したファイルが暗号化されていない旨の一文を追加した
+
+優先度：低の指摘も併せて対応：
+- **CSV の数式インジェクション**：`note` が `=`/`+`/`-`/`@` で始まると Excel/Sheets が
+  数式として解釈しうる（OWASP CSV injection）。`csvField` で先頭に `'` を付けて無害化
+- **UTF-8 BOM**：Excel で日本語の note が文字化けしないよう、CSV 共有時のみ（
+  `serializeExportCsv` 自体の戻り値には含めない）`﻿` を先頭に付与
+- **セーフティ Export ファイル名を固定 → タイムスタンプ付きに変更**：iOS は固定名だと
+  前回のコピーを上書きし、Android は SAF が自動リネームするため、プラットフォーム間で
+  挙動が揃っていなかった。両方ともタイムスタンプ付きファイル名にし、履歴が残るように
+  した（削除する導線は無いままだが、上書きで唯一のセーフティコピーを失うよりは安全）
+- **Import のファイル選択の絞り込みを緩和**：`type: 'application/json'` だと提供元に
+  よっては `.json` が `application/octet-stream` 扱いになり選べないことがあるため、
+  `type: '*/*'` に変更（検証は `validateExportFile` が確実に行う）
+
+優先度：低のうち対応しなかったもの（設計判断記録へ記録のみ）：
+- **§13.3 の手順順序からの逸脱**：設計は「セーフティ Export → 検証 → プレビュー」だが、
+  実装は「検証 → プレビュー → 確認 →（置換選択時のみ）セーフティ Export」。無効な
+  ファイルや「追加のみ」選択のために保存先選択を求めずに済むため、この順序の方が
+  妥当と判断し、その理由を設計判断記録 D-27 に追記した
+- **Import 後の Health Connect 再同期（§13.6/D-34）は Phase 4 の項目**（下記 Known gaps
+  に明記）
+
 #### テスト
 
 `services/ExportService.ts` の `serializeExportCsv`（純粋関数）と `services/ImportService.ts` の
@@ -1021,4 +1060,11 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
 - **セーフティ Export 失敗時のリトライ導線が無い**：セーフティ Export が失敗すると
   `menu` ステップへ戻るのみで、同じ確認画面へワンタップで戻る導線は無い（Cancel から
   やり直す形になる）
+- **セーフティ Export ファイルを削除する導線が無い**：タイムスタンプ付きで毎回新しい
+  ファイルとして残るため（上記レビュー参照）、Delete Data（未実装）が無い現状では
+  蓄積し続ける。iOS は Files アプリにも公開していない（`UIFileSharingEnabled` 未設定）
+  ため、アプリ内から削除する仕組みが無い限り利用者自身も消せない
+- **Import 後の Health Connect 再同期は未実装**（§13.6/D-34「recreate」）：Phase 4 の
+  項目なので今は問題ないが、置換復元は `health_sync` の対応関係を全削除するため、
+  Phase 4 で Health Connect を実装する際に必ず対応が必要になる箇所として残しておく
 - **暗号化された Export（パスフレーズ付き）は v1.1 で検討**（§12.4 に明記、既知の対象外）

@@ -13,7 +13,7 @@
  * state machine.
  */
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
@@ -47,6 +47,32 @@ function describeSafetyExportError(error: unknown): string {
   return 'Could not create a safety backup. Please try again.';
 }
 
+/** §12.4: "共有先で平文になることを画面上で明示する" — shown on the Export section itself, before either button is tapped. */
+const EXPORT_PLAINTEXT_NOTICE =
+  "These files are not encrypted. Anyone with access to them can read everything in them — share and store them carefully.";
+
+/**
+ * §13.3/D-27's safety-export step, shown before the person commits to a
+ * replace — they need to know *where* the verified copy of their current
+ * data is going, not just that one will exist. Platform-specific because
+ * the mechanism genuinely differs (services/SafetyExportService.ts,
+ * 設計判断記録 D-27 追記): Android lets the person choose a folder; iOS has
+ * no SDK equivalent, so it writes to the app's own private storage
+ * instead, which carries a real trade-off worth surfacing (included in
+ * the device's iCloud/iTunes backup as an unencrypted file).
+ */
+function safetyExportLocationNotice(): string {
+  return Platform.OS === 'android'
+    ? "Before replacing anything, you'll be asked to choose a folder to save a safety backup of your current data."
+    : "Before replacing anything, a safety backup of your current data will be saved in Solo + Us's private storage on this device. It isn't visible in the Files app, but — unlike the app's own database — it's included in this device's iCloud/iTunes backup as an unencrypted file for as long as it remains on this device.";
+}
+
+function safetyExportLocationShortNotice(): string {
+  return Platform.OS === 'android'
+    ? 'A safety backup of your previous data was saved to the folder you chose.'
+    : "A safety backup of your previous data was saved in this app's private storage (included in this device's iCloud/iTunes backup).";
+}
+
 export default function DataSettingsScreen() {
   const { colors } = useTheme();
   const db = useDatabase();
@@ -58,7 +84,12 @@ export default function DataSettingsScreen() {
     setExporting(format);
     try {
       const payload = await buildExportPayload(db);
-      const contents = format === 'json' ? serializeExportFile(payload) : serializeExportCsv(payload);
+      // A UTF-8 BOM prefix so Excel (which otherwise guesses the system
+      // codepage for CSV) renders Japanese notes correctly instead of
+      // mojibake — added only for the shared file, not serializeExportCsv's
+      // own return value, which stays plain CSV text.
+      const contents =
+        format === 'json' ? serializeExportFile(payload) : `﻿${serializeExportCsv(payload)}`;
       const fileName = format === 'json' ? 'solo-plus-us-export.json' : 'solo-plus-us-export.csv';
       const mimeType = format === 'json' ? 'application/json' : 'text/csv';
       const uti = format === 'json' ? 'public.json' : 'public.comma-separated-values-text';
@@ -74,7 +105,12 @@ export default function DataSettingsScreen() {
   const handleImportPick = async () => {
     let picked: DocumentPicker.DocumentPickerResult;
     try {
-      picked = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
+      // Not narrowed to 'application/json' — different file providers
+      // report a JSON backup's MIME type inconsistently (some as
+      // application/octet-stream), which could hide a person's own
+      // backup from the picker. validateExportFile below does the real
+      // content check regardless of what got picked.
+      picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
     } catch (error) {
       logError('DocumentPicker.getDocumentAsync failed', error);
       Alert.alert('Could not open file picker', 'Please try again.');
@@ -146,14 +182,11 @@ export default function DataSettingsScreen() {
       const result = await performReplaceImport(db, file);
       bump();
       setStep({ kind: 'menu' });
-      Alert.alert('Import complete', `${result.importedCount} activities restored.`);
+      Alert.alert('Import complete', `${result.importedCount} activities restored. ${safetyExportLocationShortNotice()}`);
     } catch (error) {
       logError('performReplaceImport failed', error);
       setStep({ kind: 'menu' });
-      Alert.alert(
-        'Could not replace data',
-        'A safety backup of your previous data was saved before this ran. Please try again.',
-      );
+      Alert.alert('Could not replace data', `${safetyExportLocationShortNotice()} Please try again.`);
     }
   };
 
@@ -167,6 +200,7 @@ export default function DataSettingsScreen() {
               <Text style={[styles.caption, { color: colors.textTertiary }]}>
                 Export everything you&apos;ve recorded in Solo + Us.
               </Text>
+              <Text style={[styles.caption, { color: colors.textTertiary }]}>{EXPORT_PLAINTEXT_NOTICE}</Text>
               <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Pressable
                   onPress={() => handleExport('json')}
@@ -252,9 +286,9 @@ export default function DataSettingsScreen() {
               {step.file.activities.length} activities will be imported.
             </Text>
             <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              Your current {step.currentCount} activities will be permanently replaced. A verified safety backup of
-              your current data will be saved first.
+              Your current {step.currentCount} activities will be permanently replaced.
             </Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{safetyExportLocationNotice()}</Text>
             <View style={styles.actions}>
               <Pressable
                 onPress={() => handleConfirmReplace(step.file)}
