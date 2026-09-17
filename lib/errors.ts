@@ -105,6 +105,23 @@ export class MigrationRestoreFailedError extends Error {
 }
 
 /**
+ * §13.3 — the mandatory safety backup before a destructive replace-import
+ * either couldn't be written, or was written but failed the read-back
+ * verification (`services/SafetyExportService.ts`). Either way, §13.3's
+ * rule is absolute: "キャンセルされた／検証に失敗した場合、置換を開始しない"
+ * — the caller must not proceed to the destructive replace.
+ */
+export class SafetyExportFailedError extends Error {
+  readonly originalError: unknown;
+
+  constructor(message: string, originalError?: unknown) {
+    super(message);
+    this.name = 'SafetyExportFailedError';
+    this.originalError = originalError;
+  }
+}
+
+/**
  * §8.8 Recovery bootstrap — the chosen backup file failed the same
  * validation a normal Import would apply (`services/importValidation`).
  * A distinct type (not a plain `ValidationError`) so `RecoveryScreen` can

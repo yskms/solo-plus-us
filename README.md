@@ -969,4 +969,125 @@ Phase 1 で実装・テスト済みのものをそのまま再利用しており
 画面マスクだが、Recovery の「バックアップから復元する」は利用者が事前に Export していな
 ければ実際には使えず、D-07（OS バックアップから DB ディレクトリを除外している以上、
 Export が唯一の正式な復旧手段）とも合わせ、Export/Import の UI を画面マスク・日時編集
-UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・レビューで確認）。
+UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・レビューで確認）。§12（Export）・
+§13（Import/strict restore）に対応。「Delete Data」（§10.6、UI/UX §17 の DATA セクション
+3行目）は基本設計 §18 の Phase 3 に明記された項目ではないため、今回のスコープには含めて
+いない（下記 Known gaps 参照）。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `services/ExportService.ts` | 既存の `buildExportPayload`/`serializeExportFile`（JSON、Phase 1 実装済み）に加え `serializeExportCsv` を追加（§12.3）。列は `id,context,occurredLocalDate,occurredLocalTime,occurredAtUtc,timezoneOffsetMinutes,timezoneId,orgasm,ejaculation,protectionUsed,durationSeconds,moodBefore,moodAfter,note` の順で固定。CSV は復元対象外（§12.1）のため `syncVersion`/`createdAt`/`updatedAt` は含めない。カンマ・ダブルクォート・改行を含む値は RFC 4180 準拠でクォート |
+| `services/ImportService.ts` | 既存の `performReplaceImport`（置換復元、Phase 1 実装済み）に加え `performAppendImport` を追加（§13.3「追加のみ」）。`id` が未存在の Activity だけを挿入し、既存行・設定には一切触れない（`settings` は完全に無視——置換復元と違い「追加のみモードでは無視する」という§13.3の規定どおり） |
+| `services/SafetyExportService.ts`（新規） | §13.3 の「置換復元の手順 1」——置換の前に必ず検証済みバックアップを作る。Android は `expo-file-system/legacy` の `StorageAccessFramework`（ユーザーに保存先を選ばせ、書き込み後に読み直して件数を検証）。iOS には SAF 相当の標準 API が無いため（`StorageAccessFramework` は型定義上 Android 専用と明記）、アプリの `Paths.document` 直下に検証付きで書き込む（`database/connection.ts` の `getDbDirectory()` とは別の場所——DB はそこから意図的に除外されている。Documents は現状 iCloud/iTunes バックアップに含まれる。将来 iOS 側の DB バックアップ除外が実装されたとき、除外範囲が Documents 全体に広がらないことが前提——詳細はファイル内コメント参照）。検証（書き込んだ件数の読み直し確認）に失敗、またはユーザーが保存先選択をキャンセルした場合は `SafetyExportFailedError` を投げ、呼び出し側は置換を開始しない |
+| `services/ExportSharingService.ts`（新規） | 通常の Export（§12.4、共有シート——保存先の検証は不要）。`Paths.cache` に一時ファイルを書き、`expo-sharing` で共有し、共有後に削除する |
+| `lib/errors.ts` | `SafetyExportFailedError` を追加 |
+| `app/settings/data.tsx`（新規） | UI/UX §20 Screen 10（Export：JSON/CSV ボタン）＋ §13.3 の Import フロー（`ImportPreview`/`DestructiveConfirm` 相当、モックアップには無いが §25 のコンポーネント一覧と件数プレビューの文言例から実装）。ステップは `menu → modeChoice → confirmReplace/busy`——`RecoveryScreen.tsx` と同じ、ステップ状態を1ファイルで持つ構成。「追加のみ」はセーフティ Export 不要（非破壊的なため）で直接実行、「すべて置換」は確認画面を挟んでからセーフティ Export → 置換の順で実行。Import 完了後は `useDataRevision().bump()` を呼び、他画面（Today/Calendar 等）に変更を伝える |
+| `app/settings/index.tsx`/`app/_layout.tsx` | DATA セクションに「Export & Import」の1行を追加（UI/UX §17 の Export/Import/Delete の3行ではなく1行——Delete が無いため）。ルートタイトルは "Data" |
+
+#### レビューで見つかり、修正したもの
+
+セーフティ Export・CSV・置換復元の正しさ自体は確認された。「利用者に事実を伝える」
+部分の抜けが優先度：中で2件見つかった。
+
+1. **【中】セーフティ Export の保存先が利用者に伝わらない（iOS でより重要）**：
+   `performSafetyExport` が返す `location` を呼び出し側が捨てており、完了後の通知にも
+   失敗時の通知にも保存先が出ていなかった。Android はユーザー自身が選んだ場所なので
+   まだ探せるが、iOS はそもそも選べない（Documents 直下に自動で書く）ため、平文の
+   JSON がどこにできたのか画面上で確認する手段が一つも無かった。§13.3 が求めるのは
+   「あることを確認できるバックアップ」であり、位置を伝えない実装ではこの目的を
+   満たさない。確認画面（`confirmReplace`）に事前の通知、完了後・失敗時の通知にも
+   同じ事実を追加した。あわせて、iOS の代替実装が iCloud/iTunes バックアップへ平文
+   コピーを上げてしまう点（D-07 の脅威モデルとの緊張関係）も画面上で明示するよう
+   にした。設計上の逸脱でもあるため、設計判断記録 D-27 に追記として残した
+2. **【中】Export 画面に「共有先では平文になる」旨の明示がない（§12.4）**：EXPORT
+   セクションの説明文に、書き出したファイルが暗号化されていない旨の一文を追加した
+
+優先度：低の指摘も併せて対応：
+- **CSV の数式インジェクション**：`note` が `=`/`+`/`-`/`@` で始まると Excel/Sheets が
+  数式として解釈しうる（OWASP CSV injection）。`csvField` で先頭に `'` を付けて無害化
+- **UTF-8 BOM**：Excel で日本語の note が文字化けしないよう、CSV 共有時のみ（
+  `serializeExportCsv` 自体の戻り値には含めない）`﻿` を先頭に付与
+- **セーフティ Export ファイル名を固定 → タイムスタンプ付きに変更**：iOS は固定名だと
+  前回のコピーを上書きし、Android は SAF が自動リネームするため、プラットフォーム間で
+  挙動が揃っていなかった。両方ともタイムスタンプ付きファイル名にし、履歴が残るように
+  した（削除する導線は無いままだが、上書きで唯一のセーフティコピーを失うよりは安全）
+- **Import のファイル選択の絞り込みを緩和**：`type: 'application/json'` だと提供元に
+  よっては `.json` が `application/octet-stream` 扱いになり選べないことがあるため、
+  `type: '*/*'` に変更（検証は `validateExportFile` が確実に行う）
+
+優先度：低のうち対応しなかったもの（設計判断記録へ記録のみ）：
+- **§13.3 の手順順序からの逸脱**：設計は「セーフティ Export → 検証 → プレビュー」だが、
+  実装は「検証 → プレビュー → 確認 →（置換選択時のみ）セーフティ Export」。無効な
+  ファイルや「追加のみ」選択のために保存先選択を求めずに済むため、この順序の方が
+  妥当と判断し、その理由を設計判断記録 D-27 に追記した
+- **Import 後の Health Connect 再同期（§13.6/D-34）は Phase 4 の項目**（下記 Known gaps
+  に明記）
+
+#### レビューで見つかり、修正したもの（2回目）
+
+前回の修正内容（保存先の通知・平文の明示・タイムスタンプ化・ファイル選択の緩和）は
+いずれも意図どおりと確認された。CSV の数式インジェクション対策自体に副作用が
+見つかった。
+
+1. **【中】`timezoneOffsetMinutes` が負の値のとき CSV の数値が壊れる**：数式
+   インジェクション対策（先頭が `=+-@` なら `'` を付与）を全列に一律適用していたが、
+   「他の列がこれらの文字で始まることはない」という前提が誤りだった——
+   `timezoneOffsetMinutes` は UTC より西側のタイムゾーンで負の値になる（ロサンゼルス
+   は -480 など）。`String(-480)` は `"-480"` で先頭が `-` に一致するため、CSV には
+   `'-480` と出力され、表計算では数値ではなく文字列として扱われてしまい、§12.3 の
+   目的（表計算での分析）がこの列で成立しなくなっていた。テストが UTC 実行のため
+   オフセット 0 でこの経路を通っておらず、見落としていた。`csvField` を
+   `typeof value === 'string'` の場合のみ対策を適用するよう修正——数値列
+   （`timezoneOffsetMinutes` 等）は対象外になり、`note` を含む文字列列は従来どおり
+   保護される。負のオフセット（`America/Los_Angeles`、冬時間で -480）のケースを
+   テストに追加
+
+任意の補足も対応：CSV 共有時に付与する UTF-8 BOM が、テンプレート文字列の先頭に
+U+FEFF の実文字として直接埋め込まれていた（エディタ・差分では見えない）。
+`String.fromCharCode(0xfeff)` から組み立てる形に変更し、意図が読み取れるようにした。
+
+#### テスト
+
+`services/ExportService.ts` の `serializeExportCsv`（純粋関数）と `services/ImportService.ts` の
+`performAppendImport` は既存の `test/__tests__/exportImport.integration.test.ts`（better-sqlite3
+統合テスト）に追加：追加のみモードが既存行・設定に触れないこと、同じファイルの2回目の
+Import が全件スキップされること、CSV のヘッダー順序とエスケープ（カンマ・クォート・改行）
+を検証。`services/SafetyExportService.ts`・`services/ExportSharingService.ts`・
+`app/settings/data.tsx` は op-sqlite 以外にも expo-file-system（`/legacy` の
+StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存するため Jest では
+検証できない——`RecoveryService.ts` と同じ制約。
+
+#### Known gaps
+
+- **実機での動作確認が未実施**：特に以下を優先して確認する：
+  - **Android のセーフティ Export**：`StorageAccessFramework.requestDirectoryPermissionsAsync`
+    でのディレクトリ選択、`createFileAsync`/`writeAsStringAsync`/`readAsStringAsync` の実際の
+    挙動（ファイル名の拡張子付与、既存ファイルとの衝突時の挙動など）
+  - **iOS のセーフティ Export**：`Paths.document` への `File#write`/`text()` の実際の挙動
+    （`write()` が明示的な `create()` なしで新規ファイルを作成できるかを含む、未検証）
+  - **共有シート**：JSON/CSV の共有・保存が両 OS で正しい MIME type/UTI で認識されること
+  - Import のファイル選択（`expo-document-picker`、JSON の読み込み）も同様
+- **iOS の DB バックアップ除外が未実装な間の一時的な整合**：セーフティ Export を
+  `Paths.document` 直下に書く設計は、「DB は除外・Documents の他の場所は除外されない」
+  という前提に依存する。§8.6 の iOS 側実装（`NSURLIsExcludedFromBackupKey`）が実装され、
+  かつその除外範囲が Documents 全体に広がった場合、この安全性の前提が崩れる——実装時に
+  `services/SafetyExportService.ts` を再確認する必要がある
+- **Delete Data（§10.6）は未実装**：UI/UX §17 の DATA セクションの3行目。基本設計 §18 の
+  Phase 3 に明記された項目ではないため今回のスコープに含めていない
+- **Export schema の Migration（§13.2）は未実装**：現行 export version が 1 のみで、
+  古いバージョンが存在しないため。v2 を出す時点で `migrateExportV1ToV2` 等を追加する必要
+  がある（`services/importValidation.ts` は現状 `version !== CURRENT_EXPORT_VERSION` を
+  一律拒否している）
+- **セーフティ Export 失敗時のリトライ導線が無い**：セーフティ Export が失敗すると
+  `menu` ステップへ戻るのみで、同じ確認画面へワンタップで戻る導線は無い（Cancel から
+  やり直す形になる）
+- **セーフティ Export ファイルを削除する導線が無い**：タイムスタンプ付きで毎回新しい
+  ファイルとして残るため（上記レビュー参照）、Delete Data（未実装）が無い現状では
+  蓄積し続ける。iOS は Files アプリにも公開していない（`UIFileSharingEnabled` 未設定）
+  ため、アプリ内から削除する仕組みが無い限り利用者自身も消せない
+- **Import 後の Health Connect 再同期は未実装**（§13.6/D-34「recreate」）：Phase 4 の
+  項目なので今は問題ないが、置換復元は `health_sync` の対応関係を全削除するため、
+  Phase 4 で Health Connect を実装する際に必ず対応が必要になる箇所として残しておく
+- **暗号化された Export（パスフレーズ付き）は v1.1 で検討**（§12.4 に明記、既知の対象外）

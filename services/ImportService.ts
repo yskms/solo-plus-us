@@ -1,18 +1,19 @@
 /**
  * 基本設計 v0.11 §13 (D-10) — strict restore.
  *
- * Only "replace" mode is implemented here (§13.3's primary/default mode:
- * wipe local data, then insert the file's contents, in one transaction).
- * "追加のみ" (append-only, id-not-already-present) is a Phase 3 UI
- * feature and not implemented yet — see README "Known gaps".
+ * Two modes, both implemented here: `performReplaceImport` (§13.3's
+ * primary/default mode: wipe local data, then insert the file's contents,
+ * in one transaction) and `performAppendImport` ("追加のみ" — insert only
+ * activities whose `id` isn't already present; existing rows and settings
+ * are left untouched).
  *
  * Validation (`services/importValidation`) must already have accepted the
- * file before this runs — this module trusts a `valid: true` result and
+ * file before either runs — this module trusts a `valid: true` result and
  * does not re-derive it, though `ActivityRepository.restoreActivityRow`
  * still re-validates per row as defense in depth (§5.1).
  */
 import type { Transactor } from '../database/SqlExecutor';
-import { deleteAllActivities, restoreActivityRow } from '../repositories/ActivityRepository';
+import { deleteAllActivities, findActivityById, restoreActivityRow } from '../repositories/ActivityRepository';
 import { deleteAllMappings } from '../repositories/HealthSyncRepository';
 import { deleteAllJobs } from '../repositories/HealthSyncJobRepository';
 import { setSetting } from './SettingsRepository';
@@ -60,4 +61,37 @@ export async function performReplaceImport(db: Transactor, file: ExportFileV1): 
   });
 
   return { importedCount: file.activities.length };
+}
+
+export interface AppendImportResult {
+  importedCount: number;
+  skippedCount: number;
+}
+
+/**
+ * §13.3 "追加のみ": id が未存在のものだけ追加する。既存 id は変更しない — and
+ * unlike `performReplaceImport`, `settings` is entirely ignored (§13.3:
+ * "追加のみモードでは無視する"), since this mode never claims to represent
+ * a full device state, only to backfill missing history. Not gated by
+ * §13.3's safety-export requirement — that only applies to the
+ * destructive replace path (`app/settings/data.tsx`), since nothing
+ * existing is ever overwritten or deleted here.
+ */
+export async function performAppendImport(db: Transactor, file: ExportFileV1): Promise<AppendImportResult> {
+  let importedCount = 0;
+  let skippedCount = 0;
+
+  await db.transaction(async (tx) => {
+    for (const entry of file.activities) {
+      const existing = await findActivityById(tx, entry.id);
+      if (existing) {
+        skippedCount++;
+        continue;
+      }
+      await restoreActivityRow(tx, toActivity(entry));
+      importedCount++;
+    }
+  });
+
+  return { importedCount, skippedCount };
 }

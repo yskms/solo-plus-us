@@ -72,6 +72,7 @@ export default function RootLayout() {
                 <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
                 <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
                 <Stack.Screen name="settings/app-lock" options={{ title: 'App Lock' }} />
+                <Stack.Screen name="settings/data" options={{ title: 'Data' }} />
               </Stack>
               <UndoSnackbar />
             </View>

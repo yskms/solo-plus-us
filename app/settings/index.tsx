@@ -1,8 +1,12 @@
 /**
  * UI/UX §17 Screen 07 — Settings. Only the sections that actually have a
  * working destination are listed here; the rest of §17's mockup (Health
- * Connect, Data, Activity Details, Preferences, About) ships as its own
- * row once each is built, rather than linking to placeholders now.
+ * Connect, Activity Details, Preferences, About) ships as its own row
+ * once each is built, rather than linking to placeholders now. DATA is a
+ * single "Export & Import" row rather than §17's separate Export/Import/
+ * Delete rows — `settings/data.tsx` covers Export and Import; Delete
+ * (§10.6) isn't built yet, so the mockup's three-row split isn't followed
+ * literally (see README).
  */
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -32,6 +36,11 @@ export default function SettingsIndexScreen() {
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRIVACY</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingsRow label="App Lock" onPress={() => router.push('/settings/app-lock')} />
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
+        <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <SettingsRow label="Export & Import" onPress={() => router.push('/settings/data')} />
         </View>
       </ScrollView>
     </SafeAreaView>
