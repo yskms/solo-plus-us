@@ -196,8 +196,17 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
   // Step 8.
   await replaceStoredDatabaseKey(newKey);
 
-  // Step 9.
-  deleteDbFileWithWalSiblings(oldAsideFile);
+  // Step 9. By this point the restore has already fully succeeded — the
+  // real DB is open-able, the new key is persisted — so a failure here
+  // must not be reported as "could not restore backup". Left alone,
+  // `discardStaleRecoveryOldIfPresent` (database/connection.ts) removes
+  // `oldAsideFile` the next time the app opens the DB successfully, so
+  // this is safe to log and swallow rather than throw.
+  try {
+    deleteDbFileWithWalSiblings(oldAsideFile);
+  } catch (error) {
+    logError('deleteDbFileWithWalSiblings(oldAsideFile) failed in restoreFromBackup step 9', error);
+  }
 
   return { importedCount: file.activities.length };
 }

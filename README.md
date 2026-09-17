@@ -910,6 +910,17 @@ Recovery 側で再発する経路が残っていた。
 これでこの回避不能だった行き止まりは解消。実機での確認項目に「手順7で失敗させた後、
 すぐにもう一度復元する」を追加した。
 
+3回目のレビューで、上記の経路はすべて正しく直っていることが確認された
+（手順5の本体のみ移動した瞬間の中断、手順6〜8の間の中断、手順8自体での例外も
+含め、`recoverInterruptedRecoveryIfNeeded`/`discardStaleRecoveryOldIfPresent`/
+`recoverGenuineOldDbForRetry` の3者で状態がすべて戻ることを個別に追い直して
+確認済み）。加えて任意の補足として、**手順9（`deleteDbFileWithWalSiblings(oldAsideFile)`）
+が例外を投げると、手順8まで完全に成功しているのに「Could not restore backup」と
+表示されてしまう**点を指摘され、対応：手順9を try/catch で囲み、失敗しても
+ログのみでそのまま復元成功として返すよう修正した——残った `recovery-old` は
+次回 DB を正常に開いた時点で `discardStaleRecoveryOldIfPresent` が削除するため、
+安全に握りつぶせる。
+
 #### テスト
 
 `RecoveryService.ts`/`RecoveryScreen.tsx` は op-sqlite・expo-file-system・expo-document-picker
