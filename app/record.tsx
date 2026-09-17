@@ -6,13 +6,14 @@
  * on Today) is the only chance to reconsider, by design (§21/§22: fast,
  * not gated by an extra tap).
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
+import { useAppLockActions } from '../contexts/AppLock';
 import { logError } from '../lib/log';
 import * as ActivityService from '../services/ActivityService';
 import type { ActivityContext } from '../types/Activity';
@@ -22,6 +23,16 @@ export default function RecordScreen() {
   const db = useDatabase();
   const { announceRecorded } = useRecordFeedback();
   const [saving, setSaving] = useState(false);
+
+  // Lets AppLockProvider know this modal is on screen — see its own doc
+  // comment (`registerRecordScreenMounted`) for why it needs to wait for
+  // this specifically, rather than trusting navigation state, before
+  // presenting the lock screen over this screen's own native modal.
+  const { registerRecordScreenMounted, registerRecordScreenUnmounted } = useAppLockActions();
+  useEffect(() => {
+    registerRecordScreenMounted();
+    return () => registerRecordScreenUnmounted();
+  }, [registerRecordScreenMounted, registerRecordScreenUnmounted]);
 
   const record = async (context: ActivityContext) => {
     if (saving) return; // guards against a double-tap firing two records

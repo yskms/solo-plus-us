@@ -643,6 +643,35 @@ lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文
    `onDismiss` を持たず、`showingOverlay` の effect のままで問題ない——`flushPendingAlert`
    は冪等なので両方から呼ばれても安全
 
+#### レビューで見つかり、修正したもの（5回目）
+
+4回目の3箇所とも、「完了した」と判断する合図が実際のネイティブの完了より早く、
+方針は正しいが実装が伴っていなかった。
+
+1. **【高】`pathname` はモーダルを閉じ始めた時点で変わるので、完了の合図にならない**：
+   `pathname`（React Navigation の state 由来）は `router.dismiss()` の直後に更新される
+   一方、ネイティブスタックは閉じるアニメーションの間 `record` を描画し続ける。そのため
+   `pathname !== '/record'` は次の描画ですぐ成り立ち、`setLocked(true)` が閉じている
+   途中で呼ばれてしまい、4回目の#1で直したはずの問題が実質的に残っていた。`pathname`
+   ではなく `record.tsx` 自身のマウント/アンマウント（ネイティブスタックは閉じる
+   アニメーションが終わってからアンマウントする）を合図にするよう変更。
+   `registerRecordScreenMounted`/`Unmounted` を `AppLockProvider` から公開し、
+   `record.tsx` が自身のマウント effect から呼ぶ形にした
+2. **【中】「一瞬見える隙間」を塞ぐはずの背景色が、実際には中身を隠していなかった**：
+   `children` を包む親 `View` に付けた背景色は子の後ろに描かれるため、中身はそのまま
+   見えていた。`children` の後ろにある通常の `View`（兄弟要素、`absoluteFill`）を
+   条件付きで重ねる形に変更（親の背景色ではなく、後から描画される兄弟要素にした）
+3. **【中】iOS では effect が先に動き、`onDismiss` が空振りしていた**：
+   `showingOverlay` が `false` になった直後に動く effect が、`onDismiss` より先に
+   `flushPendingAlert()` を呼んでいた（`flushPendingAlert` は最初に呼ばれた方が
+   お知らせを出す作りのため）。結果、iOS でも常に effect 側が先に呼ばれ、4回目で
+   追加した `onDismiss` が実質使われていなかった。effect 側の呼び出しを
+   `Platform.OS === 'android'` に限定し、iOS は `onDismiss` のみに一本化
+
+3件とも「実機での確認でしか最終判断できない」種類の修正のため、
+Known gaps の実機確認項目に含めたまま、この単独の指摘は実機確認が済むまで
+未解決（要検証）として扱う。
+
 #### Known gaps
 
 - **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの

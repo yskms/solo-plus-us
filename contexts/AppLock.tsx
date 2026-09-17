@@ -24,9 +24,14 @@
  * too — if `record` is already being presented from that same VC when
  * this tries to present, the second `presentViewController` call
  * silently fails, and toggling `visible` again later doesn't retry it.
- * So `record` is dismissed first (see the `router.dismiss()` call below)
- * whenever locking would otherwise leave it open underneath. Unverified
- * on-device either way (see README).
+ * So `record` is dismissed first whenever locking would otherwise leave
+ * it open underneath — and *actually* dismissed, not just asked to be:
+ * `router.dismiss()` only starts the close animation, so this waits for
+ * `record.tsx` to report itself unmounted (`registerRecordScreenMounted`/
+ * `Unmounted`, called from `record.tsx` itself) before locking, rather
+ * than trusting navigation state (`pathname`), which updates the instant
+ * `dismiss()` is called — well before the native animation, and the
+ * screen, actually finish. Unverified on-device either way (see README).
  *
  * No app-specific PIN, no bypass — `expo-local-authentication` (device
  * biometrics, falling back to device passcode by default) is the only way
@@ -40,8 +45,8 @@
  * `getEnrolledLevelAsync` checks below, and D-08's addendum.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, AppState, Modal, StyleSheet, View, type AppStateStatus } from 'react-native';
-import { router, usePathname } from 'expo-router';
+import { Alert, AppState, Modal, Platform, StyleSheet, View, type AppStateStatus } from 'react-native';
+import { router } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../constants/theme';
 import { useDatabase } from './DatabaseContext';
@@ -65,6 +70,18 @@ interface AppLockActionsContextValue {
    * authentication succeeded.
    */
   authenticate: (promptMessage: string) => Promise<boolean>;
+  /**
+   * Called by `app/record.tsx` itself, from a mount/unmount effect — see
+   * why below (`recordScreenMountedRef`). Not route-based (`pathname`):
+   * that reflects navigation *state*, which updates the instant
+   * `router.dismiss()` is called, well before react-native-screens'
+   * native-stack actually finishes the close *animation* and unmounts the
+   * screen. Watching the mount lifecycle directly tracks the thing that
+   * actually matters — whether `record`'s native modal is still on
+   * screen — rather than a proxy that changes too early.
+   */
+  registerRecordScreenMounted: () => void;
+  registerRecordScreenUnmounted: () => void;
 }
 
 const AppLockActionsContext = createContext<AppLockActionsContextValue | null>(null);
@@ -78,9 +95,6 @@ export function useAppLockActions(): AppLockActionsContextValue {
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   const db = useDatabase();
-  const pathname = usePathname();
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
 
   const [enabled, setEnabled] = useState(false);
   const [timing, setTiming] = useState<AppLockTiming>('immediately');
@@ -99,6 +113,25 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const [awaitingModalDismiss, setAwaitingModalDismiss] = useState(false);
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<LocalAuthentication.LocalAuthenticationError | null>(null);
+  // Whether app/record.tsx is currently mounted — react-native-screens
+  // keeps a native-stack screen mounted for the duration of its close
+  // *animation*, unmounting only once it's actually finished, so this is
+  // a reliable proxy for "is record's native modal still on screen"
+  // (unlike navigation state / `pathname`, which changes the instant
+  // `dismiss()` is called). State, not just a ref, because the effect
+  // below needs to react to it; `recordScreenMountedRef` mirrors it for
+  // the synchronous read the AppState listener needs.
+  const [recordScreenMounted, setRecordScreenMounted] = useState(false);
+  const recordScreenMountedRef = useRef(false);
+
+  const registerRecordScreenMounted = useCallback(() => {
+    recordScreenMountedRef.current = true;
+    setRecordScreenMounted(true);
+  }, []);
+  const registerRecordScreenUnmounted = useCallback(() => {
+    recordScreenMountedRef.current = false;
+    setRecordScreenMounted(false);
+  }, []);
 
   const backgroundedAtRef = useRef<number | null>(null);
   // Set by `disableAppLockDueToNoEnrollment`, flushed by the effect below
@@ -270,7 +303,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         }
       } else if (next === 'active' && backgroundedAtRef.current !== null) {
         if (shouldLockOnResume({ enabled, timing, backgroundedAtMs: backgroundedAtRef.current, nowMs: Date.now() })) {
-          if (pathnameRef.current === '/record') {
+          if (recordScreenMountedRef.current) {
             // record.tsx (`presentation: 'modal'`) is a genuinely separate
             // native presentation on iOS. The <Modal> below presents from
             // the *root* view controller — if record's modal is already
@@ -283,8 +316,8 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
             // tries to present. record.tsx has no draft state worth
             // preserving (just two buttons) — unlike a regular pushed
             // screen (e.g. Activity Detail), which this deliberately
-            // leaves alone by checking the exact pathname rather than
-            // dismissing indiscriminately.
+            // leaves alone (`recordScreenMountedRef` only ever tracks
+            // `record.tsx` specifically — see its own doc comment).
             //
             // `router.dismiss()` only *starts* the native dismiss
             // animation — it doesn't wait for it to finish. Setting
@@ -292,8 +325,8 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
             // here would try to present while record is still mid-close,
             // hitting the exact same "second presentation silently
             // fails" problem this is meant to avoid. `awaitingModalDismiss`
-            // holds off on that until the effect below confirms record is
-            // actually gone (or a timeout safety-nets it).
+            // holds off on that until the effect below confirms record has
+            // actually unmounted (or a timeout safety-nets it).
             setAwaitingModalDismiss(true);
             router.dismiss();
           } else {
@@ -316,15 +349,16 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, [enabled, timing, refreshAppLockSettings]);
 
-  // Confirms record.tsx has actually finished dismissing (`pathname` no
-  // longer `/record`) before locking — see the `awaitingModalDismiss`
-  // comment above for why. The timeout is a safety net, not the expected
-  // path: if `dismiss()` doesn't resolve for some reason, locking after a
-  // few seconds regardless beats leaving the "flash guard" (below) up
-  // forever with no real lock screen ever appearing.
+  // Confirms record.tsx has actually unmounted (not just that navigation
+  // state stopped pointing at it) before locking — see
+  // `recordScreenMountedRef`'s doc comment for why that distinction
+  // matters. The timeout is a safety net, not the expected path: if the
+  // unmount signal never arrives for some reason, locking after a few
+  // seconds regardless beats leaving the "flash guard" (below) up forever
+  // with no real lock screen ever appearing.
   useEffect(() => {
     if (!awaitingModalDismiss) return;
-    if (pathname !== '/record') {
+    if (!recordScreenMounted) {
       setAwaitingModalDismiss(false);
       setLocked(true);
       return;
@@ -334,17 +368,18 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       setLocked(true);
     }, 3000);
     return () => clearTimeout(timeout);
-  }, [awaitingModalDismiss, pathname]);
+  }, [awaitingModalDismiss, recordScreenMounted]);
 
   const showingOverlay = settingsStatus !== 'ready' || (enabled && locked);
-  // Covers `children` the instant we decide to lock, even before the
-  // native lock Modal has actually presented — a plain View's background
-  // color applies in the same render, with none of the native
-  // presentation delay/conflict a second Modal would have. This is the
-  // "flash guard" for the `awaitingModalDismiss` window specifically
-  // (record.tsx's own still-closing modal already visually covers
-  // `children` during that window regardless — this is belt-and-suspenders
-  // for the moment right after, before the lock Modal is confirmed up).
+  // Instantly hides `children` the moment we decide to lock, even before
+  // the native lock Modal has actually presented — a plain sibling View
+  // rendered *after* `children` (see below) paints in the same render,
+  // with none of the native presentation delay/conflict a second Modal
+  // would have. This is the "flash guard" for the `awaitingModalDismiss`
+  // window specifically (record.tsx's own still-closing modal already
+  // visually covers `children` during that window regardless — this is
+  // belt-and-suspenders for the moment right after, before the lock Modal
+  // is confirmed up).
   const hidingContent = showingOverlay || awaitingModalDismiss;
 
   const flushPendingAlert = useCallback(() => {
@@ -357,31 +392,43 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   // `Modal`'s `onDismiss` is iOS-only, and fires once the native modal has
   // *actually* finished closing — the one thing that has to be true
   // before an Alert reliably appears (see `disableAppLockDueToNoEnrollment`).
-  // On Android, `Modal` isn't a ViewController-presentation the way iOS's
-  // is, so there's no equivalent "still transitioning" conflict to wait
-  // out — the effect below (transition into `!showingOverlay`) is
-  // sufficient there, and doubles as a safety net on iOS in case
-  // `onDismiss` doesn't fire for some reason (`flushPendingAlert` is
-  // idempotent — the ref is cleared on first use — so both can safely
-  // fire).
+  // Restricted to Android here: on iOS, this effect fires the instant
+  // React commits `visible={false}` — well before the native dismiss
+  // animation finishes and `onDismiss` actually runs — and
+  // `flushPendingAlert` is "first call wins" (idempotent), so an
+  // unguarded effect would win that race on *every* iOS run and make
+  // `onDismiss` pointless, leaving the original "Alert dropped mid-
+  // transition" problem exactly as it was. Android's `Modal` isn't a
+  // ViewController presentation the way iOS's is, has no equivalent
+  // "still transitioning" conflict to wait out, and has no `onDismiss`
+  // to defer to — so this effect is the only (and sufficient) mechanism
+  // there.
   const wasShowingOverlayRef = useRef(showingOverlay);
   useEffect(() => {
-    if (wasShowingOverlayRef.current && !showingOverlay) {
+    if (Platform.OS === 'android' && wasShowingOverlayRef.current && !showingOverlay) {
       flushPendingAlert();
     }
     wasShowingOverlayRef.current = showingOverlay;
   }, [showingOverlay, flushPendingAlert]);
 
   return (
-    <AppLockActionsContext.Provider value={{ refreshAppLockSettings, authenticate }}>
+    <AppLockActionsContext.Provider
+      value={{ refreshAppLockSettings, authenticate, registerRecordScreenMounted, registerRecordScreenUnmounted }}
+    >
       <View
-        style={[styles.fill, hidingContent && { backgroundColor: colors.background }]}
+        style={styles.fill}
         pointerEvents={hidingContent ? 'none' : 'auto'}
         accessibilityElementsHidden={hidingContent}
         importantForAccessibility={hidingContent ? 'no-hide-descendants' : 'auto'}
       >
         {children}
       </View>
+      {/* A separate sibling, not a `backgroundColor` on the View above —
+          a container's background paints *behind* its children, not over
+          them, so that would never actually have hidden `children` during
+          the `awaitingModalDismiss` window. This sibling renders after
+          (so it stacks on top of) that View instead. */}
+      {hidingContent && <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} />}
       {/* A native Modal, not just an absolutely-positioned View — see the
           file doc comment for why record.tsx's own `presentation: 'modal'`
           makes that necessary. `onRequestClose` is a required no-op on
