@@ -84,19 +84,24 @@ const CSV_COLUMNS = [
   'note',
 ] as const;
 
-// OWASP CSV injection: a field beginning with =, +, -, @ (or a tab/CR) can
-// make spreadsheet software (Excel, Google Sheets) interpret it as a
-// formula when the file is later opened. `note` is the only free-text
-// field here, but this is applied uniformly rather than special-cased —
-// no other field could naturally start with these characters. Severity is
-// low (this is a person opening their own export, not an untrusted third
-// party's), but a leading `'` neutralizes it at no real cost.
+// OWASP CSV injection: a *string* field beginning with =, +, -, @ (or a
+// tab/CR) can make spreadsheet software (Excel, Google Sheets) interpret
+// it as a formula when the file is later opened. `note` is the only
+// free-text field here, but this is scoped to `typeof value === 'string'`
+// rather than to `note` specifically, since a couple of other columns
+// (`id`, `occurredLocalDate`, `timezoneId`, ...) are also strings even
+// though none of them could realistically start with these characters.
+// Restricted to strings, not applied uniformly to every field's stringified
+// form: `timezoneOffsetMinutes` is a *number* that is legitimately negative
+// for every timezone west of UTC (e.g. -480 for Los Angeles) — `String(-480)`
+// also matches this prefix, and prefixing a number with `'` turns it into
+// text in every spreadsheet, breaking the numeric analysis §12.3 exists for.
 const FORMULA_INJECTION_PREFIX = /^[=+\-@\t\r]/;
 
 function csvField(value: string | number | boolean | null): string {
   if (value === null) return '';
   let text = String(value);
-  if (FORMULA_INJECTION_PREFIX.test(text)) {
+  if (typeof value === 'string' && FORMULA_INJECTION_PREFIX.test(text)) {
     text = `'${text}`;
   }
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;

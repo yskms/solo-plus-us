@@ -235,4 +235,20 @@ describe('Export → Import round trip', () => {
     expect(csv).toContain('a note that starts with a letter'); // unaffected — no leading formula-trigger character
     expect(csv).not.toMatch(/(?<!')=SUM/); // never appears unprefixed
   });
+
+  it('does not mangle a negative timezoneOffsetMinutes into a quoted string (every timezone west of UTC)', async () => {
+    await ActivityService.recordActivity(sourceDb, {
+      context: 'solo',
+      instantUtc: new Date('2026-01-15T14:42:00Z'), // January — PST, not PDT, so this is unambiguously -480
+      timezoneId: 'America/Los_Angeles',
+    });
+
+    const exportFile = await buildExportPayload(sourceDb);
+    expect(exportFile.activities[0].timezoneOffsetMinutes).toBe(-480);
+
+    const csv = serializeExportCsv(exportFile);
+    const dataLine = csv.split('\r\n')[1];
+    const timezoneOffsetField = dataLine.split(',')[5]; // 6th column per CSV_COLUMNS order
+    expect(timezoneOffsetField).toBe('-480'); // not "'-480" — must stay a plain, spreadsheet-numeric value
+  });
 });

@@ -88,8 +88,8 @@ export default function DataSettingsScreen() {
       // codepage for CSV) renders Japanese notes correctly instead of
       // mojibake — added only for the shared file, not serializeExportCsv's
       // own return value, which stays plain CSV text.
-      const contents =
-        format === 'json' ? serializeExportFile(payload) : `﻿${serializeExportCsv(payload)}`;
+      const UTF8_BOM = String.fromCharCode(0xfeff); // built from a codepoint, not an invisible literal character in source
+      const contents = format === 'json' ? serializeExportFile(payload) : `${UTF8_BOM}${serializeExportCsv(payload)}`;
       const fileName = format === 'json' ? 'solo-plus-us-export.json' : 'solo-plus-us-export.csv';
       const mimeType = format === 'json' ? 'application/json' : 'text/csv';
       const uti = format === 'json' ? 'public.json' : 'public.comma-separated-values-text';
