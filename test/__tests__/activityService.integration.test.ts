@@ -1,0 +1,227 @@
+/**
+ * Exercises `services/ActivityService` against real SQLite, including the
+ * job-queueing logic from §9.3/§10.1. This is the highest-value
+ * integration test in the project — the join/delete tables were revisited
+ * across a dozen design-review rounds specifically because they're easy
+ * to get subtly wrong.
+ */
+import { createTestDb, type TestDb } from '../support/sqliteTestDb';
+import * as ActivityService from '../../services/ActivityService';
+import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
+import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
+import * as ActivityRepository from '../../repositories/ActivityRepository';
+import { setSetting } from '../../services/SettingsRepository';
+import { addSecondsIso, nowUtcIso } from '../../lib/datetime';
+
+let db: TestDb;
+
+beforeEach(() => {
+  db = createTestDb();
+});
+
+afterEach(() => {
+  db.close();
+});
+
+async function enableHealthConnect() {
+  await setSetting(db, 'healthConnect.enabled', true);
+}
+
+describe('recordActivity', () => {
+  it('persists the Activity with all §3 fields correctly derived', async () => {
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:30Z'), // has seconds — must be truncated
+      timezoneId: 'Asia/Tokyo',
+      orgasm: true,
+    });
+
+    expect(activity.context).toBe('solo');
+    expect(activity.occurredAtUtc).toBe('2026-09-14T14:42:00Z');
+    expect(activity.occurredLocalDate).toBe('2026-09-14');
+    expect(activity.occurredLocalTime).toBe('23:42');
+    expect(activity.timezoneOffsetMinutes).toBe(540);
+    expect(activity.orgasm).toBe(true);
+    expect(activity.ejaculation).toBeNull();
+    expect(activity.syncVersion).toBe(1);
+
+    const reread = await ActivityRepository.findActivityById(db, activity.id);
+    expect(reread).toEqual(activity);
+  });
+
+  it('does not queue a sync job when Health Connect is disabled (Phase 1 default)', async () => {
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+      timezoneId: 'Asia/Tokyo',
+    });
+    const jobs = await HealthSyncJobRepository.findJobsForActivity(db, activity.id);
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('queues a create job, due 5 seconds after the record *action* (not the backdated occurred time), when Health Connect is enabled (D-15/D-44)', async () => {
+    await enableHealthConnect();
+    // A backdated entry: occurredAt is in the past, but the record action itself happens "now".
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'partnered',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+      timezoneId: 'Asia/Tokyo',
+    });
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).not.toBeNull();
+    expect(job?.operation).toBe('create');
+    expect(job?.attempts).toBe(0);
+    expect(job?.claimedAt).toBeNull();
+    // §9.6/D-44's 5s Undo-sync-delay is measured from createdAt (the real
+    // moment of the record action), not from the possibly-backdated
+    // occurredAtUtc — this activity's occurredAt is 2026-09-14 but
+    // createdAt is "now" (real system time when this test ran).
+    expect(job?.notBefore).toBe(addSecondsIso(activity.createdAt, 5));
+    expect(job?.notBefore).not.toBe('2026-09-14T14:42:05Z');
+  });
+});
+
+describe('updateActivity', () => {
+  it('bumps sync_version on every edit, regardless of which field changed (D-19)', async () => {
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+    const edited = await ActivityService.updateActivity(db, activity.id, { note: 'just a note' });
+    expect(edited.syncVersion).toBe(2);
+    expect(edited.note).toBe('just a note');
+
+    const editedAgain = await ActivityService.updateActivity(db, activity.id, { moodBefore: 3 });
+    expect(editedAgain.syncVersion).toBe(3);
+  });
+
+  it('leaves an existing pending create job untouched on edit (§9.3, no payload on jobs)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+    const jobBefore = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+
+    await ActivityService.updateActivity(db, activity.id, { note: 'edited before the job ever sent' });
+
+    const jobAfter = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(jobAfter?.id).toBe(jobBefore?.id);
+    expect(jobAfter?.operation).toBe('create');
+    expect(jobAfter?.revision).toBe(jobBefore?.revision); // untouched — planForEdit returns 'noop' for an existing job
+  });
+
+  it('inserts an update job for an already-synced Activity with no pending job (normal case)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+    // Simulate the worker having already finished the create job (Phase 4 not implemented — do it directly).
+    await HealthSyncRepository.upsertMapping(db, { activityId: activity.id, provider: 'health_connect', externalRecordId: null });
+    await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect');
+
+    await ActivityService.updateActivity(db, activity.id, { note: 'now editing a synced record' });
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('update');
+  });
+});
+
+describe('deleteActivity — §10.1 branching', () => {
+  it('順1: drops an unattempted create job outright and removes the Activity (the Undo case)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    expect(await ActivityRepository.findActivityById(db, activity.id)).toBeNull();
+    expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+  });
+
+  it('undoLastRecord is the same operation, and is idempotent (D-15 冪等)', async () => {
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await ActivityService.undoLastRecord(db, activity.id);
+    await expect(ActivityService.undoLastRecord(db, activity.id)).resolves.toBeUndefined(); // second tap: no-op, no throw
+    expect(await ActivityRepository.findActivityById(db, activity.id)).toBeNull();
+  });
+
+  it('順2: replaces a create job with delete when attempts > 0 (may have reached the provider, D-32/D-33 scenario)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    // Simulate the worker having claimed (and thus incremented attempts on) the create job at least once.
+    // Claim slightly after the job's real not_before (createdAt + 5s), which is "now" + 5s here.
+    const claimAt = addSecondsIso(nowUtcIso(), 6);
+    const claimed = await HealthSyncJobRepository.claimNextDueJob(db, 'health_connect', claimAt);
+    expect(claimed).not.toBeNull();
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    expect(await ActivityRepository.findActivityById(db, activity.id)).toBeNull();
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+    expect(job?.attempts).toBe(0); // reset on replace — see HealthSyncJobRepository.replaceJob doc comment
+    expect(job?.claimedAt).toBeNull();
+  });
+
+  it('順2: replaces a create job with delete when a mapping already exists (external create raced ahead of a local edit/delete, D-32)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    // Simulate: the external create succeeded and the finalize step recorded the mapping,
+    // but for some reason the job row is still sitting there (e.g. revision mismatch, §9.5.1).
+    await HealthSyncRepository.upsertMapping(db, { activityId: activity.id, provider: 'health_connect', externalRecordId: 'hc-123' });
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+    expect(job?.externalRecordId).toBe('hc-123'); // carried over from the mapping so the delete can address the real record
+    expect(await HealthSyncRepository.findMapping(db, activity.id, 'health_connect')).toBeNull(); // §10.2 step 3
+  });
+
+  it('順3: an update job is replaced with delete', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await HealthSyncRepository.upsertMapping(db, { activityId: activity.id, provider: 'health_connect', externalRecordId: 'hc-1' });
+    await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect');
+    await HealthSyncJobRepository.insertJob(db, { activityId: activity.id, provider: 'health_connect', operation: 'update', notBefore: '2026-09-14T14:42:05Z' });
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+  });
+
+  it('順5: no job but a mapping exists — inserts a fresh delete job', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await HealthSyncRepository.upsertMapping(db, { activityId: activity.id, provider: 'health_connect', externalRecordId: 'hc-9' });
+    await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect'); // simulate: create job already finalized away
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+    expect(job?.externalRecordId).toBe('hc-9');
+  });
+
+  it('順6: no job and no mapping — clean delete, no jobs left for any provider', async () => {
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') }); // HC disabled — no job queued at all
+    await ActivityService.deleteActivity(db, activity.id);
+    expect(await HealthSyncJobRepository.findJobsForActivity(db, activity.id)).toHaveLength(0);
+  });
+
+  it('cleans up a leftover mapping from a now-disabled provider (D-45: disconnect does not drop pending state)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await HealthSyncRepository.upsertMapping(db, { activityId: activity.id, provider: 'health_connect', externalRecordId: 'hc-1' });
+    await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect');
+    await setSetting(db, 'healthConnect.enabled', false); // user disconnects — mapping/job history must still be honored
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete'); // still queued for cleanup even though the provider is currently off
+  });
+});
