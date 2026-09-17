@@ -530,7 +530,7 @@ lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文
 （ネイティブ）依存のため Jest では検証できない——判定ロジックを `lib/appLockTiming.ts`/
 `lib/localAuthMessages.ts` に純粋関数として切り出すことで、そこだけはテスト可能にした。
 
-#### レビューで見つかり、修正したもの
+#### レビューで見つかり、修正したもの（1回目）
 
 利用者が自分の記録に二度と入れなくなる経路が2つ見つかった（優先度：高）。
 
@@ -567,13 +567,43 @@ lib/__tests__/localAuthMessages.test.ts describeAuthError（lockout の専用文
    `accessibilityRole`/`accessibilityLabel` を追加。`lib/localAuthMessages.ts` の
    `describeAuthError` で lockout 等の失敗理由をロック画面に表示するよう修正
 
+#### レビューで見つかり、修正したもの（2回目）
+
+1回目の修正自体から生まれた抜けが中心。
+
+1. **【中〜高】ネイティブのモーダル画面がロック画面より上に表示されるおそれ**：
+   `app/record.tsx` は `presentation: 'modal'` で、iOS のネイティブスタックでは root view
+   とは別の階層に表示される。root に重ねる `absoluteFill` の `View` オーバーレイでは、
+   記録用モーダルを開いたままバックグラウンドへ行って戻ってきた場合にモーダルの方が
+   上に残り、ロック中でも記録操作ができてしまうおそれがあった。オーバーレイを React
+   Native 標準の `Modal`（`transparent={false}`、Android の戻るボタンで閉じられないよう
+   `onRequestClose` を no-op に）の中で描画するよう変更。ネイティブの Modal 提示は他の
+   ネイティブ提示より確実に上に来る想定だが、実機未確認（Known gaps 参照）
+2. **【中】設定画面での OFF 確認の認証が、再ロック防止の仕組みの対象外だった**：
+   `app/settings/app-lock.tsx` が `LocalAuthentication.authenticateAsync` を直接呼んでおり、
+   `AppLockProvider` の `authenticatingRef` が立たなかった。Android で端末 PIN 画面が別
+   Activity として開くと一度 `background` になり、「Immediately」設定では OFF 確認の認証
+   直後にロックがかかり直し、ロック画面がもう一度認証を要求する二重認証になりえた。
+   `AppLockProvider` から `authenticate()` を関数として公開し（`authenticatingRef` を
+   経由）、設定画面もこれを使う形に統一
+3. **【中】`not_enrolled` を返されただけで App Lock を自動 OFF にしていた**：
+   Android では生体認証が未登録でパスコードのみ設定されている端末でも `not_enrolled` が
+   返る場合があり（ライブラリ/OS バージョン依存、実機要確認）、その場合は
+   `getEnrolledLevelAsync()` が `SECRET`（パスコードあり）を返しているのに App Lock が
+   誤って OFF になる状態だった。エラーコードだけで判断せず、OFF にする前に
+   `getEnrolledLevelAsync()` をもう一度呼び、`NONE` のときだけ OFF にするよう修正
+4. **【低】`getEnrolledLevelAsync()` 自体が例外を投げると、ロック画面に何も表示されない**：
+   `catch` で `logError` するだけで `authError` を設定していなかった。汎用のエラー
+   コード（`'unknown'`）を設定し、`describeAuthError` の汎用文言が出るよう修正
+
 #### Known gaps
 
 - **実機での動作確認が未実施**：Phase 1/2 と同じ制約に加え、生体認証・端末パスコードの
   実機テストがそもそも必要（UI/UX §19 受け入れ条件「生体認証を無効にしている端末でも、
-  端末パスコード等で解除できること」）。特に今回のレビューで見つかった iOS Face ID
-  ダイアログ・Android 端末パスコード画面と `AppState` の実際の遷移順序は、実機でのみ
-  最終確認できる
+  端末パスコード等で解除できること」）。特に以下は実機でのみ最終確認できる：
+  iOS Face ID ダイアログ・Android 端末パスコード画面と `AppState` の実際の遷移順序、
+  **記録用モーダル（`app/record.tsx`）を開いたままロックした場合に `Modal` オーバーレイが
+  確実に上に表示されること**、Android で `not_enrolled` が実際にどう返るか
 - **画面マスク（Recent Apps でのマスク）は未実装**：基本設計 §18 で App Lock の次の
   sub-item として明示的に分けられているため、今回は含めていない。ロック画面自体は
   実装したが、OS の Recent Apps スイッチャーに表示されるスナップショットに直前の

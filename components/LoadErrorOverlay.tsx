@@ -4,7 +4,9 @@
  * guessing "unlocked" (could expose content the person meant to protect)
  * or guessing "locked" (see the `disableAppLockDueToNoEnrollment` doc
  * comment in AppLock.tsx for why silently assuming "locked forever" on a
- * failure is its own trap).
+ * failure is its own trap). Rendered inside a React Native `Modal` (see
+ * AppLock.tsx), which already fills the screen — this only needs
+ * `flex: 1`, not its own absolute positioning.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -14,7 +16,7 @@ import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 export function LoadErrorOverlay({ onRetry }: { onRetry: () => void }) {
   const { colors } = useTheme();
   return (
-    <SafeAreaView style={[StyleSheet.absoluteFill, styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.center}>
         <Text style={[styles.message, { color: colors.textPrimary }]}>
           Solo + Us couldn&apos;t check your App Lock settings.

@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
-import { useAppLockRefresh } from '../../contexts/AppLock';
+import { useAppLockActions } from '../../contexts/AppLock';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { logError } from '../../lib/log';
 import type { AppLockTiming } from '../../types/Settings';
@@ -25,7 +25,7 @@ const TIMING_OPTIONS: { value: AppLockTiming; label: string }[] = [
 export default function AppLockSettingsScreen() {
   const { colors } = useTheme();
   const db = useDatabase();
-  const { refreshAppLockSettings } = useAppLockRefresh();
+  const { refreshAppLockSettings, authenticate } = useAppLockActions();
 
   const [enabled, setEnabled] = useState(false);
   const [timing, setTiming] = useState<AppLockTiming>('immediately');
@@ -64,8 +64,15 @@ export default function AppLockSettingsScreen() {
       // already-unlocked phone, not just its owner — not in the design
       // docs explicitly, but symmetric with what turning it *on* already
       // requires, so the same authentication is required to turn it off.
-      const result = await LocalAuthentication.authenticateAsync({ promptMessage: 'Confirm to turn off App Lock' });
-      if (!result.success) return;
+      // Goes through AppLockProvider's `authenticate` (not
+      // `LocalAuthentication.authenticateAsync` directly) so its shared
+      // `authenticatingRef` guard is held for this prompt too — otherwise
+      // the AppState churn this prompt can cause (a real backgrounding
+      // event on Android, whose passcode fallback is a separate Activity)
+      // would be mistaken for the person leaving the app, re-locking it
+      // right as this authentication succeeds.
+      const success = await authenticate('Confirm to turn off App Lock');
+      if (!success) return;
     }
     setBusy(true);
     try {

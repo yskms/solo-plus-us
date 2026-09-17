@@ -14,6 +14,15 @@
  * mid-edit (e.g. a draft note on Activity Detail) the moment the app is
  * merely glanced away from with "Immediately" set.
  *
+ * The overlay itself renders inside React Native's own `Modal` (not just
+ * an absolutely-positioned `View`) because `app/record.tsx` is presented
+ * with `presentation: 'modal'` — on iOS that's a genuinely separate
+ * native presentation layer, outside the root view hierarchy an
+ * absolute-fill `View` covers. A `View` overlay could leave that modal
+ * (or any future one) sitting *above* the lock screen, reachable while
+ * "locked". `Modal`'s own native presentation stacks above other native
+ * presentations reliably; unverified on-device (see README).
+ *
  * No app-specific PIN, no bypass — `expo-local-authentication` (device
  * biometrics, falling back to device passcode by default) is the only way
  * through, per "アプリ独自の PIN を実装しない" (UI/UX §19, D-08): a recovery
@@ -26,7 +35,7 @@
  * `getEnrolledLevelAsync` checks below, and D-08's addendum.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, AppState, StyleSheet, View, type AppStateStatus } from 'react-native';
+import { Alert, AppState, Modal, StyleSheet, View, type AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../constants/theme';
 import { useDatabase } from './DatabaseContext';
@@ -37,16 +46,26 @@ import { shouldLockOnResume } from '../lib/appLockTiming';
 import { logError } from '../lib/log';
 import type { AppLockTiming } from '../types/Settings';
 
-interface AppLockRefreshContextValue {
+interface AppLockActionsContextValue {
   /** Called by the App Lock settings screen right after saving, so a change takes effect immediately rather than waiting for the next background→foreground cycle. */
   refreshAppLockSettings: () => Promise<void>;
+  /**
+   * Runs a device-authentication prompt through the same `authenticatingRef`
+   * guard `attemptUnlock` uses below, so a prompt triggered from the
+   * Settings screen (e.g. confirming to turn App Lock off) isn't mistaken
+   * by the `AppState` listener for a real backgrounding event — Android's
+   * passcode fallback in particular launches a separate Activity, which
+   * genuinely backgrounds this app while it runs. Returns whether
+   * authentication succeeded.
+   */
+  authenticate: (promptMessage: string) => Promise<boolean>;
 }
 
-const AppLockRefreshContext = createContext<AppLockRefreshContextValue | null>(null);
+const AppLockActionsContext = createContext<AppLockActionsContextValue | null>(null);
 
-export function useAppLockRefresh(): AppLockRefreshContextValue {
-  const ctx = useContext(AppLockRefreshContext);
-  if (!ctx) throw new Error('useAppLockRefresh must be used within AppLockProvider');
+export function useAppLockActions(): AppLockActionsContextValue {
+  const ctx = useContext(AppLockActionsContext);
+  if (!ctx) throw new Error('useAppLockActions must be used within AppLockProvider');
   return ctx;
 }
 
@@ -69,7 +88,10 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const backgroundedAtRef = useRef<number | null>(null);
   // A plain ref, not just the `authenticating` state: the AppState
   // listener below reads this synchronously and must see the update the
-  // instant `attemptUnlock` starts/stops, not after React's next render.
+  // instant an authentication attempt starts/stops, not after React's
+  // next render. Shared by every authentication path (the lock screen's
+  // own attempt *and* the Settings screen's, via `authenticate` below) —
+  // a guard that only some callers honor isn't a guard.
   const authenticatingRef = useRef(false);
 
   const refreshAppLockSettings = useCallback(async () => {
@@ -91,6 +113,37 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshAppLockSettings();
   }, [refreshAppLockSettings]);
+
+  // Runs `authenticateAsync` with the shared `authenticatingRef` guard
+  // held for its entire duration. Used directly by the Settings screen
+  // (via `authenticate`, below) and indirectly by `attemptUnlock`, which
+  // needs the richer `LocalAuthenticationResult` rather than a boolean.
+  const authenticateGuarded = useCallback(async (promptMessage: string): Promise<LocalAuthentication.LocalAuthenticationResult> => {
+    if (authenticatingRef.current) {
+      return { success: false, error: 'app_cancel' };
+    }
+    authenticatingRef.current = true;
+    try {
+      // `disableDeviceFallback` deliberately left at its default (false):
+      // §19 "生体認証を無効にしている端末でも、端末パスコード等で解除できる
+      // こと" requires the OS's own passcode fallback to stay available.
+      return await LocalAuthentication.authenticateAsync({ promptMessage });
+    } finally {
+      authenticatingRef.current = false;
+    }
+  }, []);
+
+  const authenticate = useCallback(
+    async (promptMessage: string): Promise<boolean> => {
+      try {
+        return (await authenticateGuarded(promptMessage)).success;
+      } catch (error) {
+        logError('Device authentication failed', error);
+        return false;
+      }
+    },
+    [authenticateGuarded],
+  );
 
   // Disables App Lock (persisted, not just for this session) and unlocks,
   // rather than leaving the person stuck on a lock screen that can never
@@ -118,7 +171,6 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
 
   const attemptUnlock = useCallback(async () => {
     if (authenticatingRef.current) return;
-    authenticatingRef.current = true;
     setAuthenticating(true);
     setAuthError(null);
     try {
@@ -127,27 +179,35 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         await disableAppLockDueToNoEnrollment();
         return;
       }
-      // `disableDeviceFallback` deliberately left at its default (false):
-      // §19 "生体認証を無効にしている端末でも、端末パスコード等で解除できる
-      // こと" requires the OS's own passcode fallback to stay available.
-      const result = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock Solo + Us' });
+      const result = await authenticateGuarded('Unlock Solo + Us');
       if (result.success) {
         setLocked(false);
       } else if (result.error === 'not_enrolled' || result.error === 'passcode_not_set') {
-        // Enrollment can change between the check above and this call
-        // returning — handle it here too rather than assume the check
-        // above was the only guard needed.
-        await disableAppLockDueToNoEnrollment();
+        // The error code alone isn't reliable evidence that *nothing* is
+        // enrolled — on some Android OS/library versions, `not_enrolled`
+        // can mean "no biometric enrolled" even though a device passcode
+        // is set (the `getEnrolledLevelAsync` check above already would
+        // have caught genuine "nothing enrolled at all"). Re-verify
+        // before disabling App Lock, rather than trusting this error code
+        // by itself — otherwise a device with a passcode but no
+        // fingerprint/face could get its protection silently turned off
+        // on every single unlock attempt.
+        const stillNone = (await LocalAuthentication.getEnrolledLevelAsync()) === LocalAuthentication.SecurityLevel.NONE;
+        if (stillNone) {
+          await disableAppLockDueToNoEnrollment();
+        } else {
+          setAuthError(result.error);
+        }
       } else {
         setAuthError(result.error);
       }
     } catch (error) {
       logError('App Lock authentication failed', error);
+      setAuthError('unknown');
     } finally {
-      authenticatingRef.current = false;
       setAuthenticating(false);
     }
-  }, [disableAppLockDueToNoEnrollment]);
+  }, [authenticateGuarded, disableAppLockDueToNoEnrollment]);
 
   // Prompts automatically the moment a lock is shown, rather than waiting
   // for a tap — matches the UI/UX §19 mockup's lack of a separate
@@ -169,7 +229,9 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         // lock the instant authentication succeeds, and with "Immediately"
         // configured, the lock screen would re-show itself in a loop with
         // no way to ever get past it (event ordering between the OS
-        // callback and this listener isn't guaranteed either way).
+        // callback and this listener isn't guaranteed either way). This
+        // guard is shared by every authentication path — see
+        // `authenticatingRef`'s own comment.
         return;
       }
       if (next === 'background') {
@@ -199,7 +261,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const showingOverlay = settingsStatus !== 'ready' || (enabled && locked);
 
   return (
-    <AppLockRefreshContext.Provider value={{ refreshAppLockSettings }}>
+    <AppLockActionsContext.Provider value={{ refreshAppLockSettings, authenticate }}>
       <View
         style={styles.fill}
         pointerEvents={showingOverlay ? 'none' : 'auto'}
@@ -208,12 +270,19 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       >
         {children}
       </View>
-      {settingsStatus === 'loading' && <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} />}
-      {settingsStatus === 'error' && <LoadErrorOverlay onRetry={refreshAppLockSettings} />}
-      {settingsStatus === 'ready' && enabled && locked && (
-        <LockScreen authenticating={authenticating} authError={authError} onRetry={attemptUnlock} />
-      )}
-    </AppLockRefreshContext.Provider>
+      {/* A native Modal, not just an absolutely-positioned View — see the
+          file doc comment for why record.tsx's own `presentation: 'modal'`
+          makes that necessary. `onRequestClose` is a required no-op on
+          Android: the hardware back button must not be a way to dismiss
+          this without authenticating. */}
+      <Modal visible={showingOverlay} animationType="none" transparent={false} onRequestClose={() => {}}>
+        {settingsStatus === 'loading' && <View style={[styles.fill, { backgroundColor: colors.background }]} />}
+        {settingsStatus === 'error' && <LoadErrorOverlay onRetry={refreshAppLockSettings} />}
+        {settingsStatus === 'ready' && enabled && locked && (
+          <LockScreen authenticating={authenticating} authError={authError} onRetry={attemptUnlock} />
+        )}
+      </Modal>
+    </AppLockActionsContext.Provider>
   );
 }
 
