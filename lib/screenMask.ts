@@ -320,7 +320,25 @@ export async function applyScreenshotBlock(enabled: boolean): Promise<void> {
     // really held. If this call throws, the key is simply never
     // tracked, matching D-47's rule of never claiming an untested
     // protection is active.
-    await ScreenCapture.preventScreenCaptureAsync(key);
+    try {
+      await ScreenCapture.preventScreenCaptureAsync(key);
+    } catch (error) {
+      // expo-screen-capture's own preventScreenCaptureAsync adds `key`
+      // to its internal activeTags Set *before* calling native, and
+      // never removes it on failure (the same quirk this file's top
+      // doc comment already covers for the always-on path — see reason
+      // 1). Left alone, that stray key never goes away: a later
+      // successful enable adds a second key we DO track, but disabling
+      // only releases the ones we tracked, so activeTags.size never
+      // reaches 0 and allowScreenCapture() never reaches native again
+      // — the switch would show off while screenshots stay blocked
+      // until the app restarts. Releasing the same key here keeps the
+      // SDK's internal Set in sync with ours: a failed attempt leaves
+      // no residue in either (found in review; unit tests can't catch
+      // this because the mock doesn't model activeTags).
+      await ScreenCapture.allowScreenCaptureAsync(key).catch(() => {});
+      throw error;
+    }
     activeScreenshotBlockKeys.push(key);
     return;
   }

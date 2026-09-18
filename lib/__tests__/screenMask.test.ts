@@ -292,6 +292,95 @@ describe('applyScreenshotBlock', () => {
   });
 });
 
+describe('applyScreenshotBlock against a stateful activeTags-like mock', () => {
+  // The plain per-call jest.fn() mocks used elsewhere in this file treat
+  // every prevent/allow call as reaching native directly. That can't
+  // reproduce the real bug found in review: expo-screen-capture's own
+  // preventScreenCaptureAsync/allowScreenCaptureAsync manage an internal
+  // `activeTags` Set — a key is added to it *before* the native call and
+  // never removed on failure, and `allowScreenCaptureAsync` only reaches
+  // native once that Set is empty. Without releasing a failed attempt's
+  // key from that Set ourselves, it lingers forever: a later successful
+  // enable's key is the only one we track, so disabling never actually
+  // empties the SDK's Set and native `allowScreenCapture()` never runs
+  // again — the switch shows off while screenshots stay blocked. This
+  // mock models that Set so the fix (`allowScreenCaptureAsync` on a
+  // failed prevent, to release the stray key) is actually exercised.
+  const originalOS = Platform.OS;
+  const originalVersion = Platform.Version;
+  let activeTags: Set<string>;
+  let nativePreventCalls = 0;
+  let nativeAllowCalls = 0;
+  let nextPreventShouldFail = false;
+
+  beforeEach(() => {
+    __resetScreenshotBlockForTests();
+    activeTags = new Set();
+    nativePreventCalls = 0;
+    nativeAllowCalls = 0;
+    nextPreventShouldFail = false;
+
+    mockPreventScreenCaptureAsync.mockReset().mockImplementation(async (key: unknown = 'default') => {
+      const k = key as string;
+      if (!activeTags.has(k)) {
+        activeTags.add(k);
+        nativePreventCalls++;
+        if (nextPreventShouldFail) {
+          nextPreventShouldFail = false;
+          throw new Error('native prevent failed');
+        }
+      }
+    });
+    mockAllowScreenCaptureAsync.mockReset().mockImplementation(async (key: unknown = 'default') => {
+      activeTags.delete(key as string);
+      if (activeTags.size === 0) {
+        nativeAllowCalls++;
+      }
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
+  });
+
+  it('releases a failed attempt’s key from activeTags, so a later disable still reaches native allow', async () => {
+    setPlatform('ios');
+    nextPreventShouldFail = true;
+    await expect(applyScreenshotBlock(true)).rejects.toThrow('native prevent failed');
+    // The fix itself: the failed key was released (not left stray), so
+    // activeTags is empty again — and releasing it, since the Set went
+    // from 1 back to 0, already reached native allow once (harmless:
+    // the real native `preventScreenCapture()` for that key never got
+    // as far as actually setting FLAG_SECURE before throwing).
+    expect(activeTags.size).toBe(0);
+    expect(nativeAllowCalls).toBe(1);
+
+    await applyScreenshotBlock(true); // succeeds this time
+    expect(activeTags.size).toBe(1);
+
+    await applyScreenshotBlock(false);
+    expect(activeTags.size).toBe(0);
+    // The critical assertion: this disable's allow call must reach
+    // native a *second* time. Without the fix, the failed attempt's key
+    // would still be sitting in activeTags, so this call would never
+    // see the Set reach 0 — nativeAllowCalls would stay at 1 forever,
+    // meaning screenshots stay blocked even though the switch shows off.
+    expect(nativeAllowCalls).toBe(2);
+  });
+
+  it('without the fix this test would fail: a stray key from a failed attempt would prevent activeTags from ever emptying', async () => {
+    setPlatform('android', 33);
+    nextPreventShouldFail = true;
+    await expect(applyScreenshotBlock(true)).rejects.toThrow('native prevent failed');
+
+    await applyScreenshotBlock(true);
+    await applyScreenshotBlock(false);
+    expect(activeTags.size).toBe(0);
+    expect(nativeAllowCalls).toBe(2);
+  });
+});
+
 describe('useScreenMask', () => {
   const originalOS = Platform.OS;
   const originalVersion = Platform.Version;

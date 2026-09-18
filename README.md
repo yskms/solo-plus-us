@@ -1562,6 +1562,36 @@ Jest テストで検証）、Kotlin 側は無変更のため再ビルド不要�
 確認。Block Screenshots の ON/OFF・実際のスクリーンショット許可/ブロックの切り替え・
 Recent Apps サムネイルの非表示継続、いずれも1回目のレビュー後の確認と同じく問題なし。
 
+##### レビューで見つかり、修正したもの（3回目）
+
+A〜E の対応（2回目のレビュー）はいずれも意図どおりと確認された。A の修正自体が、
+新しい問題を1件生んでいた。
+
+1. **【中】有効化が一度失敗すると、そのセッション中は二度と無効化できなくなっていた**：
+   `expo-screen-capture` 自身の `preventScreenCaptureAsync`/`allowScreenCaptureAsync`
+   は内部で `activeTags` という `Set` を管理しており、**ネイティブ呼び出しの前に**
+   key をこの `Set` へ追加し、失敗時にもロールバックしない（このファイル冒頭のコメントに
+   常時オン経路向けとして以前から記載されていた、まさにその挙動）。2回目のレビューで
+   「失敗した key は追跡しない」よう修正したが、`expo-screen-capture` 側の `activeTags`
+   には失敗した key がそのまま残ってしまう——このアプリの追跡配列を空にしても、SDK 内部
+   の `Set` は空にならないため、`allowScreenCaptureAsync` の `activeTags.size === 0`
+   判定が成立せず、`allowScreenCapture()`（ネイティブの解除）に二度と到達しなくなる。
+   具体的には「有効化 → 自動再適用が失敗（例: `MissingActivity`） → 次の再適用は成功 →
+   無効化」という手順で、Switch は OFF 表示になってもスクリーンショットは
+   ブロックされたまま、アプリ再起動まで戻らない。`preventScreenCaptureAsync` が失敗した
+   場合、同じ key で `allowScreenCaptureAsync` を呼んで SDK 側の `Set` からも即座に
+   解放するよう修正——ネイティブの `preventScreenCapture()` 自体は失敗時点ではまだ
+   フラグを立てていないと考えられるため、直後の `allowScreenCapture()` 呼び出しは
+   無害な空振りになる
+2. 通常のモック（1回・成功/失敗を直接返すだけ）ではこの `activeTags` の状態遷移を
+   再現できず、1〜2回目のレビューのテストでは検出できなかった——`activeTags` 相当の
+   `Set` を自前で管理する専用モックを新設し、「失敗 → 成功 → 無効化」の手順で実際に
+   ネイティブの allow に到達することを確認するテストを追加した（2件）
+
+`lib/__tests__/screenMask.test.ts` に2件追加（220件）。`tsc --noEmit`・Jest スイートは
+全て通過を確認済み。Kotlin・patch には触れていないため実機再確認は省略——Jest が通れば
+十分と判断（レビューでもこの判断が示された）。
+
 ##### Known gaps
 
 - **Activity 再生成後の再適用は未確認**：画面回転等の構成変更で Activity が再生成された
