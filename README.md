@@ -1099,41 +1099,61 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
 レビュー時に「`inactive` は画面マスクの担当」と切り分けていた項目（`contexts/AppLock.tsx` の
 AppState リスナーのコメント参照）。
 
-**常時オン、設定不可**：App Lock 自体の enabled/disabled のような端末所有者の好みの設定ではなく、
-§8 の DB 暗号化・§8.6 のバックアップ除外と同じ、判断の余地のない OS レベルの露出対策として扱う
-（要件定義書側も「実装する」「●」であり「検討」ではない）。UI/UX §17 のモックアップにある
-「Hide App Preview >」の行は、App Lock の「UNLOCK WITH」行と同じ「情報のみ、トグルではない」
-扱いにした——設計判断記録に明文化された根拠は無いが、この判断で実装している。
+**常時オン、設定不可、スクリーンショットも iOS で意図的にブロック**（設計判断記録 D-47、
+画面マスク実装時に追記）：App Lock 自体の enabled/disabled のような端末所有者の好みの設定
+ではなく、§8 の DB 暗号化・§8.6 のバックアップ除外と同じ、判断の余地のない OS レベルの
+露出対策として扱う。UI/UX §17 のモックアップにある「Hide App Preview >」の行は、App Lock の
+「UNLOCK WITH」行と同じ「情報のみ、トグルではない」扱いにした。
 
 #### 実装済み
 
 | 層 | 内容 |
 |---|---|
-| `expo-screen-capture`（新規依存） | `preventScreenCaptureAsync()`（両 OS）でスクリーンショット・画面収録をブロック。Android は**これ単体で** Recent Apps のサムネイルも空白化される（`FLAG_SECURE`）。`enableAppSwitcherProtectionAsync()`（iOS のみ）で App Switcher・バックグラウンド・割り込み時のぼかしオーバーレイをネイティブ側に任せる——このアプリの View 階層で `AppState` を監視して自前でオーバーレイを描画する必要はない。`app.plugin.js` を持たないため `app.json` の `plugins` への追加は不要（`expo config --json` で確認済み） |
-| `lib/screenMask.ts`（新規） | `useScreenMask()`：上記2つの呼び出しをまとめたフック。`app/_layout.tsx` の `RootLayout` の最上部で無条件に呼ぶ（`DatabaseProvider`/`AppLockProvider` より外側——読み込み中・Recovery 画面・ロック中・ロック解除後のどの状態でも一律に適用するため） |
-| `app/settings/hide-app-preview.tsx`（新規） | 「常時オン」を伝える情報のみの画面（`app-lock.tsx` の「UNLOCK WITH」行と同じパターン）。トグルは無い |
+| `expo-screen-capture`（新規依存） | `preventScreenCaptureAsync()`（両 OS）でスクリーンショット・画面収録をブロック。Android は**これ単体で** Recent Apps のサムネイルも空白化される（`FLAG_SECURE`）。`enableAppSwitcherProtectionAsync(1.0)`（iOS のみ、ぼかし強度は既定の 0.5 ではなく最大の 1.0 を明示——下記レビュー参照）で App Switcher・バックグラウンド・割り込み時のぼかしオーバーレイをネイティブ側に任せる——このアプリの View 階層で `AppState` を監視して自前でオーバーレイを描画する必要はない。`app.plugin.js` を持たないため `app.json` の `plugins` への追加は不要（`expo config --json` で確認済み） |
+| `lib/screenMask.ts`（新規） | `attemptScreenMask()`：`isAvailableAsync()` →`preventScreenCaptureAsync()` →（iOS のみ）`enableAppSwitcherProtectionAsync(1.0)` の順で試み、実際に確認できた結果（成功／失敗とその理由）を返す。`useScreenMask()` はこれを `app/_layout.tsx` の `RootLayout` の最上部で無条件に呼ぶ（`DatabaseProvider`/`AppLockProvider` より外側）ためのフック——起動時は結果を捨てる fire-and-forget（下記レビュー参照） |
+| `app/settings/hide-app-preview.tsx`（新規） | `attemptScreenMask()` を自分でも呼び（冪等なので再実行して問題ない）、実際に確認できた結果だけを表示する。「常時オン」を伝える情報のみの画面（`app-lock.tsx` の「UNLOCK WITH」行と同じパターン）だが、確認していない事実を断言はしない（下記レビュー参照） |
 | `app/settings/index.tsx`/`app/_layout.tsx` | PRIVACY セクションに「Hide App Preview」の行を追加（App Lock の下、区切り線付き） |
+
+#### レビューで見つかり、修正したもの
+
+1. **【中】保護が有効になっていなくても、画面は「常時オン」と断言していた**：
+   `useScreenMask` は失敗をログに出すだけで結果をどこにも持たず、`hide-app-preview.tsx`
+   は確認していない事実を断言していた。`isAvailableAsync()` が false の端末、iOS の
+   バージョンによる制限（型定義の注記どおり、12 未満は画面収録のみ・13 未満は
+   スクリーンショットがブロックされない）、`preventScreenCaptureAsync`/
+   `enableAppSwitcherProtectionAsync` 自体の reject など、実際に失敗しうる経路が
+   複数あった。`attemptScreenMask()` として結果を返す関数に切り出し、設定画面は
+   これを呼んで結果を表示するよう修正——失敗時は「この端末では有効にできませんでした」
+   と理由付きで伝える
+2. **【低〜中】ぼかしの強さが既定の 0.5 のままだった**：隠したいのは "THIS MONTH 12" や
+   "Sep 14 Solo" のような短い文字列で、中程度のぼかしでは判読できる可能性がある。
+   `enableAppSwitcherProtectionAsync(1.0)` と明示するよう修正
+3. **【低】常時オン・トグル無しの判断と、iOS でのスクリーンショットブロックの判断が
+   設計判断記録に無かった**：前者は要件定義書の「実装する」「●」を根拠にした判断、
+   後者は要件定義書 §21 が求めているのは Recent Apps マスクのみで、スクリーンショット
+   ブロック自体はどの設計文書にも記載が無く、しかも iOS では
+   `enableAppSwitcherProtectionAsync()` だけでマスクが成立する（`preventScreenCaptureAsync()`
+   を呼ばなければスクリーンショットは撮れる）ため、Android と違って「分離できない
+   副作用」ではなく**独立した選択**だった。両方を設計判断記録 D-47 に追記した
+4. CLAUDE.md をコミット（レビューとは別件、ユーザーからの指示）
 
 #### テスト
 
 `expo-screen-capture` はネイティブモジュールのため Jest では検証できない——`connection.ts`・
-`RecoveryService.ts` と同じ制約。`lib/screenMask.ts` は単純な2つの非同期呼び出し（プラット
-フォーム分岐込み）で、切り出して純粋関数化できる複雑な分岐が無いため、今回は純粋関数の抽出は
-していない。
+`RecoveryService.ts` と同じ制約。`attemptScreenMask()` は分岐を持つが、すべて実際の
+ネイティブ呼び出しの成否に依存するため、モックなしに意味のある形で切り出してテストできる
+純粋ロジックが無い。
 
 #### Known gaps
 
 - **実機での動作確認が未実施**：この項目は特にコードレビューだけでは確認しきれない
-  ——iOS の `enableAppSwitcherProtectionAsync()` のぼかし表示、Android の
-  `preventScreenCaptureAsync()` による Recent Apps サムネイルの空白化、両 OS での
-  スクリーンショット・画面収録のブロックは、いずれも実機の Recent Apps／App Switcher
-  を実際に開いて確認する必要がある
-- **スクリーンショットブロックと Recent Apps マスクが分離できない（Android）**：
+  ——iOS の `enableAppSwitcherProtectionAsync(1.0)` のぼかし表示（強度を含む）、
+  Android の `preventScreenCaptureAsync()` による Recent Apps サムネイルの空白化、
+  両 OS でのスクリーンショット・画面収録のブロック、`attemptScreenMask()` が失敗
+  経路を正しく報告することは、いずれも実機の Recent Apps／App Switcher を実際に
+  開いて確認する必要がある
+- **スクリーンショットブロックと Recent Apps マスクが Android で分離できない**：
   要求されているのは「バックグラウンド移行時のマスク」だが、Android では
   `preventScreenCaptureAsync()` が唯一の関連 API であり、これがスクリーンショット
   自体のブロックも兼ねる。両者を分離する設定は無いため、意図した副次的保護として
-  受け入れている（README 上記参照）
-- **「Hide App Preview」を常時オン・トグル無しにする判断は、設計判断記録に明文化されて
-  いない**：要件定義書の「実装する」「●」という記載を根拠にした実装時の判断であり、
-  App Lock（D-08）のように独立した D-XX エントリを持たない。将来この判断に疑問が出た
-  場合、まずここを確認する
+  受け入れている（設計判断記録 D-47 参照）

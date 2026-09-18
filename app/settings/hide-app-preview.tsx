@@ -5,14 +5,35 @@
  * mandatory tier as DB encryption/backup exclusion, not a preference like
  * App Lock's own enabled/disabled setting), so this screen states what's
  * always active rather than offering anything to configure.
+ *
+ * Does not simply assert the protection is on — `useScreenMask()` at the
+ * app root is fire-and-forget and never reports whether it actually
+ * succeeded (unavailable device, iOS below the versions that support
+ * screenshot/recording blocking, or the native call itself rejecting).
+ * This screen calls `attemptScreenMask()` itself (safe to call again —
+ * both underlying native calls are idempotent) and only shows the
+ * checkmark once that call has actually confirmed success.
  */
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
+import { attemptScreenMask, type ScreenMaskResult } from '../../lib/screenMask';
 
 export default function HideAppPreviewScreen() {
   const { colors } = useTheme();
+  const [result, setResult] = useState<ScreenMaskResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    attemptScreenMask().then((r) => {
+      if (!cancelled) setResult(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -21,13 +42,22 @@ export default function HideAppPreviewScreen() {
           <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.optionRow}>
               <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Hide app preview</Text>
-              <Text style={[styles.checkmark, { color: colors.solo }]}>✓</Text>
+              {result === null && <ActivityIndicator color={colors.textSecondary} />}
+              {result?.active === true && <Text style={[styles.checkmark, { color: colors.solo }]}>✓</Text>}
+              {result?.active === false && <Text style={[styles.checkmark, { color: colors.destructive }]}>!</Text>}
             </View>
           </View>
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            Solo + Us always hides your records from the app switcher and blocks screenshots — this can&apos;t be
-            turned off.
-          </Text>
+          {result?.active === true && (
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>
+              Solo + Us always hides your records from the app switcher and blocks screenshots — this can&apos;t be
+              turned off.
+            </Text>
+          )}
+          {result?.active === false && (
+            <Text style={[styles.caption, { color: colors.destructive }]}>
+              Could not enable on this device: {result.reason}
+            </Text>
+          )}
         </View>
 
         <View style={styles.section}>
