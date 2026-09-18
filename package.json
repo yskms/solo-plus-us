@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "dependencies": {
     "@op-engineering/op-sqlite": "^18.2.3",
+    "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~57.0.23",
     "expo-application": "~57.0.3",
     "expo-constants": "~57.0.18",
@@ -39,10 +40,12 @@
     "better-sqlite3": "^13.0.3",
     "jest": "~29.7.0",
     "jest-expo": "~57.0.5",
+    "patch-package": "^8.0.1",
     "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "postinstall": "patch-package",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

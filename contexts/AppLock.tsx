@@ -32,6 +32,20 @@
  * this overlay to fail to cover, so nothing here needs to wait for
  * anything else to finish closing.
  *
+ * Same reasoning shaped `app/record.tsx`'s date/time picker (§11.4): its
+ * iOS sheet is a plain absolutely-positioned `View` inside the screen, not
+ * RN's `<Modal>`, specifically so it stays inside the tree this overlay
+ * covers instead of reintroducing the problem described above. Android's
+ * `@react-native-community/datetimepicker` has no non-dialog mode at all
+ * (its declarative API opens the same native `Dialog` window internally),
+ * so that dialog genuinely is a separate window this overlay can't cover
+ * by construction — but unlike the old `record.tsx` modal problem above,
+ * it *can* be dismissed from code (`DateTimePickerAndroid.dismiss`), so
+ * `record.tsx` closes it (and the iOS sheet) itself the moment `AppState`
+ * leaves `active`, instead of accepting it as an uncloseable exception.
+ * `isLocked()` is also re-checked in the dialog's own callbacks, for the
+ * gap between a selection landing and that listener closing it.
+ *
  * No app-specific PIN, no bypass — `expo-local-authentication` (device
  * biometrics, falling back to device passcode by default) is the only way
  * through, per "アプリ独自の PIN を実装しない" (UI/UX §19, D-08): a recovery

@@ -1,0 +1,66 @@
+diff --git a/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt b/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt
+index e76da2f..8901bbd 100644
+--- a/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt
++++ b/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt
+@@ -104,9 +104,16 @@ class ScreenCaptureModule : Module() {
+ 
+     OnDestroy {
+       screenshotEventEmitter?.onHostDestroy()
+-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+-        screenCaptureCallback?.let {
+-          safeCurrentActivity?.unregisterScreenCaptureCallback(it)
++      // solo-plus-us-app patch: only unregister if registerCallback() above
++      // actually succeeded — same DETECT_SCREEN_CAPTURE permission gap as
++      // registerCallback(), guarded the same way (see that comment).
++      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && isRegistered) {
++        try {
++          screenCaptureCallback?.let {
++            safeCurrentActivity?.unregisterScreenCaptureCallback(it)
++          }
++        } catch (error: Exception) {
++          Log.e("ExpoScreenCapture", "Could not unregister screen capture callback: ${error.message}")
+         }
+       }
+     }
+@@ -117,8 +124,21 @@ class ScreenCaptureModule : Module() {
+       return
+     }
+     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+-      safeCurrentActivity?.registerScreenCaptureCallback(currentActivity.mainExecutor, screenCaptureCallback!!) ?: return
+-      isRegistered = true
++      try {
++        safeCurrentActivity?.registerScreenCaptureCallback(currentActivity.mainExecutor, screenCaptureCallback!!) ?: return
++        isRegistered = true
++      } catch (error: Exception) {
++        // solo-plus-us-app patch: apps that intentionally don't declare
++        // android.permission.DETECT_SCREEN_CAPTURE (this app strips it via
++        // plugins/withoutScreenCaptureDetectionPermissions.js, since it
++        // never uses the screenshot "detection" feature — see that file's
++        // doc comment) crash here on API 34+, because this OnCreate path
++        // calls registerScreenCaptureCallback() unconditionally regardless
++        // of whether the permission is held. Swallow it the same way the
++        // pre-34 ScreenshotEventEmitter path already treats a missing
++        // permission: log and continue, never crash.
++        Log.e("ExpoScreenCapture", "Could not register screen capture callback, missing DETECT_SCREEN_CAPTURE permission: ${error.message}")
++      }
+     }
+   }
+ }
+diff --git a/node_modules/expo-screen-capture/expo-module.config.json b/node_modules/expo-screen-capture/expo-module.config.json
+index 31b4467..9ab3900 100644
+--- a/node_modules/expo-screen-capture/expo-module.config.json
++++ b/node_modules/expo-screen-capture/expo-module.config.json
+@@ -4,12 +4,6 @@
+     "modules": ["ScreenCaptureModule"]
+   },
+   "android": {
+-    "modules": ["expo.modules.screencapture.ScreenCaptureModule"],
+-    "publication": {
+-      "groupId": "host.exp.exponent",
+-      "artifactId": "expo.modules.screencapture",
+-      "version": "57.0.3",
+-      "repository": "local-maven-repo"
+-    }
++    "modules": ["expo.modules.screencapture.ScreenCaptureModule"]
+   }
+ }
