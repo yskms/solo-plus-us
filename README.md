@@ -1316,6 +1316,67 @@ AppState リスナーのコメント参照）。
   `AppState.addEventListener` 未呼び出しの確認も追加（`attemptScreenMask` 側だけでなく
   購読自体もゲートされていることを固定）
 
+#### レビューで見つかり、修正したもの（5回目）：Android 14+ 実機での起動時クラッシュ
+
+`phase3/screen-mask` マージ後、初めて Android 実機（Pixel 11、API 34+）でアプリを起動して
+判明した問題。それまでの確認は `./gradlew processDebugMainManifest` によるマニフェスト
+マージ結果の確認のみで、実際にアプリを起動しての確認はしていなかった（上記「実機での動作
+確認が未実施」参照）。Known gaps に留めていた項目が、実際に起動を阻む形で顕在化した。
+
+1. **【重大】起動直後にクラッシュする**：`node_modules/expo-screen-capture/android/.../
+   ScreenCaptureModule.kt` の `OnCreate` が、Android 14+ では無条件に
+   `currentActivity.registerScreenCaptureCallback(...)` を呼ぶ。このメソッドは内部で
+   `android.permission.DETECT_SCREEN_CAPTURE` を要求するが、
+   `plugins/withoutScreenCaptureDetectionPermissions.js` が意図的にこの権限を
+   マニフェストから除去している（この app は「検知」機能を使わないため——同ファイルの
+   doc comment 参照）。権限が無い状態でこの OS API を呼ぶと `SecurityException`
+   （`Permission Denial: registerScreenCaptureObserver ... requires
+   android.permission.DETECT_SCREEN_CAPTURE`）が投げられ、例外が一切捕まえられていない
+   ため JS 側まで伝播し、`[runtime not ready]` のまま起動できない。`patch-package`
+   （新規 devDependency、`postinstall` に追加）で `registerCallback()`／`OnDestroy` の
+   `unregisterScreenCaptureCallback` 呼び出しを `try/catch` で包み、例外時はログのみに
+   留めるよう修正——`ScreenShotEventEmitter.kt`（API 34 未満のフォールバック経路）が
+   権限不足をログのみで扱っているのと同じ方針
+2. **【重大】単純な `try/catch (SecurityException)` だけでは直らなかった**：1個目の
+   例外を捕まえた直後、`OnActivityEntersForeground` の `registerCallback()` 再試行が
+   `IllegalStateException`（`"Capture observer already registered with the activity"`）
+   を投げて再クラッシュした——`SecurityException` を投げた1回目の呼び出しが、権限チェックで
+   弾かれる前に OS 内部の登録簿には登録済みにしていたらしく、2回目以降は「既に登録済み」
+   エラーになる。`catch (error: SecurityException)` を `catch (error: Exception)` に
+   広げ、原因の型を問わず「ログのみ、クラッシュしない」方針を徹底した
+3. **【重大】この2つのパッチが node_modules の `.kt` を直接編集しても一切効かなかった**：
+   `expo-screen-capture` の `expo-module.config.json` に
+   `android.publication`（`repository: "local-maven-repo"`）という設定があり、これが
+   Expo Modules Autolinking に「ソースからビルドせず、npm パッケージに同梱された
+   プリコンパイル済み `.aar`（`node_modules/expo-screen-capture/local-maven-repo/...`）を
+   `host.exp.exponent:expo.modules.screencapture:57.0.3` という Maven 座標から解決する」
+   よう指示していた（`./gradlew :app:dependencies` で実際にこの座標が使われていることを
+   確認）。`android/src/main/java/...` を編集しても、Gradle がそのソースを一切コンパイル
+   しない（`:expo-screen-capture:compileDebugKotlin` 相当のタスク自体が存在しない）ため
+   無反応だった——Gradle のキャッシュ問題ではなく、そもそもソースを使っていなかったことが
+   原因。`expo-module.config.json` の `publication` ブロックを除去するパッチを追加し、
+   ソースから通常どおりビルドされるようにした。この事実確認だけで、キャッシュ無効化
+   （`--no-build-cache`）・Gradle デーモン再起動・`--rerun-tasks` による完全再ビルド
+   （31分43秒）を順に試す遠回りをした
+
+**恒久対応**：`patches/expo-screen-capture+57.0.3.patch`（`package.json` の `postinstall`
+で自動適用）として `main` に取り込んだ。`npm install` のたびに自動適用されるため、
+`node_modules` を再生成しても消えない。将来 `expo-screen-capture` を SDK アップグレードで
+更新する際は、この OS 側の不具合が本家で直っていないか確認し、直っていればパッチを削除する。
+
+#### Known gaps（更新）
+
+- **`Log.e` が起動のたびに（最低2回）出る**：上記修正はクラッシュを止めるだけで、
+  `registerCallback()` 自体は `OnCreate` と `OnActivityEntersForeground` のたびに
+  再試行され、そのたびに同じ権限エラーがログに出る（`isRegistered` は最初の
+  `SecurityException` で `true` にならないため）。無害だが冗長——将来的には
+  `Build.VERSION.SDK_INT >= UPSIDE_DOWN_CAKE` の分岐自体をスキップする（この app は
+  この権限を要求しない設計なので、そもそも呼ばない）方がクリーンだが、今回は
+  「クラッシュを止める」ことを優先し、呼び出し自体の抑制はスコープ外にした
+- **実機での他の画面マスク動作（FLAG_SECURE・スクリーンショットブロック・ぼかし）は
+  今回未確認**：起動できることの確認が主目的だったため、Recent Apps でのマスク自体の
+  見た目は別途確認が必要
+
 ### 日時編集 UI
 
 `phase3/datetime-edit` ブランチ。基本設計 §18 の Phase 3 順序に従い、画面マスクの次
