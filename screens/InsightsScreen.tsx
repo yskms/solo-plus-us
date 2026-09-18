@@ -15,21 +15,20 @@
  * nothing here reads as "this year" (the UI/UX §14 mockup's own period
  * dropdown default) by omission.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme, spacing } from '../../constants/theme';
-import { useDatabase } from '../../contexts/DatabaseContext';
-import { useDataRevision } from '../../contexts/DataRevision';
-import type { ActivityCounts } from '../../repositories/ActivityRepository';
-import { getInsightsSnapshot } from '../../services/StatisticsService';
-import { formatAverageIntervalDays } from '../../lib/statistics';
-import { MetricCard } from '../../components/MetricCard';
-import { EmptyState } from '../../components/EmptyState';
-import { logError } from '../../lib/log';
+import { useTheme, spacing } from '../constants/theme';
+import { useDatabase } from '../contexts/DatabaseContext';
+import { useDataRevision } from '../contexts/DataRevision';
+import type { ActivityCounts } from '../repositories/ActivityRepository';
+import { getInsightsSnapshot } from '../services/StatisticsService';
+import { formatAverageIntervalDays } from '../lib/statistics';
+import { MetricCard } from '../components/MetricCard';
+import { EmptyState } from '../components/EmptyState';
+import { logError } from '../lib/log';
 
-export default function InsightsScreen() {
+export default function InsightsScreen({ isActive }: { isActive: boolean }) {
   const { colors } = useTheme();
   const db = useDatabase();
   const { revision } = useDataRevision();
@@ -38,7 +37,7 @@ export default function InsightsScreen() {
   const [averageInterval, setAverageInterval] = useState<number | null>(null);
   // loading/ready/error, not just a boolean — a failed load must say so
   // rather than leaving the screen blank with no indication anything went
-  // wrong (see app/(tabs)/calendar.tsx, same reasoning).
+  // wrong (see screens/CalendarScreen.tsx, same reasoning).
   const [loadStatus, setLoadStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const reload = useCallback(async () => {
@@ -53,14 +52,13 @@ export default function InsightsScreen() {
     }
   }, [db]);
 
-  // Single effect for both focus and Undo's revision bump (contexts/
-  // DataRevision.tsx) — see app/(tabs)/calendar.tsx / app/(tabs)/index.tsx
-  // for why this isn't a separate plain `useEffect` alongside it.
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload, revision]),
-  );
+  // Single effect for both becoming the active pager page and Undo's
+  // revision bump (contexts/DataRevision.tsx) — see screens/CalendarScreen.tsx
+  // / app/(tabs)/index.tsx (Today) for why `isActive` replaces
+  // `useFocusEffect` here.
+  useEffect(() => {
+    if (isActive) reload();
+  }, [isActive, reload, revision]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>

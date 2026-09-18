@@ -4,9 +4,9 @@
  * the single most important control in the app — the Record FAB
  * (§7.1 "基本記録は2タップ以内を目標とする").
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing } from '../../constants/theme';
@@ -37,7 +37,7 @@ function weekdayHeader(): string {
   return now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-export default function TodayScreen() {
+export default function TodayScreen({ isActive }: { isActive: boolean }) {
   const { colors } = useTheme();
   const db = useDatabase();
   const { revision } = useDataRevision();
@@ -57,17 +57,19 @@ export default function TodayScreen() {
     setLastActivity(recentActivities[0] ?? null);
   }, [db]);
 
-  // A single effect for both reasons to reload (focus, and Undo's revision
-  // bump — contexts/DataRevision.tsx, which runs on this screen without any
-  // navigation happening) rather than a separate plain `useEffect`
-  // alongside this: that would fire its own extra reload on every mount,
-  // duplicating the one `useFocusEffect` already does. See
-  // app/(tabs)/calendar.tsx for the same pattern.
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload, revision]),
-  );
+  // A single effect for both reasons to reload (becoming the active pager
+  // page, and Undo's revision bump — contexts/DataRevision.tsx, which runs
+  // on this screen without any page change happening). `isActive` replaces
+  // the `useFocusEffect` this screen used to get from being its own React
+  // Navigation screen: it's not just "which pager page is showing" — it's
+  // ANDed with whether the `(tabs)` route itself has navigation focus (see
+  // `routeFocused` in app/(tabs)/_layout.tsx), which is what makes a
+  // save/edit/delete on record/activity screens reload this screen on
+  // return. Don't drop that half assuming `isActive` alone covers it. See
+  // screens/CalendarScreen.tsx for the same pattern.
+  useEffect(() => {
+    if (isActive) reload();
+  }, [isActive, reload, revision]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>

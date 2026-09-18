@@ -12,16 +12,16 @@
  * screen-reader users; a sighted person with a color-vision deficiency
  * would still have had to tap every day to tell them apart.
  */
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme, spacing, radius, minTouchTarget } from '../../constants/theme';
-import type { ThemeColors } from '../../constants/theme';
-import { useDatabase } from '../../contexts/DatabaseContext';
-import { useDataRevision } from '../../contexts/DataRevision';
-import { findActivitiesByDateRange } from '../../repositories/ActivityRepository';
-import { getSetting } from '../../services/SettingsRepository';
+import { useTheme, spacing, radius, minTouchTarget } from '../constants/theme';
+import type { ThemeColors } from '../constants/theme';
+import { useDatabase } from '../contexts/DatabaseContext';
+import { useDataRevision } from '../contexts/DataRevision';
+import { findActivitiesByDateRange } from '../repositories/ActivityRepository';
+import { getSetting } from '../services/SettingsRepository';
 import {
   buildMonthGrid,
   weekdayHeaderLabels,
@@ -29,15 +29,15 @@ import {
   monthLabel,
   localDateRangeForMonth,
   type CalendarCell,
-} from '../../lib/calendarGrid';
-import { formatLocalTime } from '../../lib/timeFormat';
-import { formatMonthDay } from '../../lib/relativeDate';
-import { contextLabel } from '../../lib/labels';
-import { ActivityBadge } from '../../components/ActivityBadge';
-import { EmptyState } from '../../components/EmptyState';
-import { logError } from '../../lib/log';
-import type { Activity } from '../../types/Activity';
-import type { FirstDayOfWeek, TimeFormat } from '../../types/Settings';
+} from '../lib/calendarGrid';
+import { formatLocalTime } from '../lib/timeFormat';
+import { formatMonthDay } from '../lib/relativeDate';
+import { contextLabel } from '../lib/labels';
+import { ActivityBadge } from '../components/ActivityBadge';
+import { EmptyState } from '../components/EmptyState';
+import { logError } from '../lib/log';
+import type { Activity } from '../types/Activity';
+import type { FirstDayOfWeek, TimeFormat } from '../types/Settings';
 
 function todayLocalDate(): string {
   const now = new Date();
@@ -104,7 +104,7 @@ function dayCellAccessibilityLabel(cell: CalendarCell, dayActivities: Activity[]
   return `${dateLabel}, ${parts.join(', ')}`;
 }
 
-export default function CalendarScreen() {
+export default function CalendarScreen({ isActive }: { isActive: boolean }) {
   const { colors } = useTheme();
   const db = useDatabase();
   const { revision } = useDataRevision();
@@ -165,19 +165,18 @@ export default function CalendarScreen() {
     }
   }, [db, visible]);
 
-  // A single effect for every reason to reload (focus, month change, Undo's
-  // revision bump — contexts/DataRevision.tsx) rather than a separate plain
-  // `useEffect` alongside this: `reload`'s identity already changes with
-  // `visible`, and `useFocusEffect` re-runs whenever its callback's
-  // dependencies change even without a real focus transition. A second,
-  // independently-triggered effect here would fire its own extra reload on
-  // every month change — exactly the duplicate-request pattern that made
-  // the race above easy to hit in practice.
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload, revision]),
-  );
+  // A single effect for every reason to reload (becoming the active pager
+  // page, month change, Undo's revision bump — contexts/DataRevision.tsx)
+  // rather than a separate plain `useEffect` alongside this: `reload`'s
+  // identity already changes with `visible`, so a second, independently
+  // triggered effect here would fire its own extra reload on every month
+  // change — exactly the duplicate-request pattern that made the race above
+  // easy to hit in practice. `isActive` replaces the `useFocusEffect` this
+  // screen used to get from being its own React Navigation screen — see
+  // app/(tabs)/index.tsx (Today) for why.
+  useEffect(() => {
+    if (isActive) reload();
+  }, [isActive, reload, revision]);
 
   // Until the real setting loads, don't guess: building the grid with an
   // assumed 'monday' and re-flowing it once 'sunday' arrives would flash a

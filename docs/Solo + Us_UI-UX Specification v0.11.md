@@ -1393,10 +1393,8 @@ app/
 ├─ _layout.tsx
 │
 ├─ (tabs)/
-│  ├─ _layout.tsx
-│  ├─ index.tsx
-│  ├─ calendar.tsx
-│  └─ insights.tsx
+│  ├─ _layout.tsx   ※ react-native-pager-view + 自作タブバー（スワイプ切替対応）
+│  └─ index.tsx     ※ Today。Calendar/Insights は screens/ 配下（下記参照）
 │
 ├─ activity/
 │  └─ [id].tsx
