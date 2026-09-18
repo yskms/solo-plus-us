@@ -334,8 +334,10 @@ export async function applyScreenshotBlock(enabled: boolean): Promise<void> {
       // — the switch would show off while screenshots stay blocked
       // until the app restarts. Releasing the same key here keeps the
       // SDK's internal Set in sync with ours: a failed attempt leaves
-      // no residue in either (found in review; unit tests can't catch
-      // this because the mock doesn't model activeTags).
+      // no residue in either (found in review — the plain per-call
+      // mocks elsewhere in this file's test couldn't catch it, since
+      // they don't model activeTags; see the dedicated stateful-mock
+      // tests that do).
       await ScreenCapture.allowScreenCaptureAsync(key).catch(() => {});
       throw error;
     }

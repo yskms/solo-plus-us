@@ -369,7 +369,7 @@ describe('applyScreenshotBlock against a stateful activeTags-like mock', () => {
     expect(nativeAllowCalls).toBe(2);
   });
 
-  it('without the fix this test would fail: a stray key from a failed attempt would prevent activeTags from ever emptying', async () => {
+  it('on Android API 33+, the same fix applies — a failed attempt’s key doesn’t block a later disable from reaching native', async () => {
     setPlatform('android', 33);
     nextPreventShouldFail = true;
     await expect(applyScreenshotBlock(true)).rejects.toThrow('native prevent failed');
