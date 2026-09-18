@@ -105,6 +105,7 @@ export async function getAllSettings(executor: SqlExecutor): Promise<SettingsMap
     'preferences.appearance',
     'appLock.enabled',
     'appLock.timing',
+    'privacy.blockScreenshots',
     'healthConnect.enabled',
     'healthConnect.lastSyncedAt',
   ];

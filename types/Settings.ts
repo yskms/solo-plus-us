@@ -31,6 +31,9 @@ export interface SettingsMap {
   'appLock.enabled': boolean;
   'appLock.timing': AppLockTiming;
 
+  /** §18/D-47: screenshot/screen-recording block is opt-in (default off) — Recent Apps preview hiding is the only always-on protection. See lib/screenMask.ts. */
+  'privacy.blockScreenshots': boolean;
+
   'healthConnect.enabled': boolean;
   /** null = never synced. Reset on replace-restore (D-42) — see ImportService. */
   'healthConnect.lastSyncedAt': string | null;
@@ -55,6 +58,7 @@ export const STATIC_DEFAULTS: Pick<
   | 'preferences.appearance'
   | 'appLock.enabled'
   | 'appLock.timing'
+  | 'privacy.blockScreenshots'
   | 'healthConnect.enabled'
   | 'healthConnect.lastSyncedAt'
 > = {
@@ -69,6 +73,8 @@ export const STATIC_DEFAULTS: Pick<
 
   'appLock.enabled': false,
   'appLock.timing': 'immediately',
+
+  'privacy.blockScreenshots': false,
 
   'healthConnect.enabled': false,
   'healthConnect.lastSyncedAt': null,
@@ -100,6 +106,7 @@ export const EXPORTABLE_SETTING_KEYS: readonly SettingKey[] = [
 export const DEVICE_OWNED_SETTING_KEYS: readonly SettingKey[] = [
   'appLock.enabled',
   'appLock.timing',
+  'privacy.blockScreenshots',
   'healthConnect.enabled',
 ] as const;
 

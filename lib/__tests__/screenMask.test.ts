@@ -1,93 +1,136 @@
 /**
- * §18 画面マスク（設計判断記録 D-47）。`expo-screen-capture` はネイティブ
- * モジュールのため、実際の呼び出しは検証できない——ここで検証するのは
- * `attemptScreenMask()` 自身の分岐（`isAvailableAsync` の失敗・
- * `preventScreenCaptureAsync`/`enableAppSwitcherProtectionAsync` の失敗、
- * 成功時の結果、そしてメモ化）と、`useScreenMask` の Android 再適用ロジック
- * （`AppState` の購読・`active` 以外は無視・key でメモ化をバイパスする・
- * unmount 時の unsubscribe）だけであり、モックした関数が実機で本当に
- * 同じ形で動くかは実機でしか確認できない。
+ * §18 画面マスク（設計判断記録 D-47）。2026-09-18 の方針反転
+ * （CLAUDE.md「スクリーンショットに関する方針」）後の挙動：Recent Apps／
+ * App Switcher プレビュー非表示は常時オン（`attemptScreenMask`/
+ * `useScreenMask`）、スクリーンショット／画面収録ブロックはオプトイン
+ * （`applyScreenshotBlock`/`useScreenshotBlock`）。`expo-screen-capture`
+ * はネイティブモジュールのため、実際の呼び出しは検証できない——ここで
+ * 検証するのはこのファイル自身の分岐（OS・Android の API レベルによる
+ * 呼び出し先の切り替え、失敗時の結果、メモ化、key の発行・回収）だけで
+ * あり、モックした関数が実機で本当に同じ形で動くかは実機でしか確認
+ * できない。
  *
- * `react-test-renderer` は React 19 で公式に非推奨だが、`useScreenMask`
- * 自体（副作用・購読・unmount のクリーンアップ）を検証するにはコンポーネント
- * をマウントする必要があり、react/react-native と同じバージョンで既に
- * 依存ツリーに存在する分だけ `@testing-library/react-native` を新規追加
- * するより軽いと判断した。この用途以外に広げず、他のテストが同様の理由で
- * 増えるようなら `@testing-library/react-native` への移行を検討する。
+ * `react-test-renderer` は React 19 で公式に非推奨だが、`useScreenMask`/
+ * `useScreenshotBlock` 自体（副作用・購読・unmount のクリーンアップ）を
+ * 検証するにはコンポーネントをマウントする必要があり、react/react-native
+ * と同じバージョンで既に依存ツリーに存在する分だけ
+ * `@testing-library/react-native` を新規追加するより軽いと判断した。
  */
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { AppState, Platform } from 'react-native';
 
 const mockPreventScreenCaptureAsync = jest.fn();
+const mockAllowScreenCaptureAsync = jest.fn();
 const mockEnableAppSwitcherProtectionAsync = jest.fn();
 const mockIsAvailableAsync = jest.fn();
+const mockSetRecentsScreenshotEnabledAsync = jest.fn();
 
 jest.mock('expo-screen-capture', () => ({
   preventScreenCaptureAsync: (...args: unknown[]) => mockPreventScreenCaptureAsync(...args),
+  allowScreenCaptureAsync: (...args: unknown[]) => mockAllowScreenCaptureAsync(...args),
   enableAppSwitcherProtectionAsync: (...args: unknown[]) => mockEnableAppSwitcherProtectionAsync(...args),
   isAvailableAsync: (...args: unknown[]) => mockIsAvailableAsync(...args),
+  setRecentsScreenshotEnabledAsync: (...args: unknown[]) => mockSetRecentsScreenshotEnabledAsync(...args),
 }));
 
-import { attemptScreenMask, handleAppStateChangeForReapply, useScreenMask, __resetScreenMaskForTests } from '../screenMask';
+import {
+  attemptScreenMask,
+  applyScreenshotBlock,
+  handleAppStateChangeForReapply,
+  useScreenMask,
+  useScreenshotBlock,
+  __resetScreenMaskForTests,
+  __resetScreenshotBlockForTests,
+} from '../screenMask';
+
+function setPlatform(os: 'ios' | 'android', version?: number) {
+  Object.defineProperty(Platform, 'OS', { value: os, configurable: true });
+  if (version !== undefined) {
+    Object.defineProperty(Platform, 'Version', { value: version, configurable: true });
+  }
+}
 
 describe('attemptScreenMask', () => {
   const originalOS = Platform.OS;
+  const originalVersion = Platform.Version;
 
   beforeEach(() => {
     __resetScreenMaskForTests();
     mockPreventScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
     mockEnableAppSwitcherProtectionAsync.mockReset().mockResolvedValue(undefined);
     mockIsAvailableAsync.mockReset().mockResolvedValue(true);
+    mockSetRecentsScreenshotEnabledAsync.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
   });
 
-  it('reports success on iOS when every step resolves', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+  it('on iOS, only blurs the app switcher — never touches preventScreenCaptureAsync (that is now the opt-in toggle)', async () => {
+    setPlatform('ios');
     const result = await attemptScreenMask();
     expect(result).toEqual({ active: true });
-    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
     expect(mockEnableAppSwitcherProtectionAsync).toHaveBeenCalledWith(0.99);
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
   });
 
-  it('reports success on Android without calling the iOS-only app switcher API', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+  it('reports failure with a reason when enableAppSwitcherProtectionAsync rejects (iOS)', async () => {
+    setPlatform('ios');
+    mockEnableAppSwitcherProtectionAsync.mockRejectedValue(new Error('boom'));
+    const result = await attemptScreenMask();
+    expect(result).toEqual({ active: false, reason: 'could not blur the app switcher preview' });
+  });
+
+  it('on Android API 33+, only calls setRecentsScreenshotEnabledAsync — never FLAG_SECURE', async () => {
+    setPlatform('android', 33);
+    const result = await attemptScreenMask();
+    expect(result).toEqual({ active: true });
+    expect(mockSetRecentsScreenshotEnabledAsync).toHaveBeenCalledWith(false);
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
+    expect(mockIsAvailableAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports failure with a reason when setRecentsScreenshotEnabledAsync rejects (Android API 33+)', async () => {
+    setPlatform('android', 33);
+    mockSetRecentsScreenshotEnabledAsync.mockRejectedValue(new Error('boom'));
+    const result = await attemptScreenMask();
+    expect(result).toEqual({ active: false, reason: 'could not hide the Recent Apps preview' });
+  });
+
+  it('on Android below API 33, falls back to FLAG_SECURE (couples screenshot blocking)', async () => {
+    setPlatform('android', 32);
     const result = await attemptScreenMask();
     expect(result).toEqual({ active: true });
     expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
-    expect(mockEnableAppSwitcherProtectionAsync).not.toHaveBeenCalled();
+    expect(mockSetRecentsScreenshotEnabledAsync).not.toHaveBeenCalled();
   });
 
-  it('reports failure with a reason when isAvailableAsync resolves false', async () => {
+  it('reports failure with a reason when isAvailableAsync resolves false (Android below API 33)', async () => {
+    setPlatform('android', 32);
     mockIsAvailableAsync.mockResolvedValue(false);
     const result = await attemptScreenMask();
     expect(result).toEqual({ active: false, reason: 'not available on this device' });
     expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
   });
 
-  it('reports failure with a reason when isAvailableAsync itself rejects', async () => {
+  it('reports failure with a reason when isAvailableAsync itself rejects (Android below API 33)', async () => {
+    setPlatform('android', 32);
     mockIsAvailableAsync.mockRejectedValue(new Error('boom'));
     const result = await attemptScreenMask();
     expect(result).toEqual({ active: false, reason: 'support could not be checked on this device' });
   });
 
-  it('reports failure with a reason when preventScreenCaptureAsync rejects', async () => {
+  it('reports failure with a reason when preventScreenCaptureAsync rejects (Android below API 33)', async () => {
+    setPlatform('android', 32);
     mockPreventScreenCaptureAsync.mockRejectedValue(new Error('boom'));
     const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'could not block screenshots and screen recording' });
-  });
-
-  it('reports failure with a reason when enableAppSwitcherProtectionAsync rejects (iOS only)', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
-    mockEnableAppSwitcherProtectionAsync.mockRejectedValue(new Error('boom'));
-    const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'could not blur the app switcher preview' });
+    expect(result).toEqual({ active: false, reason: 'could not hide the Recent Apps preview' });
   });
 
   it('memoizes: a second call never invokes the native functions again, even after a failure', async () => {
+    setPlatform('android', 32);
     mockPreventScreenCaptureAsync.mockRejectedValue(new Error('boom'));
     const first = await attemptScreenMask();
     const second = await attemptScreenMask();
@@ -97,13 +140,13 @@ describe('attemptScreenMask', () => {
   });
 
   it('runs a fresh attempt after __resetScreenMaskForTests', async () => {
+    setPlatform('android', 32);
     mockPreventScreenCaptureAsync.mockRejectedValueOnce(new Error('boom'));
     const first = await attemptScreenMask();
-    expect(first).toEqual({ active: false, reason: 'could not block screenshots and screen recording' });
+    expect(first).toEqual({ active: false, reason: 'could not hide the Recent Apps preview' });
 
     __resetScreenMaskForTests();
     mockPreventScreenCaptureAsync.mockResolvedValueOnce(undefined);
-    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
     const second = await attemptScreenMask();
     expect(second).toEqual({ active: true });
     expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(2);
@@ -111,39 +154,113 @@ describe('attemptScreenMask', () => {
 });
 
 describe('handleAppStateChangeForReapply', () => {
+  const originalOS = Platform.OS;
+  const originalVersion = Platform.Version;
+
   beforeEach(() => {
     mockPreventScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
+    mockSetRecentsScreenshotEnabledAsync.mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
   });
 
   it('ignores every AppState status other than active', () => {
+    setPlatform('android', 32);
     for (const status of ['background', 'inactive', 'unknown', 'extension'] as const) {
       handleAppStateChangeForReapply(status);
     }
     expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
+    expect(mockSetRecentsScreenshotEnabledAsync).not.toHaveBeenCalled();
   });
 
-  it('reapplies with a fresh key each time active fires, never reusing one', () => {
+  it('below API 33, reapplies FLAG_SECURE with a fresh key each time active fires, never reusing one', () => {
+    setPlatform('android', 32);
     handleAppStateChangeForReapply('active');
     handleAppStateChangeForReapply('active');
     expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(2);
     const [firstKey] = mockPreventScreenCaptureAsync.mock.calls[0];
     const [secondKey] = mockPreventScreenCaptureAsync.mock.calls[1];
     expect(firstKey).toMatch(/^screen-mask-reapply-/);
-    expect(secondKey).toMatch(/^screen-mask-reapply-/);
     // Not the SDK's 'default' key — reusing that is exactly what makes a
     // failed attempt silently short-circuit to success on retry (see this
     // file's doc comment / attemptScreenMask's memoization).
     expect(firstKey).not.toBe('default');
-    // The two keys must actually differ — two calls landing in the same
-    // millisecond would otherwise collide on Date.now() alone, which is
-    // exactly why handleAppStateChangeForReapply also appends a monotonic
-    // counter.
     expect(firstKey).not.toBe(secondKey);
+  });
+
+  it('at API 33+, reapplies via setRecentsScreenshotEnabledAsync(false) instead — no key needed', () => {
+    setPlatform('android', 33);
+    handleAppStateChangeForReapply('active');
+    handleAppStateChangeForReapply('active');
+    expect(mockSetRecentsScreenshotEnabledAsync).toHaveBeenCalledTimes(2);
+    expect(mockSetRecentsScreenshotEnabledAsync).toHaveBeenCalledWith(false);
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyScreenshotBlock', () => {
+  const originalOS = Platform.OS;
+  const originalVersion = Platform.Version;
+
+  beforeEach(() => {
+    __resetScreenshotBlockForTests();
+    mockPreventScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
+    mockAllowScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
+  });
+
+  it('on iOS, enabling calls preventScreenCaptureAsync with a fresh key', async () => {
+    setPlatform('ios');
+    await applyScreenshotBlock(true);
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+    expect(mockPreventScreenCaptureAsync.mock.calls[0][0]).toMatch(/^privacy-block-screenshots-/);
+  });
+
+  it('on Android below API 33, is a no-op — already forced on by the always-on path', async () => {
+    setPlatform('android', 32);
+    await applyScreenshotBlock(true);
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
+    await applyScreenshotBlock(false);
+    expect(mockAllowScreenCaptureAsync).not.toHaveBeenCalled();
+  });
+
+  it('on Android API 33+, enabling calls preventScreenCaptureAsync with a fresh key', async () => {
+    setPlatform('android', 33);
+    await applyScreenshotBlock(true);
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('disabling releases every key issued while enabled, not just the latest', async () => {
+    setPlatform('ios');
+    await applyScreenshotBlock(true);
+    await applyScreenshotBlock(true); // simulates a reapply-on-resume while already enabled
+    const [key1] = mockPreventScreenCaptureAsync.mock.calls[0];
+    const [key2] = mockPreventScreenCaptureAsync.mock.calls[1];
+    expect(key1).not.toBe(key2);
+
+    await applyScreenshotBlock(false);
+    const releasedKeys = mockAllowScreenCaptureAsync.mock.calls.map(([key]) => key);
+    expect(releasedKeys).toEqual(expect.arrayContaining([key1, key2]));
+    expect(releasedKeys).toHaveLength(2);
+  });
+
+  it('disabling with nothing enabled does not call allowScreenCaptureAsync at all', async () => {
+    setPlatform('ios');
+    await applyScreenshotBlock(false);
+    expect(mockAllowScreenCaptureAsync).not.toHaveBeenCalled();
   });
 });
 
 describe('useScreenMask', () => {
   const originalOS = Platform.OS;
+  const originalVersion = Platform.Version;
 
   function TestHost({ ready }: { ready: boolean }) {
     useScreenMask(ready);
@@ -155,21 +272,23 @@ describe('useScreenMask', () => {
     mockPreventScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
     mockEnableAppSwitcherProtectionAsync.mockReset().mockResolvedValue(undefined);
     mockIsAvailableAsync.mockReset().mockResolvedValue(true);
+    mockSetRecentsScreenshotEnabledAsync.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
   });
 
   it('does nothing until ready is true', () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    setPlatform('android', 33);
     const addSpy = jest.spyOn(AppState, 'addEventListener');
 
     let renderer: ReturnType<typeof create>;
     act(() => {
       renderer = create(React.createElement(TestHost, { ready: false }));
     });
-    expect(mockIsAvailableAsync).not.toHaveBeenCalled();
+    expect(mockSetRecentsScreenshotEnabledAsync).not.toHaveBeenCalled();
     expect(addSpy).not.toHaveBeenCalled(); // the ready gate must also hold off the AppState subscription, not just attemptScreenMask
 
     act(() => {
@@ -179,7 +298,7 @@ describe('useScreenMask', () => {
   });
 
   it('on Android, subscribes to AppState with handleAppStateChangeForReapply itself and unsubscribes on unmount', () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    setPlatform('android', 33);
     const addSpy = jest.spyOn(AppState, 'addEventListener');
     const removeSpy = jest.fn();
     addSpy.mockReturnValue({ remove: removeSpy } as ReturnType<typeof AppState.addEventListener>);
@@ -202,12 +321,111 @@ describe('useScreenMask', () => {
   });
 
   it('on iOS, never subscribes to AppState — reapplying there is harmful, not just unnecessary (see file doc comment)', () => {
-    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+    setPlatform('ios');
     const addSpy = jest.spyOn(AppState, 'addEventListener');
 
     let renderer: ReturnType<typeof create>;
     act(() => {
       renderer = create(React.createElement(TestHost, { ready: true }));
+    });
+    expect(addSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      renderer.unmount();
+    });
+    addSpy.mockRestore();
+  });
+});
+
+describe('useScreenshotBlock', () => {
+  const originalOS = Platform.OS;
+  const originalVersion = Platform.Version;
+
+  function TestHost({ enabled }: { enabled: boolean }) {
+    useScreenshotBlock(enabled);
+    return null;
+  }
+
+  beforeEach(() => {
+    __resetScreenshotBlockForTests();
+    mockPreventScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
+    mockAllowScreenCaptureAsync.mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
+  });
+
+  it('applies the initial value on mount', () => {
+    setPlatform('ios');
+    act(() => {
+      create(React.createElement(TestHost, { enabled: true }));
+    });
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-applies when the enabled prop changes', () => {
+    setPlatform('ios');
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(React.createElement(TestHost, { enabled: false }));
+    });
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
+
+    act(() => {
+      renderer.update(React.createElement(TestHost, { enabled: true }));
+    });
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      renderer.update(React.createElement(TestHost, { enabled: false }));
+    });
+    expect(mockAllowScreenCaptureAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('on Android, reapplies on resume only while enabled is true', () => {
+    setPlatform('android', 33);
+    let capturedListener: ((status: string) => void) | undefined;
+    const addSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+      capturedListener = listener as (status: string) => void;
+      return { remove: jest.fn() } as ReturnType<typeof AppState.addEventListener>;
+    });
+
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(React.createElement(TestHost, { enabled: false }));
+    });
+    mockPreventScreenCaptureAsync.mockClear();
+
+    act(() => {
+      capturedListener?.('active');
+    });
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled(); // not enabled — must not reapply
+
+    act(() => {
+      renderer.update(React.createElement(TestHost, { enabled: true }));
+    });
+    mockPreventScreenCaptureAsync.mockClear();
+
+    act(() => {
+      capturedListener?.('active');
+    });
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1); // enabled — reapplies
+
+    act(() => {
+      renderer.unmount();
+    });
+    addSpy.mockRestore();
+  });
+
+  it('on iOS, never subscribes to AppState (same reason as useScreenMask)', () => {
+    setPlatform('ios');
+    const addSpy = jest.spyOn(AppState, 'addEventListener');
+
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(React.createElement(TestHost, { enabled: true }));
     });
     expect(addSpy).not.toHaveBeenCalled();
 

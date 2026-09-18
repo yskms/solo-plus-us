@@ -1,22 +1,23 @@
 /**
- * 基本設計 §18「画面マスク」／要件定義書 §21 Discreet Mode「Recent Apps 画面
- * のマスク」（v1.0 必須、●）— OS の Recent Apps／App Switcher が撮る
- * スナップショットに、この端末の記録内容を映さない。
+ * 基本設計 §18「画面マスク」／要件定義書 §21 Discreet Mode。
  *
- * Always on, not a user preference（設計判断記録 D-47）——この保護は §8 の
- * DB 暗号化・§8.6 のバックアップ除外と同じ「OS レベルの露出を防ぐ、判断の
- * 余地のない保護」の階層に属し、App Lock 自体の enabled/disabled のような
- * 端末所有者の好みの設定ではない。`app/settings/hide-app-preview.tsx` に
- * この前提で「常時オン」を伝える画面を用意しているが、下記の理由で結果を
- * 確認してから表示する。
+ * **2026-09-18 に方針を反転した**（CLAUDE.md「スクリーンショットに関する
+ * 方針」参照）。以前は Recent Apps プレビュー非表示とスクリーンショット／
+ * 画面収録ブロックの両方を常時オン・設定不可としていたが、ユーザーから
+ * 「本人が自分のデータをスクショしたい正当な理由（長期グラフの保存、
+ * 医師への共有、バグ報告、端末間の一時共有）まで奪うのはやりすぎ」との
+ * 指摘を受け、以下のように分離した：
  *
- * `preventScreenCaptureAsync()`（両 OS）：スクリーンショット・画面収録を
- * ブロックする。Android では**これ単体で** Recent Apps のサムネイルも
- * 空白化される（`FLAG_SECURE`、Android では分離できない副作用）。iOS では
- * App Switcher のマスク自体は `enableAppSwitcherProtectionAsync()` だけで
- * 成立するため、iOS でもこれを呼んでスクリーンショット・画面収録をブロック
- * するのは分離できない副作用ではなく**独立した選択**——設計判断記録 D-47 に
- * 理由を記録済み。
+ * - **Recent Apps／App Switcher プレビューの非表示**：常時オン、設定不可
+ *   （事故による意図しない露出を防ぐ、判断の余地のない保護）。
+ * - **スクリーンショット／画面収録のブロック**：オプトイン、既定 OFF
+ *   （`privacy.blockScreenshots`、本人の意図した操作は本人に委ねる）。
+ *
+ * Android は API 33（Tiramisu）以降でなければこの2つを分離する OS API が
+ * 無い（`FLAG_SECURE` が両方を不可分に処理する）。API 33 未満では
+ * Recent Apps 非表示を優先し、副作用としてスクリーンショットも常時
+ * ブロックされたままになる——ユーザーと相談のうえ受け入れた妥協
+ * （CLAUDE.md 参照）。
  *
  * `enableAppSwitcherProtectionAsync()`（iOS のみ）：iOS には `FLAG_SECURE`
  * 相当が無いため、App Switcher・バックグラウンド・割り込み（着信・Siri・
@@ -30,6 +31,15 @@
  * `fractionComplete` を厳密に `1.0` にするとアニメーターが「完了」状態に
  * 遷移し、意図した見た目のまま留まらない可能性があることが知られている
  * （iOS のよくある回避策）。実機未検証（README 参照）。
+ *
+ * `setRecentsScreenshotEnabledAsync(false)`（Android API 33+ のみ、
+ * `node_modules/expo-screen-capture` への自前パッチ・patch-package で
+ * 永続化）：`Activity.setRecentsScreenshotEnabled(false)` を呼ぶだけの
+ * 新規ネイティブ関数。Recent Apps のサムネイルだけを無効化し、
+ * スクリーンショット・画面収録には一切影響しない——`FLAG_SECURE` と違い
+ * 完全に独立した保護。真偽値の単純な設定であり、`preventScreenCaptureAsync`
+ * のような key ベースの排他制御は不要（呼ぶたびに同じ状態を再設定するだけ
+ * で、何度呼んでも安全）。
  *
  * **このモジュール自身が管理する再試行の仕組みが必要な、確認された理由が
  * 2つある**（2回目のレビューで発見、いずれも `node_modules/expo-screen-capture`
@@ -57,14 +67,30 @@
  *    「明示的な失敗を検出しなかった」ことを意味し、「有効化を実機で確認
  *    した」ことを意味しない（README・設計判断記録 D-47 に明記）。
  *
- * Android の `FLAG_SECURE` は `currentActivity.window` 単位で設定される
- * ため、`configChanges` で吸収されない構成変更で Activity が再生成される
- * と保護が失われ、再適用されない（起動時に一度呼ぶだけでは「常時オン」の
- * 保証にならない）。`useScreenMask()` は **Android に限り**、`AppState` が
- * `active` に戻るたびに**新しい key**で `preventScreenCaptureAsync` を
- * 呼び直す——`attemptScreenMask()` 自身のキャッシュは意図的にバイパスする
- * （そちらは「起動時に一度確認した結果」を表すためのものであり、この
- * 再適用は別の目的を持つ）。
+ * Android の `FLAG_SECURE`（API 33 未満の Recent Apps 非表示・常時経路）も
+ * `setRecentsScreenshotEnabled`（API 33+ の Recent Apps 非表示・常時経路）も
+ * `currentActivity`/`window` 単位のため、`configChanges` で吸収されない
+ * 構成変更で Activity が再生成されると保護が失われ、再適用されない
+ * （起動時に一度呼ぶだけでは「常時オン」の保証にならない）。
+ * `useScreenMask()` は **Android に限り**、`AppState` が `active` に戻る
+ * たびに再適用する——API 33+ では `setRecentsScreenshotEnabledAsync(false)`
+ * を単純に再呼び出し（真偽値なので key 管理は不要）、API 33 未満では
+ * 従来通り**新しい key**で `preventScreenCaptureAsync` を呼び直す
+ * （`attemptScreenMask()` 自身のキャッシュは意図的にバイパスする）。
+ *
+ * `applyScreenshotBlock()`（オプトイン設定の適用、`contexts/ScreenshotBlock.tsx`
+ * から呼ばれる）は iOS と Android API 33+ でのみ意味を持つ（Android API 33
+ * 未満では既に上記の常時経路でブロックされているため no-op）。有効化の
+ * たびに新しい key を発行して `activeScreenshotBlockKeys` に積み、Android
+ * の Activity 再生成後の再適用にも同じ関数をそのまま使う（真偽値の
+ * `setRecentsScreenshotEnabledAsync` と違い、こちらは key ベースの API な
+ * ので、同じ key を再利用すると理由1の「失敗後の再試行が無反応になる」
+ * バグを再び踏む）。無効化時は、有効化中に発行した**すべての** key を
+ * 解放する——1つでも残っていると `expo-screen-capture` 内部の
+ * `activeTags.size` が 0 に達せず、`allowScreenCapture()` が二度と
+ * ネイティブへ到達しなくなる（常時経路が同じ Set を使い回して意図的に
+ * key を解放しないのと対称的に、こちらは正しく「オフにできる」ことが
+ * 要件なので、発行した key を必ず自分で追跡・解放する）。
  *
  * **iOS へこの再適用ロジックを広げてはならない——「不要」ではなく「有害」**
  * （2回目のレビューで発見）：iOS の `enableAppSwitcherProtection()` は
@@ -80,52 +106,48 @@
  * `UITextField` のレイヤ」を指している——`originalParent` がそれで
  * 上書きされ、`allowScreenshots()` を呼んでも本来の親には戻らない
  * （壊れたレイヤ階層のまま復元不能になる）。iOS 分岐にこの再適用処理を
- * 足したくなっても、絶対に行わないこと。
+ * 足したくなっても、絶対に行わないこと（`applyScreenshotBlock` の
+ * 再適用も Android 限定にしているのはこれが理由）。
  *
  * **既知の限界（README・設計判断記録 D-47 にも記載）**
- * - `preventScreenCaptureAsync` に渡す再適用ごとの key は `allowScreenCaptureAsync`
- *   で回収されない（このアプリは一度も呼ばない）ため、Android の
- *   `activeTags` は `active` に戻るたびに増え続ける一方通行になる。現状の
- *   設計（常時オン、無効化しない）では実害は無いばかりか望ましい方向だが、
- *   将来「一時的に許可する」機能が必要になった場合、この `Set` が空になる
- *   ことは二度と無いため `allowScreenCaptureAsync` はネイティブへ到達
- *   しなくなる——設計上の既知の一方通行として記録しておく。
+ * - Android API 33 未満では「Block Screenshots」設定は事実上 ON 固定
+ *   （無効化不可）——Recent Apps 非表示の副作用として常にブロックされる
+ * - `preventScreenCaptureAsync` に渡す常時経路の再適用ごとの key は
+ *   `allowScreenCaptureAsync` で回収されない（このアプリは一度も呼ばない）
+ *   ため、Android API 33 未満の `activeTags` は `active` に戻るたびに
+ *   増え続ける一方通行になる。現状の設計（常時オン、無効化しない）では
+ *   実害は無いばかりか望ましい方向だが、将来この経路に「一時的に許可する」
+ *   機能が必要になった場合、この `Set` が空になることは二度と無いため
+ *   `allowScreenCaptureAsync` はネイティブへ到達しなくなる——設計上の
+ *   既知の一方通行として記録しておく
  * - Activity が再生成されてから、この `AppState` リスナーが発火し非同期の
- *   ネイティブ呼び出しが着地するまでの間は `FLAG_SECURE` が外れている。
- *   この窓は JS からは詰められない。
+ *   ネイティブ呼び出しが着地するまでの間は保護が外れている。この窓は
+ *   JS からは詰められない
  * - `attemptScreenMask()` はメモ化されているため、`hide-app-preview.tsx`
  *   が表示するのは起動時一度きりの結果である。この再適用（`active` 復帰
  *   のたびの再試行）が後から失敗しても、`logError` に残るだけで設定画面
- *   の表示（✓ のまま）には一切反映されない。
+ *   の表示（✓ のまま）には一切反映されない
+ * - `setRecentsScreenshotEnabled`/`Activity.setRecentsScreenshotEnabled`
+ *   自体は実機（Android 13+）で「Recent Apps のサムネイルが実際に隠れる」
+ *   ことまでは確認済み（README 参照）だが、Activity 再生成後の再適用が
+ *   実機で確実に着地するかは未確認
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import * as ScreenCapture from 'expo-screen-capture';
 import { logError } from './log';
 
 const APP_SWITCHER_BLUR_INTENSITY = 0.99;
 
+/** Android 13 (Tiramisu) is when `Activity.setRecentsScreenshotEnabled` — the API that lets Recent Apps hiding and screenshot blocking be separated — became available. */
+function isAndroidRecentsApiAvailable(): boolean {
+  return Platform.OS === 'android' && Platform.Version >= 33;
+}
+
 export type ScreenMaskResult = { active: true } | { active: false; reason: string };
 
+/** Always-on Recent Apps / App Switcher preview hiding — not a preference, see file doc comment. */
 async function runScreenMaskAttempt(): Promise<ScreenMaskResult> {
-  let available: boolean;
-  try {
-    available = await ScreenCapture.isAvailableAsync();
-  } catch (error) {
-    logError('ScreenCapture.isAvailableAsync failed', error);
-    return { active: false, reason: 'support could not be checked on this device' };
-  }
-  if (!available) {
-    return { active: false, reason: 'not available on this device' };
-  }
-
-  try {
-    await ScreenCapture.preventScreenCaptureAsync();
-  } catch (error) {
-    logError('preventScreenCaptureAsync failed', error);
-    return { active: false, reason: 'could not block screenshots and screen recording' };
-  }
-
   if (Platform.OS === 'ios') {
     try {
       await ScreenCapture.enableAppSwitcherProtectionAsync(APP_SWITCHER_BLUR_INTENSITY);
@@ -133,9 +155,44 @@ async function runScreenMaskAttempt(): Promise<ScreenMaskResult> {
       logError('enableAppSwitcherProtectionAsync failed', error);
       return { active: false, reason: 'could not blur the app switcher preview' };
     }
+    return { active: true };
   }
 
-  return { active: true };
+  if (Platform.OS === 'android') {
+    if (isAndroidRecentsApiAvailable()) {
+      try {
+        await ScreenCapture.setRecentsScreenshotEnabledAsync(false);
+      } catch (error) {
+        logError('setRecentsScreenshotEnabledAsync failed', error);
+        return { active: false, reason: 'could not hide the Recent Apps preview' };
+      }
+      return { active: true };
+    }
+
+    // Below API 33, there's no split API — FLAG_SECURE via
+    // preventScreenCaptureAsync is the only way to hide Recent Apps, and
+    // it couples in blocking screenshots/recording too (accepted
+    // trade-off, see file doc comment).
+    let available: boolean;
+    try {
+      available = await ScreenCapture.isAvailableAsync();
+    } catch (error) {
+      logError('ScreenCapture.isAvailableAsync failed', error);
+      return { active: false, reason: 'support could not be checked on this device' };
+    }
+    if (!available) {
+      return { active: false, reason: 'not available on this device' };
+    }
+    try {
+      await ScreenCapture.preventScreenCaptureAsync();
+    } catch (error) {
+      logError('preventScreenCaptureAsync failed', error);
+      return { active: false, reason: 'could not hide the Recent Apps preview' };
+    }
+    return { active: true };
+  }
+
+  return { active: false, reason: 'not available on this device' };
 }
 
 let memoizedAttempt: Promise<ScreenMaskResult> | null = null;
@@ -166,16 +223,25 @@ let reapplyKeyCounter = 0;
 /**
  * Extracted so it's directly testable (see `lib/__tests__/screenMask.test.ts`)
  * without needing to drive the whole `useScreenMask` effect lifecycle for
- * this part specifically. A fresh key every call is deliberate — see this
- * file's doc comment on why reusing a key would silently short-circuit
- * and never reach native again. `Date.now()` alone is millisecond-
- * precision, not guaranteed unique if `active` somehow fires twice within
- * the same millisecond (unlikely in practice, but a monotonic counter
- * suffix costs nothing and removes the possibility entirely rather than
- * leaving it as a theoretical gap).
+ * this part specifically. Android only — the always-on Recent Apps
+ * protection is Activity-bound and needs reapplying after Activity
+ * recreation; iOS's equivalent is process-lifetime, not Activity-bound
+ * (see file doc comment on why iOS must never gain this reapply logic).
  */
 export function handleAppStateChangeForReapply(next: AppStateStatus): void {
   if (next !== 'active') return;
+  if (isAndroidRecentsApiAvailable()) {
+    // Plain boolean, not key-based — safe to call again unconditionally.
+    ScreenCapture.setRecentsScreenshotEnabledAsync(false).catch((error) =>
+      logError('setRecentsScreenshotEnabledAsync (reapply on resume) failed', error),
+    );
+    return;
+  }
+  // A fresh key every call is deliberate — see this file's doc comment on
+  // why reusing a key would silently short-circuit and never reach native
+  // again. `Date.now()` alone is millisecond-precision, not guaranteed
+  // unique if `active` somehow fires twice within the same millisecond
+  // (unlikely in practice, but a monotonic counter suffix costs nothing).
   ScreenCapture.preventScreenCaptureAsync(`screen-mask-reapply-${Date.now()}-${reapplyKeyCounter++}`).catch((error) =>
     logError('preventScreenCaptureAsync (reapply on resume) failed', error),
   );
@@ -184,9 +250,9 @@ export function handleAppStateChangeForReapply(next: AppStateStatus): void {
 /**
  * Fire-and-forget setup, called once app startup has reached `ready` —
  * see `attemptScreenMask` for the version that reports its own result,
- * used by the settings screen. Also reapplies Android's FLAG_SECURE on
- * every return to `active`, bypassing `attemptScreenMask`'s cache on
- * purpose (see this file's doc comment on Activity recreation).
+ * used by the settings screen. Also reapplies Android's Recent Apps
+ * protection on every return to `active`, bypassing `attemptScreenMask`'s
+ * cache on purpose (see this file's doc comment on Activity recreation).
  *
  * `ready` (passed as `loaded` from `RootLayout`, true only after fonts
  * are loaded and the splash screen is about to hide) exists specifically
@@ -205,4 +271,77 @@ export function useScreenMask(ready: boolean): void {
     const subscription = AppState.addEventListener('change', handleAppStateChangeForReapply);
     return () => subscription.remove();
   }, [ready]);
+}
+
+/**
+ * `privacy.blockScreenshots` opt-in — iOS and Android API 33+ only. On
+ * Android below API 33, this is a deliberate no-op: screenshots are
+ * already blocked as a side effect of the always-on Recent Apps
+ * protection there (see file doc comment), so there's nothing left for
+ * this setting to independently control.
+ *
+ * Tracks every key it has ever issued so disabling can release all of
+ * them — see file doc comment on why a single fixed key wouldn't
+ * actually let this be turned back off.
+ */
+let activeScreenshotBlockKeys: string[] = [];
+let screenshotBlockKeyCounter = 0;
+
+export async function applyScreenshotBlock(enabled: boolean): Promise<void> {
+  if (Platform.OS !== 'ios' && !isAndroidRecentsApiAvailable()) return;
+
+  if (enabled) {
+    const key = `privacy-block-screenshots-${Date.now()}-${screenshotBlockKeyCounter++}`;
+    activeScreenshotBlockKeys.push(key);
+    try {
+      await ScreenCapture.preventScreenCaptureAsync(key);
+    } catch (error) {
+      logError('preventScreenCaptureAsync (privacy.blockScreenshots) failed', error);
+    }
+    return;
+  }
+
+  const keys = activeScreenshotBlockKeys;
+  activeScreenshotBlockKeys = [];
+  await Promise.all(
+    keys.map((key) =>
+      ScreenCapture.allowScreenCaptureAsync(key).catch((error) =>
+        logError('allowScreenCaptureAsync (privacy.blockScreenshots) failed', error),
+      ),
+    ),
+  );
+}
+
+/** Only for tests that need a clean slate between cases. */
+export function __resetScreenshotBlockForTests(): void {
+  activeScreenshotBlockKeys = [];
+}
+
+/**
+ * Wires `privacy.blockScreenshots` to `applyScreenshotBlock`, including
+ * reapplying it on Android after Activity recreation while the setting
+ * is on — same concern as `useScreenMask`'s own reapply, same reason
+ * this must never run on iOS (see file doc comment). `enabled` is read
+ * through a ref inside the AppState listener so the listener always
+ * reads the latest value without needing to resubscribe on every change
+ * (same pattern `contexts/AppLock.tsx` uses for its own AppState
+ * listener).
+ */
+export function useScreenshotBlock(enabled: boolean): void {
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  useEffect(() => {
+    applyScreenshotBlock(enabled);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next !== 'active') return;
+      if (!enabledRef.current) return;
+      applyScreenshotBlock(true);
+    });
+    return () => subscription.remove();
+  }, []);
 }

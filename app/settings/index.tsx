@@ -7,7 +7,10 @@
  * Delete rows — `settings/data.tsx` covers Export and Import; Delete
  * (§10.6) isn't built yet, so the mockup's three-row split isn't followed
  * literally (see README). "Hide App Preview" (§18 画面マスク) links to an
- * informational screen, not a toggle — see `lib/screenMask.ts`.
+ * informational screen, not a toggle — see `lib/screenMask.ts`. "Block
+ * Screenshots" is a real opt-in toggle (default off), added 2026-09-18
+ * when always-on screenshot blocking was reversed to opt-in — see
+ * CLAUDE.md's「スクリーンショットに関する方針」and `lib/screenMask.ts`.
  */
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -54,6 +57,7 @@ export default function SettingsIndexScreen() {
           rows={[
             { label: 'App Lock', onPress: () => router.push('/settings/app-lock') },
             { label: 'Hide App Preview', onPress: () => router.push('/settings/hide-app-preview') },
+            { label: 'Block Screenshots', onPress: () => router.push('/settings/block-screenshots') },
           ]}
         />
 
