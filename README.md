@@ -1257,10 +1257,15 @@ AppState リスナーのコメント参照）。
   ——iOS の `enableAppSwitcherProtectionAsync(0.99)` のぼかし表示（強度が実際に強い
   ぼかしとして残ること）、Android の `preventScreenCaptureAsync()` による Recent Apps
   サムネイルの空白化、両 OS でのスクリーンショット・画面収録のブロック、Android の
-  Activity 再生成後の再適用、`plugins/withoutScreenCaptureDetectionPermissions.js` の
-  Gradle マニフェストマージ後の最終結果は、いずれも実機・実ビルドでしか確認できない
-  （マニフェストの `tools:node="remove"` 自体は `expo prebuild` の実行で生成内容を
-  確認済み——上記1回目・3回目のレビュー参照——が、Gradle が実際にどうマージするかは別）
+  Activity 再生成後の再適用は、実機でしか確認できない
+- **`plugins/withoutScreenCaptureDetectionPermissions.js` の Gradle マニフェストマージ
+  後の最終結果は確認済み**（実機ビルド不要、EAS のビルド枠も使わない）：
+  `cd android && ./gradlew :app:processDebugMainManifest` を実行し、
+  `android/app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml`
+  を確認した。`READ_EXTERNAL_STORAGE`（`maxSdkVersion="32"` 付き、`expo-file-system` 由来）
+  は単独で残り、`READ_MEDIA_IMAGES`/`DETECT_SCREEN_CAPTURE` は最終マニフェストから
+  完全に消えている——3回目のレビューで指摘された衝突の修正が実際に機能することを
+  ローカルビルドで確認した。`android/app/build/` はビルド成果物（gitignore 対象）
 - **スクリーンショットブロックと Recent Apps マスクが Android で分離できない**：
   要求されているのは「バックグラウンド移行時のマスク」だが、Android では
   `preventScreenCaptureAsync()` が唯一の関連 API であり、これがスクリーンショット
