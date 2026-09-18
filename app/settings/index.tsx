@@ -15,21 +15,32 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 
-function SettingsRow({ label, onPress, divider }: { label: string; onPress: () => void; divider?: boolean }) {
+interface Row {
+  label: string;
+  onPress: () => void;
+}
+
+/** Dividers are derived from position (`index > 0`), not passed per-row — a row added between two others can't silently end up missing one. */
+function SettingsGroup({ rows }: { rows: Row[] }) {
   const { colors } = useTheme();
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
-        divider && { borderTopWidth: StyleSheet.hairlineWidth },
-      ]}
-      accessibilityRole="button"
-    >
-      <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
-      <Text style={[styles.chevron, { color: colors.textTertiary }]}>›</Text>
-    </Pressable>
+    <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {rows.map((row, index) => (
+        <Pressable
+          key={row.label}
+          onPress={row.onPress}
+          style={({ pressed }) => [
+            styles.row,
+            { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+            index > 0 && { borderTopWidth: StyleSheet.hairlineWidth },
+          ]}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{row.label}</Text>
+          <Text style={[styles.chevron, { color: colors.textTertiary }]}>›</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -39,15 +50,15 @@ export default function SettingsIndexScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRIVACY</Text>
-        <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <SettingsRow label="App Lock" onPress={() => router.push('/settings/app-lock')} />
-          <SettingsRow label="Hide App Preview" onPress={() => router.push('/settings/hide-app-preview')} divider />
-        </View>
+        <SettingsGroup
+          rows={[
+            { label: 'App Lock', onPress: () => router.push('/settings/app-lock') },
+            { label: 'Hide App Preview', onPress: () => router.push('/settings/hide-app-preview') },
+          ]}
+        />
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
-        <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <SettingsRow label="Export & Import" onPress={() => router.push('/settings/data')} />
-        </View>
+        <SettingsGroup rows={[{ label: 'Export & Import', onPress: () => router.push('/settings/data') }]} />
       </ScrollView>
     </SafeAreaView>
   );

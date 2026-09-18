@@ -1109,12 +1109,13 @@ AppState リスナーのコメント参照）。
 
 | 層 | 内容 |
 |---|---|
-| `expo-screen-capture`（新規依存） | `preventScreenCaptureAsync()`（両 OS）でスクリーンショット・画面収録をブロック。Android は**これ単体で** Recent Apps のサムネイルも空白化される（`FLAG_SECURE`）。`enableAppSwitcherProtectionAsync(1.0)`（iOS のみ、ぼかし強度は既定の 0.5 ではなく最大の 1.0 を明示——下記レビュー参照）で App Switcher・バックグラウンド・割り込み時のぼかしオーバーレイをネイティブ側に任せる——このアプリの View 階層で `AppState` を監視して自前でオーバーレイを描画する必要はない。`app.plugin.js` を持たないため `app.json` の `plugins` への追加は不要（`expo config --json` で確認済み） |
-| `lib/screenMask.ts`（新規） | `attemptScreenMask()`：`isAvailableAsync()` →`preventScreenCaptureAsync()` →（iOS のみ）`enableAppSwitcherProtectionAsync(1.0)` の順で試み、実際に確認できた結果（成功／失敗とその理由）を返す。`useScreenMask()` はこれを `app/_layout.tsx` の `RootLayout` の最上部で無条件に呼ぶ（`DatabaseProvider`/`AppLockProvider` より外側）ためのフック——起動時は結果を捨てる fire-and-forget（下記レビュー参照） |
-| `app/settings/hide-app-preview.tsx`（新規） | `attemptScreenMask()` を自分でも呼び（冪等なので再実行して問題ない）、実際に確認できた結果だけを表示する。「常時オン」を伝える情報のみの画面（`app-lock.tsx` の「UNLOCK WITH」行と同じパターン）だが、確認していない事実を断言はしない（下記レビュー参照） |
-| `app/settings/index.tsx`/`app/_layout.tsx` | PRIVACY セクションに「Hide App Preview」の行を追加（App Lock の下、区切り線付き） |
+| `expo-screen-capture`（新規依存） | `preventScreenCaptureAsync()`（両 OS）でスクリーンショット・画面収録をブロック。Android は**これ単体で** Recent Apps のサムネイルも空白化される（`FLAG_SECURE`）。`enableAppSwitcherProtectionAsync(0.99)`（iOS のみ、ぼかし強度は既定の 0.5 でも最大の 1.0 でもなく `0.99`——2回目のレビュー参照）で App Switcher・バックグラウンド・割り込み時のぼかしオーバーレイをネイティブ側に任せる。`app.plugin.js` を持たないため `app.json` の `plugins` への追加は不要（`expo config --json` で確認済み） |
+| `plugins/withoutScreenCaptureDetectionPermissions.js`（新規） | `expo-screen-capture` が autolinking で持ち込む、使っていないスクリーンショット「検知」機能専用の Android パーミッション（`READ_EXTERNAL_STORAGE`/`READ_MEDIA_IMAGES`/`DETECT_SCREEN_CAPTURE`）を `tools:node="remove"` で除去する（2回目のレビュー参照）。`expo prebuild --platform android` を実際に実行し、生成された `android/app/src/main/AndroidManifest.xml` に `tools:node="remove"` の3エントリが正しく出力されることを確認済み——ただし Gradle のマニフェストマージ後の最終結果（実際に除去されるか）は実機ビルドでしか確認できない |
+| `lib/screenMask.ts`（新規） | `attemptScreenMask()`：`isAvailableAsync()` → `preventScreenCaptureAsync()` →（iOS のみ）`enableAppSwitcherProtectionAsync(0.99)` の順で試み、実際に確認できた結果（成功／失敗とその理由）を返す。**自前でメモ化する**（2回目のレビューで発見した理由により必須——下記参照）。`useScreenMask(ready)` はこれを `app/_layout.tsx` の `RootLayout` で `loaded` を待ってから呼ぶ（`DatabaseProvider`/`AppLockProvider` より外側だが、フォント読み込み完了・スプラッシュ非表示直前まで遅らせる——下記レビュー参照）。Android に限り `AppState` が `active` に戻るたびに新しい key で `preventScreenCaptureAsync` を再呼び出しする（Activity 再生成対策、下記レビュー参照） |
+| `app/settings/hide-app-preview.tsx`（新規） | `attemptScreenMask()`（メモ化済みのため安全に呼べる）を呼び、実際に確認できた結果だけを表示する。「常時オン」を伝える情報のみの画面（`app-lock.tsx` の「UNLOCK WITH」行と同じパターン）だが、確認していない事実を断言はしない |
+| `app/settings/index.tsx`/`app/_layout.tsx` | PRIVACY セクションに「Hide App Preview」の行を追加。`SettingsGroup` コンポーネントに切り出し、区切り線は `index > 0` から導出する（呼び出し側が `divider` を渡し忘れて区切り線が抜ける、という回帰を防ぐ——2回目のレビュー参照） |
 
-#### レビューで見つかり、修正したもの
+#### レビューで見つかり、修正したもの（1回目）
 
 1. **【中】保護が有効になっていなくても、画面は「常時オン」と断言していた**：
    `useScreenMask` は失敗をログに出すだけで結果をどこにも持たず、`hide-app-preview.tsx`
@@ -1127,7 +1128,7 @@ AppState リスナーのコメント参照）。
    と理由付きで伝える
 2. **【低〜中】ぼかしの強さが既定の 0.5 のままだった**：隠したいのは "THIS MONTH 12" や
    "Sep 14 Solo" のような短い文字列で、中程度のぼかしでは判読できる可能性がある。
-   `enableAppSwitcherProtectionAsync(1.0)` と明示するよう修正
+   （その後2回目のレビューで `1.0` 自体にも問題があると判明——下記参照）
 3. **【低】常時オン・トグル無しの判断と、iOS でのスクリーンショットブロックの判断が
    設計判断記録に無かった**：前者は要件定義書の「実装する」「●」を根拠にした判断、
    後者は要件定義書 §21 が求めているのは Recent Apps マスクのみで、スクリーンショット
@@ -1137,23 +1138,95 @@ AppState リスナーのコメント参照）。
    副作用」ではなく**独立した選択**だった。両方を設計判断記録 D-47 に追記した
 4. CLAUDE.md をコミット（レビューとは別件、ユーザーからの指示）
 
+#### レビューで見つかり、修正したもの（2回目）
+
+`node_modules/expo-screen-capture` の JS・ネイティブ実装（Kotlin/Swift）まで直接確認した
+レビュー。1回目の修正で導入した「設定画面から `attemptScreenMask()` を再度呼んで確認する」
+という設計自体が、SDK の実装により成立していなかった。
+
+1. **【高】新規依存により Android マニフェストに写真読み取り系パーミッションが増える**：
+   `expo-screen-capture` が使っていないスクリーンショット「検知」機能
+   （`addScreenshotListener` 等）のために `READ_EXTERNAL_STORAGE`/`READ_MEDIA_IMAGES`/
+   `DETECT_SCREEN_CAPTURE` を autolinking で持ち込む。§8 の姿勢・
+   `plugins/withAndroidNoBackup.js` の方針と整合しない。`plugins/withoutScreenCaptureDetectionPermissions.js`
+   を追加し `tools:node="remove"` で除去。ネイティブ側の `ScreenshotEventEmitter`
+   （API 34 未満で無条件に生成される `ContentObserver`）自体はパッチできないため、
+   万一発火した場合の無害なログ出力は既知の制限として設計判断記録 D-47 に残した
+2. **【高】「確認できた結果だけを表示する」が実際には成立していなかった**：3つの原因が
+   あった。(a) `expo-screen-capture` の JS 実装は `key` を `await` の前に `Set` へ追加し
+   失敗時にロールバックしないため、reject 後の再呼び出しはネイティブへ到達せず即座に
+   成功を返す——「再実行して確認する」という前提が崩れていた。(b) iOS の
+   `preventScreenshots()` は `keyWindow` が無いと無言で何もせず、それでも promise は
+   成功として resolve される——resolve は保護成立の証明にならない。(c) `isAvailableAsync()`
+   はネイティブ関数の存在確認のみで、コメントで挙げていた「iOS 13 未満」を検出する
+   わけではなかった（実態と合っていないコメントだった）。対応：`attemptScreenMask()`
+   を自前でメモ化し、ネイティブ呼び出し自体をプロセス内で一度しか行わないようにした
+   （再試行ではなく、最初の一度きりの試行結果を共有する）。`useScreenMask()` の呼び出しを
+   `RootLayout` の `loaded`（フォント読み込み完了・スプラッシュ非表示直前）まで遅らせ、
+   (b) の窓を狭めた。誤りだったコメント（iOS 13 未満の検出）は削除し、「resolve は
+   実機での確認を意味しない」ことをコード・README・設計判断記録 D-47 に明記した
+3. **【中】iOS のぼかしは別の native ViewController（共有シート・ファイルピッカー・
+   Alert）の外側にしか載らない**：`contexts/AppLock.tsx` が `presentation: 'modal'` を
+   避けている理由とまったく同じ構造の制約。パッチや回避は行わず、既知の制限として
+   設計判断記録 D-47 と Known gaps に明記した
+4. **【中】失敗時・Activity 再生成時の再適用が無かった**：Android の `FLAG_SECURE` は
+   `currentActivity.window` 単位のため、`configChanges` で吸収されない構成変更で
+   Activity が再生成されると保護が失われる。`useScreenMask()` に Android 専用の
+   `AppState` リスナーを追加し、`active` に戻るたびに新しい key で
+   `preventScreenCaptureAsync` を呼び直すよう修正（`attemptScreenMask()` 自身の
+   メモ化は意図的にバイパスする——目的が異なるため）
+5. **【中】`blurIntensity = 1.0` は実機確認が必須と判明**：ネイティブ実装
+   （`AnimatedBlurEffectView.swift`）は `UIViewPropertyAnimator.fractionComplete` に
+   この値をそのまま渡しており、厳密に `1.0` を入れるとアニメーターが「完了」状態に
+   遷移し、意図した見た目のまま留まらない可能性があることが知られている（iOS の
+   よくある回避策）。`0.99` に変更。実機確認が必要な点に変わりはない（Known gaps 参照）
+6. **【低】その他まとめて対応**：
+   - `hide-app-preview.tsx` の ✓/! に `accessibilityLabel` を追加（スクリーンリーダーで
+     状態が伝わっていなかった）
+   - 文面の重複（"...on this device: ...on this device."）を解消
+   - `SettingsRow` の `divider` prop（呼び出し側が渡し忘れると区切り線が抜ける）を
+     `SettingsGroup` + `index > 0` の導出に置き換え
+   - 「both underlying native calls are idempotent」という不正確なコメントを修正
+     （`enableAppSwitcherProtectionAsync` は呼ぶたびに無条件で observer を追加登録し、
+     dedupe が無い——メモ化により実際には一度しか呼ばれないため実害は無いが、関数自体は
+     冪等ではない）
+   - `jest.mock('expo-screen-capture')` で `attemptScreenMask()` の分岐と理由文言を
+     テストできるとの指摘を受け、`lib/__tests__/screenMask.test.ts` を追加（8件）
+   - Web（`isAvailableAsync()` が常に false）は対象外の判断として Known gaps に明記
+     （このアプリの中核である op-sqlite・expo-local-authentication 自体が web で動作
+     しないため、実質的に到達しない経路）
+
 #### テスト
 
-`expo-screen-capture` はネイティブモジュールのため Jest では検証できない——`connection.ts`・
-`RecoveryService.ts` と同じ制約。`attemptScreenMask()` は分岐を持つが、すべて実際の
-ネイティブ呼び出しの成否に依存するため、モックなしに意味のある形で切り出してテストできる
-純粋ロジックが無い。
+`expo-screen-capture` 自体（実際のネイティブ呼び出し）は Jest では検証できない——
+`connection.ts`・`RecoveryService.ts` と同じ制約。`attemptScreenMask()` の分岐
+（`isAvailableAsync`/`preventScreenCaptureAsync`/`enableAppSwitcherProtectionAsync` それぞれの
+成功・失敗、プラットフォーム分岐、メモ化）は `jest.mock('expo-screen-capture')` で
+検証済み（`lib/__tests__/screenMask.test.ts`、8件）。
 
 #### Known gaps
 
 - **実機での動作確認が未実施**：この項目は特にコードレビューだけでは確認しきれない
-  ——iOS の `enableAppSwitcherProtectionAsync(1.0)` のぼかし表示（強度を含む）、
-  Android の `preventScreenCaptureAsync()` による Recent Apps サムネイルの空白化、
-  両 OS でのスクリーンショット・画面収録のブロック、`attemptScreenMask()` が失敗
-  経路を正しく報告することは、いずれも実機の Recent Apps／App Switcher を実際に
-  開いて確認する必要がある
+  ——iOS の `enableAppSwitcherProtectionAsync(0.99)` のぼかし表示（強度が実際に強い
+  ぼかしとして残ること）、Android の `preventScreenCaptureAsync()` による Recent Apps
+  サムネイルの空白化、両 OS でのスクリーンショット・画面収録のブロック、Android の
+  Activity 再生成後の再適用、`plugins/withoutScreenCaptureDetectionPermissions.js` の
+  Gradle マニフェストマージ後の最終結果は、いずれも実機・実ビルドでしか確認できない
 - **スクリーンショットブロックと Recent Apps マスクが Android で分離できない**：
   要求されているのは「バックグラウンド移行時のマスク」だが、Android では
   `preventScreenCaptureAsync()` が唯一の関連 API であり、これがスクリーンショット
   自体のブロックも兼ねる。両者を分離する設定は無いため、意図した副次的保護として
   受け入れている（設計判断記録 D-47 参照）
+- **`resolve` は実機での確認を意味しない**：`preventScreenCaptureAsync`/
+  `enableAppSwitcherProtectionAsync` が例外を投げずに resolve しても、実際に保護が
+  有効になった証明にはならない（iOS の `keyWindow` タイミング問題など）。
+  `attemptScreenMask()` の `{ active: true }` は「明示的な失敗を検出しなかった」ことを
+  意味するにとどまる（設計判断記録 D-47 参照）
+- **iOS のぼかしは別の native ViewController の外側にしか載らない**：共有シート・
+  ファイルピッカー・システムの Alert 表示中に App Switcher スナップショットが撮られる
+  場合、それらはぼかしの対象外になる。`contexts/AppLock.tsx` の `presentation: 'modal'`
+  を避けている理由と同じ構造の制約で、パッチや回避は行わない（設計判断記録 D-47 参照）
+- **Web は対象外**：`expo-screen-capture` は web で `isAvailableAsync()` が常に false を
+  返すため `hide-app-preview.tsx` は赤い「!」を表示するが、op-sqlite・
+  expo-local-authentication 自体が web で動作せずこの画面まで到達できないため、
+  実質的に問題にならない想定——明示的な web 対応は行っていない

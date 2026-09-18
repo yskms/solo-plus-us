@@ -7,12 +7,16 @@
  * always active rather than offering anything to configure.
  *
  * Does not simply assert the protection is on — `useScreenMask()` at the
- * app root is fire-and-forget and never reports whether it actually
- * succeeded (unavailable device, iOS below the versions that support
- * screenshot/recording blocking, or the native call itself rejecting).
- * This screen calls `attemptScreenMask()` itself (safe to call again —
- * both underlying native calls are idempotent) and only shows the
- * checkmark once that call has actually confirmed success.
+ * app root never reports whether it actually succeeded (unavailable
+ * device, or the native call itself rejecting or silently no-op'ing —
+ * see `lib/screenMask.ts`'s doc comment for the two confirmed ways a
+ * "successful" attempt still might not mean the protection is active).
+ * This screen calls the *same* `attemptScreenMask()` — memoized, so this
+ * reads the one real startup outcome rather than re-invoking anything —
+ * and only shows the checkmark once that attempt reported no detected
+ * failure. Even then, "active: true" means exactly that: no failure was
+ * detected, not that this has been confirmed on-device (README/設計判断記録
+ * D-47 — this is not a claim the code below is in a position to make).
  */
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -42,9 +46,17 @@ export default function HideAppPreviewScreen() {
           <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.optionRow}>
               <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Hide app preview</Text>
-              {result === null && <ActivityIndicator color={colors.textSecondary} />}
-              {result?.active === true && <Text style={[styles.checkmark, { color: colors.solo }]}>✓</Text>}
-              {result?.active === false && <Text style={[styles.checkmark, { color: colors.destructive }]}>!</Text>}
+              {result === null && <ActivityIndicator color={colors.textSecondary} accessibilityLabel="Checking" />}
+              {result?.active === true && (
+                <Text style={[styles.checkmark, { color: colors.solo }]} accessibilityLabel="Enabled">
+                  ✓
+                </Text>
+              )}
+              {result?.active === false && (
+                <Text style={[styles.checkmark, { color: colors.destructive }]} accessibilityLabel="Could not enable">
+                  !
+                </Text>
+              )}
             </View>
           </View>
           {result?.active === true && (
@@ -54,9 +66,7 @@ export default function HideAppPreviewScreen() {
             </Text>
           )}
           {result?.active === false && (
-            <Text style={[styles.caption, { color: colors.destructive }]}>
-              Could not enable on this device: {result.reason}
-            </Text>
+            <Text style={[styles.caption, { color: colors.destructive }]}>Could not enable: {result.reason}.</Text>
           )}
         </View>
 

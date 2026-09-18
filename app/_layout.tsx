@@ -34,10 +34,11 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({});
-  // Unconditional — see lib/screenMask.ts. Applies regardless of
-  // DatabaseProvider/AppLock state (loading, Recovery, locked, unlocked),
-  // so it's called at the very top of the tree, not nested inside either.
-  useScreenMask();
+  // Called unconditionally (Rules of Hooks) regardless of Database/AppLock
+  // state (loading, Recovery, locked, unlocked) — the hook's own effect is
+  // gated on `loaded` internally (see lib/screenMask.ts's doc comment on
+  // why calling any earlier risks a silent no-op on iOS).
+  useScreenMask(loaded);
 
   useEffect(() => {
     if (error) throw error;

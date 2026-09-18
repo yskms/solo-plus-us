@@ -1395,7 +1395,71 @@ iOS はこれと事情が異なる：App Switcher のマスクは `enableAppSwit
 端末外に残せてしまう経路も、Recent Apps への露出と同種のリスクとして扱う。
 
 **帰結**：iOS・Android のいずれでも、Solo + Us の画面のスクリーンショット・画面収録は
-常に禁止される。これは意図した挙動であり、バグではない。
+常に禁止される。これは意図した挙動であり、バグではない。Android の `FLAG_SECURE` は
+スクリーンショット・画面収録に加え、画面キャスト／ミラーリング／外部ディスプレイへの
+出力も黒画面にする——これも意図した挙動として受け入れる。
+
+**追記（2回目のレビューで発見、`node_modules/expo-screen-capture` の実装を直接確認）**
+
+**決定3：Android のスクリーンショット「検知」用パーミッションを Config Plugin で除去する**
+
+`expo-screen-capture` は autolinking で `READ_EXTERNAL_STORAGE`（maxSdk 32）・
+`READ_MEDIA_IMAGES`（sdk 33）・`DETECT_SCREEN_CAPTURE`（sdk 34+）を Android マニフェストへ
+持ち込む。これらはすべて `addScreenshotListener`/`getPermissionsAsync`/
+`requestPermissionsAsync`（スクリーンショット「検知」）専用で、この app が使うのは
+`preventScreenCaptureAsync`/`enableAppSwitcherProtectionAsync`（「防止」）だけである。
+使わない機能のために「写真の読み取り」パーミッションが増えるのは、§8 の「記録内容を
+外に出さない」姿勢と整合しない。`plugins/withoutScreenCaptureDetectionPermissions.js`
+（`tools:node="remove"`）でこれら3つのパーミッション宣言を除去する。
+
+ネイティブ側（`ScreenCaptureModule.kt` の `OnCreate`）は API 34 未満で
+`ScreenshotEventEmitter` を無条件に生成し、`MediaStore.Images` への `ContentObserver` を
+常時登録する——これは Config Plugin からは変更できない Kotlin の実装であり、パーミッション
+除去後は権限が無いため `onChange` のたびに `Log.e` が出るだけで例外は投げない
+（`ScreenShotEventEmitter.kt`）。実際にスクリーンショットが撮られる経路は
+`preventScreenCaptureAsync`（`FLAG_SECURE`）で塞いでいるため、この observer が実際に
+発火することは通常無い想定。サードパーティモジュールへのパッチは行わず、この無害な
+ログ出力の可能性を既知の制限として受け入れる。
+
+**「常時オン」の限界（2点、実機で確認するまで断言できない）**
+
+1. `preventScreenCaptureAsync`/`allowScreenCaptureAsync` の JS 実装
+   （`expo-screen-capture` の `ScreenCapture.js`）は、内部の `key`（既定値 `'default'`）を
+   `await` の**前**に `Set` へ追加し、失敗時にロールバックしない。一度 reject すると、
+   同じ key での再呼び出しは実際にはネイティブへ到達せず、即座に成功として resolve
+   される。`lib/screenMask.ts` の `attemptScreenMask()` は自前でこの結果をメモ化し、
+   ネイティブ呼び出し自体をプロセス内で一度しか行わないことでこの問題を回避している
+   （＝再試行して確認するのではなく、最初の一度きりの試行結果を全呼び出し元で共有する）。
+2. iOS の `preventScreenshots()`（`ScreenCaptureModule.swift`）は `keyWindow` が
+   まだ存在しない場合に無言で何もせず終わり、それでも呼び出し元の promise は成功として
+   resolve される。**「resolve した」ことは「実際に保護が有効になった」ことの証明には
+   ならない。** `useScreenMask()` を `RootLayout` で `loaded`（フォント読み込み完了・
+   スプラッシュ非表示直前）を待ってから呼ぶことでこの窓を狭めているが、JS からこれを
+   完全に検証する手段は無い。`isAvailableAsync()` もネイティブ関数の存在確認のみで、
+   この種のタイミング起因の失敗は検出しない。
+
+したがって `app/settings/hide-app-preview.tsx` の「✓」は「明示的な失敗を検出しなかった」
+ことを意味し、「実機で有効化を確認した」ことを意味しない。README にもこの限界を明記する。
+
+**Android の再適用（Activity 再生成対策）**：`FLAG_SECURE` は `currentActivity.window` 単位で
+設定されるため、`configChanges` で吸収されない構成変更で Activity が再生成されると保護が
+失われ、再適用されない。`useScreenMask()` は Android に限り、`AppState` が `active` に戻る
+たびに**新しい key**で `preventScreenCaptureAsync` を呼び直す（`attemptScreenMask()` 自身の
+メモ化とは別の、意図的にキャッシュをバイパスする仕組み）。iOS の
+`enableAppSwitcherProtection()` はモジュールインスタンス（プロセス寿命）に紐づく
+`NotificationCenter` 監視であり、Activity 相当の再生成は無いためこの再適用は不要——ただし
+`enableAppSwitcherProtectionAsync()` は呼ぶたびに無条件で observer を追加登録するため
+（dedupe なし）、複数回呼ぶと通知が二重登録される。`attemptScreenMask()` のメモ化により
+実際には一度しか呼ばれないため実害は無いが、この関数自体が冪等ではないことは明記しておく。
+
+**iOS のぼかしは RN のルートビューにしか載らない**：`showPrivacyOverlay()` は
+`keyWindow.subviews.first` に addSubview する。つまり別の native ViewController で
+提示されるもの（`expo-sharing` の共有シート、`expo-document-picker`、システムの Alert）は
+ぼかしの外側になる。これは `contexts/AppLock.tsx` が `presentation: 'modal'` を避けている
+理由（`app/_layout.tsx` のコメント）とまったく同じ構造の制約——このプロジェクトが既に
+自覚している原則の再登場である。Export/Import 中にバックグラウンドへ移った場合の
+App Switcher スナップショットは、この限界の範囲内にある既知の制限として受け入れる
+（パッチや回避を試みない）。
 
 ---
 
