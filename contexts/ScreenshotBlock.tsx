@@ -13,7 +13,16 @@
  * 呼び出し元（設定画面）に伝える——ネイティブ側の適用に失敗したのに DB へ
  * 保存し「オンになった」と表示するのは、D-47 の「確認できていない保護を
  * 表示しない」という原則に反する（レビューで指摘）。適用が成功した場合のみ
- * DB へ保存し、`enabled` を更新する。
+ * DB へ保存し、`enabled` を更新する。DB 保存自体が失敗した場合は、適用済みの
+ * ネイティブ側を `applyScreenshotBlock(!next)` で元に戻してから例外を投げる
+ * ——さもないと「DB は古い値のまま、ネイティブは新しい値」という、表示と
+ * 実態がずれた状態が残る（2回目のレビューで指摘）。
+ *
+ * `enabled` は「DB に保存された希望」ではなく「実際に適用できている状態」を
+ * 表す——起動時に `applyScreenshotBlock(true)` が失敗した場合、DB の値は
+ * `true` のままでも `enabled` は `false` にする（2回目のレビューで指摘：
+ * 以前は `applyScreenshotBlock` の前に `enabled` を立てていたため、失敗して
+ * いても Switch が ON に見えた）。
  */
 import React, { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useDatabase } from './DatabaseContext';
@@ -41,6 +50,15 @@ export function ScreenshotBlockProvider({ children }: { children: ReactNode }) {
   const [enabled, setEnabledState] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  // The `[db]` dependency below doesn't re-fire in practice today — the
+  // `db` reference from `DatabaseContext` is stable for the app's
+  // lifetime once ready (there's no live DB-swap path reachable yet;
+  // §8.8 Recovery bootstrap, which would swap it, isn't implemented —
+  // see README Known gaps). If that ever changes, note this effect
+  // doesn't call `applyScreenshotBlock(false)` before re-reading, so a
+  // still-enabled block from the old `db` would keep running natively
+  // even if the new one's setting is off (flagged in review, accepted
+  // as a non-issue for now since the path can't currently execute).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -51,19 +69,24 @@ export function ScreenshotBlockProvider({ children }: { children: ReactNode }) {
         logError('Loading privacy.blockScreenshots failed', error);
       }
       if (cancelled) return;
-      setEnabledState(value);
-      setLoaded(true);
+
+      let applied = false;
       if (value) {
         // Best-effort at startup — no UI is waiting on this specific
-        // call, unlike setEnabled below. A failure here just means the
-        // Settings screen (once visited) shows the switch off from the
-        // next attempt, rather than a silently-not-actually-blocking on.
+        // call, unlike setEnabled below. `enabled` below only becomes
+        // true if this actually succeeds (see file doc comment) — a
+        // failure here shows the switch off next time the Settings
+        // screen is visited, rather than on-but-not-actually-blocking.
         try {
           await applyScreenshotBlock(true);
+          applied = true;
         } catch (error) {
           logError('Applying privacy.blockScreenshots at startup failed', error);
         }
       }
+      if (cancelled) return;
+      setEnabledState(applied);
+      setLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -77,7 +100,20 @@ export function ScreenshotBlockProvider({ children }: { children: ReactNode }) {
   const setEnabled = useCallback(
     async (next: boolean) => {
       await applyScreenshotBlock(next); // throws on failure — caller (Settings screen) handles it, nothing persisted below if so
-      await setSetting(db, 'privacy.blockScreenshots', next);
+      try {
+        await setSetting(db, 'privacy.blockScreenshots', next);
+      } catch (error) {
+        // Native side already changed to `next` but the DB write that
+        // was supposed to record it failed — roll the native side back
+        // to what the DB (and `enabled`) still actually say, rather
+        // than leaving them silently out of sync (2nd review round).
+        try {
+          await applyScreenshotBlock(!next);
+        } catch (rollbackError) {
+          logError('Rolling back privacy.blockScreenshots native state failed', rollbackError);
+        }
+        throw error;
+      }
       setEnabledState(next);
     },
     [db],

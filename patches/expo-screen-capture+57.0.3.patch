@@ -77,18 +77,20 @@ index e76da2f..96d944f 100644
    }
  }
 diff --git a/node_modules/expo-screen-capture/build/ScreenCapture.d.ts b/node_modules/expo-screen-capture/build/ScreenCapture.d.ts
-index 1be8349..05e645c 100644
+index 1be8349..6dbdb95 100644
 --- a/node_modules/expo-screen-capture/build/ScreenCapture.d.ts
 +++ b/node_modules/expo-screen-capture/build/ScreenCapture.d.ts
-@@ -66,6 +66,15 @@ export declare function enableAppSwitcherProtectionAsync(blurIntensity?: number)
+@@ -66,6 +66,17 @@ export declare function enableAppSwitcherProtectionAsync(blurIntensity?: number)
   * @platform ios
   */
  export declare function disableAppSwitcherProtectionAsync(): Promise<void>;
 +/**
 + * solo-plus-us-app patch (new function, not upstream): hides the Recent
 + * Apps thumbnail without blocking screenshots/recording elsewhere in the
-+ * app. Throws `UnavailabilityError` below Android 13 or on iOS/web,
-+ * where the native function doesn't exist.
++ * app. Below Android 13, this resolves as a no-op (the native function
++ * exists on every Android version; Kotlin's own API check is what makes
++ * it a no-op there). Throws `UnavailabilityError` on iOS/web, where the
++ * native function doesn't exist at all.
 + *
 + * @platform android
 + */
@@ -97,20 +99,23 @@ index 1be8349..05e645c 100644
   * Adds a listener that will fire whenever the user takes a screenshot while the app is foregrounded.
   *
 diff --git a/node_modules/expo-screen-capture/build/ScreenCapture.js b/node_modules/expo-screen-capture/build/ScreenCapture.js
-index 8b6d485..c38cd8d 100644
+index 8b6d485..e60d593 100644
 --- a/node_modules/expo-screen-capture/build/ScreenCapture.js
 +++ b/node_modules/expo-screen-capture/build/ScreenCapture.js
-@@ -111,6 +111,19 @@ export async function disableAppSwitcherProtectionAsync() {
+@@ -111,6 +111,22 @@ export async function disableAppSwitcherProtectionAsync() {
      }
      await ExpoScreenCapture.disableAppSwitcherProtection();
  }
 +// solo-plus-us-app patch (new function, not upstream): see the Kotlin
 +// side's doc comment (ScreenCaptureModule.kt) for why this exists
-+// separately from preventScreenCaptureAsync. Throws UnavailabilityError
-+// below Android 13 or on iOS/web, where the native function doesn't
-+// exist — callers (lib/screenMask.ts) only ever call this under an
-+// explicit Android-13+ guard, so a throw here means a genuine failure
-+// worth surfacing, not an expected path.
++// separately from preventScreenCaptureAsync. The native function is
++// registered on every Android version (Kotlin's own API-33 check makes
++// it a silent, successful no-op below that, not an error) — only on
++// iOS/web does ExpoScreenCapture.setRecentsScreenshotEnabled not exist
++// at all, which is what throws UnavailabilityError here. Callers
++// (lib/screenMask.ts) only ever call this under an explicit
++// Android-13+ guard, so that throw means a genuine failure worth
++// surfacing, not an expected path.
 +export async function setRecentsScreenshotEnabledAsync(enabled) {
 +    if (!ExpoScreenCapture.setRecentsScreenshotEnabled) {
 +        throw new UnavailabilityError('ScreenCapture', 'setRecentsScreenshotEnabledAsync');
@@ -139,22 +144,25 @@ index 31b4467..9ab3900 100644
    }
  }
 diff --git a/node_modules/expo-screen-capture/src/ScreenCapture.ts b/node_modules/expo-screen-capture/src/ScreenCapture.ts
-index d11d71b..33fe08b 100644
+index d11d71b..0f789b4 100644
 --- a/node_modules/expo-screen-capture/src/ScreenCapture.ts
 +++ b/node_modules/expo-screen-capture/src/ScreenCapture.ts
-@@ -126,6 +126,25 @@ export async function disableAppSwitcherProtectionAsync(): Promise<void> {
+@@ -126,6 +126,28 @@ export async function disableAppSwitcherProtectionAsync(): Promise<void> {
    await ExpoScreenCapture.disableAppSwitcherProtection();
  }
  
 +/**
 + * solo-plus-us-app patch (new function, not upstream): hides the Recent
 + * Apps thumbnail without blocking screenshots/recording elsewhere in the
-+ * app. Throws `UnavailabilityError` below Android 13 or on iOS/web,
-+ * where the native function doesn't exist — callers (`lib/screenMask.ts`)
-+ * only ever call this under an explicit Android-13+ guard, so a throw
-+ * here means a genuine failure worth surfacing, not an expected path.
-+ * See the Kotlin side (ScreenCaptureModule.kt) for why this exists
-+ * separately from `preventScreenCaptureAsync`.
++ * app. The native function is registered on every Android version
++ * (Kotlin's own API-33 check makes it a silent, successful no-op below
++ * that, not an error) — only on iOS/web does the native function not
++ * exist at all, which is what throws `UnavailabilityError` here.
++ * Callers (`lib/screenMask.ts`) only ever call this under an explicit
++ * Android-13+ guard, so that throw means a genuine failure worth
++ * surfacing, not an expected path. See the Kotlin side
++ * (ScreenCaptureModule.kt) for why this exists separately from
++ * `preventScreenCaptureAsync`.
 + *
 + * @platform android
 + */

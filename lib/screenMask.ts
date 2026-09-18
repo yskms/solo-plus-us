@@ -311,8 +311,17 @@ export async function applyScreenshotBlock(enabled: boolean): Promise<void> {
       return;
     }
     const key = `privacy-block-screenshots-${Date.now()}-${screenshotBlockKeyCounter++}`;
-    activeScreenshotBlockKeys.push(key);
+    // Tracked only *after* the native call actually succeeds — pushing
+    // it first would make a failed enable look identical to a
+    // successful one to the next call: on iOS the "already active"
+    // guard above would then silently no-op every retry (a key sitting
+    // in this array for an attempt that never actually landed), and on
+    // Android a later disable would try to release a key native never
+    // really held. If this call throws, the key is simply never
+    // tracked, matching D-47's rule of never claiming an untested
+    // protection is active.
     await ScreenCapture.preventScreenCaptureAsync(key);
+    activeScreenshotBlockKeys.push(key);
     return;
   }
 

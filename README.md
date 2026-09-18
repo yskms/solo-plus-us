@@ -1508,6 +1508,54 @@ API 33 未満は Recent Apps 非表示優先）は CLAUDE.md・D-47 と一致し
   エミュレータでの `setRecentsScreenshotEnabled` の効き方の違いは未確認のまま
   Known gaps に残す
 
+##### レビューで見つかり、修正したもの（2回目）
+
+コードは変更せず指摘のみを受けるレビュー。1回目の修正6件（patch のクリーン化、失敗の
+伝播、iOS 二重有効化ガード、設定画面のエラー表示、DB/Context の一本化、説明文の修正）は
+いずれも意図どおりと確認された。「失敗を呼び出し元に伝える」という1回目の修正自体が
+生んだ、新たな不整合が3件（🟡）見つかった。
+
+1. **【中】iOS で有効化が一度失敗すると、次の有効化が無反応で「成功」扱いになっていた**：
+   `applyScreenshotBlock` が `activeScreenshotBlockKeys.push(key)` を
+   `preventScreenCaptureAsync(key)` の**前**に呼んでいたため、ネイティブ呼び出しが失敗
+   しても key は配列に残ったままだった。次回の有効化はガード（`length > 0`）に引っかかり
+   ネイティブへ到達せず即座に成功扱いになる——1回目の修正（指摘4）が防ぎたかった
+   「Switch は ON なのに実際はブロックされていない」状態を、再試行の経路で再現していた。
+   `push` を `await` の**後**に移動し、失敗時は key を一切追跡しないよう修正。
+   「失敗後の再試行がネイティブまで届くこと」を確認するテストも追加した
+2. **【中】起動時の適用が失敗しても Switch は ON のまま——コメントと動作が逆だった**：
+   `contexts/ScreenshotBlock.tsx` の起動時 effect は `setEnabledState(value)` を
+   `applyScreenshotBlock(true)` より**前**に呼んでいたため、適用に失敗しても
+   `enabled` は `true` のままだった。コメントには「失敗時は switch off で表示される」と
+   書かれていたが、実際の動作は逆——iOS には Android の resume 再適用のような回復手段が
+   無いため、ON 表示のまま効いていない状態が起動のたびに続きうる。「`enabled` は DB の
+   希望ではなく、実際に適用できた状態を表す」という方針に統一し、適用が成功した場合のみ
+   `setEnabledState(true)` するよう修正
+3. **【低】DB への保存が失敗すると、ネイティブ側の変更が元に戻らなかった**：
+   `setEnabled` は `applyScreenshotBlock(next)` の成功後に `setSetting` を呼んでいるが、
+   その `setSetting`自体が失敗すると、ネイティブは `next` のまま・DB は古い値のまま、
+   という表示と実態がずれた状態が残っていた。`setSetting` 失敗時は
+   `applyScreenshotBlock(!next)` でネイティブ側を元の状態に戻してから、元の例外を
+   投げ直すよう修正（発生頻度は低いと判断しつつ対応）
+4. **【軽微】`ScreenshotBlockProvider` の `useEffect(() => {...}, [db])` は `db` が
+   途中で変わる場合を想定していないコメントが無かった**：現状 `DatabaseContext` の
+   `db` はアプリ生存中に安定しており（§8.8 Recovery bootstrap 未実装のため、DB を
+   差し替える経路自体が到達不能）、実害はまだ無いと判断——将来 Recovery bootstrap が
+   実装され `db` が差し替わるようになった場合、旧 `db` に対して有効化していたブロックが
+   ネイティブ側に残り得る点をコメントに明記するに留めた（指摘者も優先度低と同意）
+5. **【軽微】`setRecentsScreenshotEnabledAsync` のコメントが実際の挙動と逆だった**：
+   「Android 13 未満では `UnavailabilityError` を投げる」と書いていたが、実際には
+   ネイティブ関数自体は全 Android バージョンに登録されており（Kotlin 側の
+   `Build.VERSION.SDK_INT >= TIRAMISU` チェックが no-op にしているだけ）、
+   `UnavailabilityError` が投げられるのは iOS/web（ネイティブ関数が存在しない）のみ。
+   コメントを実態に合わせて修正した（`src/ScreenCapture.ts`・`build/ScreenCapture.js`・
+   `build/ScreenCapture.d.ts` の3箇所）
+
+`lib/__tests__/screenMask.test.ts` に1件追加（218件）。`tsc --noEmit`・Jest スイートは
+全て通過を確認済み。`contexts/ScreenshotBlock.tsx` 自体の単体テストは追加していない
+（`AppLockProvider` 等、他の Context も同様にテストなしという既存の方針に合わせ、
+分岐ロジックの本体は引き続き `lib/screenMask.ts` 側でテストする）。
+
 ##### Known gaps
 
 - **Activity 再生成後の再適用は未確認**：画面回転等の構成変更で Activity が再生成された

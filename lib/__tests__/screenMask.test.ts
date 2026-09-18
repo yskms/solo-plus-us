@@ -272,6 +272,19 @@ describe('applyScreenshotBlock', () => {
     await expect(applyScreenshotBlock(true)).rejects.toThrow('boom');
   });
 
+  it('on iOS, a failed enable does not block the next retry from reaching native — the key must not be tracked unless the call actually succeeded', async () => {
+    setPlatform('ios');
+    mockPreventScreenCaptureAsync.mockRejectedValueOnce(new Error('boom'));
+    await expect(applyScreenshotBlock(true)).rejects.toThrow('boom');
+
+    // If the failed attempt's key had been tracked anyway, the "already
+    // active" guard (see the test above this describe block) would make
+    // this second call a silent no-op instead of retrying.
+    mockPreventScreenCaptureAsync.mockResolvedValueOnce(undefined);
+    await applyScreenshotBlock(true);
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(2);
+  });
+
   it('disabling with nothing enabled does not call allowScreenCaptureAsync at all', async () => {
     setPlatform('ios');
     await applyScreenshotBlock(false);
