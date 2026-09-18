@@ -15,6 +15,7 @@
 - v0.10 で D-21 / D-43 から判定表の複製を削除し、正本参照に統一
 - v0.11 で D-21 から残っていた要約条件を削除（正本参照のみにする）
 - v0.12 で D-48 を追加（多言語対応をロードマップ外とするスコープ確定）
+- v0.13 で D-49 を追加（「日の切り替え時刻」設定を実装する場合の設計方針。着手時期は未定）
 
 ---
 
@@ -1535,6 +1536,106 @@ D-01 などにある「表示ラベルは i18n キー経由で別管理する」
 
 - 「i18n キー」の既存言及を根拠に、多言語対応はすでに計画済みとして進める
   — 上記の通り別概念であり、根拠にならない
+
+---
+
+## D-49 「日の切り替え時刻」設定を実装する場合の設計方針（着手時期は未定）
+
+（Health Connect の睡眠データモデル——`SleepSessionRecord` が日付ではなく開始/終了の
+瞬間を持つこと——を調べたのがきっかけで整理。実装するかどうか・いつ着手するかは
+未定だが、D-02 の不変条件を壊す案を選ばないよう、先に技術方針だけ固定しておく）
+
+**決定**
+
+「その日」の境界は引き続き**現地 00:00 固定**（D-02 / 基本設計 §4.5）とする。将来
+ユーザーが切り替え時刻（例: 4:00）を設定できるようにする場合も、
+**`occurred_local_date` は暦日のまま書き換えない**。切り替え時刻を反映した
+「活動日（activity date）」は、`occurred_local_date` / `occurred_local_time` から
+**都度導出する別概念**として扱い、DB には保存しない（切り替え時刻はユーザー設定
+1つで全行に効くため、設定変更のたびに全行を書き換えるより都度導出の方が安全）。
+
+導出式（すでに保存されている `occurred_local_date` / `occurred_local_time` だけで
+計算でき、オフセット再計算や夏時間のずれを避けられる）：
+
+```sql
+CASE WHEN occurred_local_time < :boundary
+     THEN date(occurred_local_date, '-1 day')
+     ELSE occurred_local_date
+END
+```
+
+`occurred_local_time` は `HH:MM`（ゼロ埋め、`lib/datetime.ts` の `LOCAL_TIME_RE`
+= `/^\d{2}:\d{2}$/`）で保存されている文字列なので、この比較は**文字列比較**である
+ことが前提になる。`:boundary` は必ず同じゼロ埋め `HH:MM` 形式（例: `'04:00'`、
+`'4:00'` や分数値では不可）で持つこと——形式がずれると比較が静かに壊れる。
+
+日付範囲クエリは、生の `occurred_local_date` で **上限側 (`to`) だけ +1 日**した
+`[from, to+1日]` を取得し（`idx_activities_local_date` / `idx_activities_context_date`
+はそのまま使える）、上記 CASE の結果で絞り込む。翌日 00:00〜切り替え時刻の記録が
+前日の活動日に入るため上限側の拡張が必要で、下限側を広げても該当行は絞り込みで
+全部落ちるため意味がない。
+
+**理由**
+
+- D-02 の不変条件は `local = utc + offset` で常に検証可能であること。
+  `services/importValidation.ts` の `isLocalDateTimeConsistent`
+  （`lib/datetime.ts`）が Import 時にこれを厳密に検査しており、`occurred_local_date`
+  を切り替え時刻に合わせてずらして保存すると、自分で Export したファイルを Import
+  できなくなる。`services/ExportService.ts` は保存された `occurredLocalDate` を
+  そのまま JSON 化しているため、Export の公開契約も暗黙に変わってしまう。
+- 要件定義書 §26 Performance が「月次集計・カレンダーはローカル日付列のインデックス
+  で解決する」ことを非機能要件として明記しており、`occurred_local_date` を暦日の
+  まま残して `idx_activities_local_date` / `idx_activities_context_date`
+  （`database/schema.ts`）を使い続けられる設計が要件上望ましい。
+
+**却下した案**
+
+- `occurred_local_date` を切り替え時刻に合わせてずらして保存し直す案 —
+  D-02 の不変条件・Export/Import の往復性を壊すため却下。
+
+**影響範囲（着手時に改めて grep で再確認する前提——コードは変わりうる）**
+
+- `app/(tabs)/index.tsx` と `screens/CalendarScreen.tsx` に重複している
+  `todayLocalDate()`
+- `lib/relativeDate.ts`（Today/Yesterday 表示）
+- `lib/calendarGrid.ts` の月範囲
+- `app/(tabs)/index.tsx` が呼ぶ `ActivityRepository.countActivitiesByDateRange`
+  （月集計）
+- `screens/CalendarScreen.tsx` の `findActivitiesByDateRange` 呼び出しと、取得結果を
+  `activity.occurredLocalDate` をキーに日セルへ振り分けている箇所——振り分けキーを
+  活動日に変える必要がある
+- `components/ActivityRow.tsx` と `app/activity/[id].tsx` の日付表示（どちらも
+  `activity.occurredLocalDate` をそのまま表示）——一覧は活動日、詳細は暦日、のような
+  食い違いが起きやすいので、どちらを表示するか決める必要がある
+- `app/(tabs)/index.tsx` の LAST ACTIVITY——`formatRelativeLocalDate` の `today`
+  引数だけでなく、渡している `lastActivity.occurredLocalDate` 自体も活動日に変える
+  必要がある
+
+**影響しない**
+
+- §14 の時間帯統計（循環ウィンドウ、"Most common time"）——`occurred_local_time`
+  ベースで日付非依存
+- `services/StatisticsService.ts`——全期間の件数と UTC の最古・最新時刻から平均間隔を
+  出しているだけで、日付境界に依存しない（日単位集計はまだ存在しない）
+
+**着手する場合に先に決めるべきこと**
+
+1. 要件定義書 §25 の MVP 表での位置づけ（v1.0 / v1.1 / v1.2 のどこに入れるか。
+   Health Connect 書き込み・同期設定——§18 Phase 4、§25 で v1.0 ○——との前後関係に
+   ブロック関係は無いので、どちらを先にしてもよい）
+2. 新しい設定キーを `EXPORTABLE_SETTING_KEYS`（`types/Settings.ts`, D-42）に含める
+   かどうか
+3. D-42 が `firstDayOfWeek` を初回起動時に確定させている理由（ロケール変更で過去の
+   カレンダー履歴の並びが黙って変わってはならない）と同様、切り替え時刻を変更すると
+   過去記録の「何日の活動か」が一斉に変わる——**この決定（活動日を単一の設定値から
+   都度導出し、DB には保存しない）を採る限り、これは遡及適用しかできない**。
+   「今後の記録のみに適用」したい場合は、記録ごとに切り替え時刻または活動日を保存
+   する必要があり、それは「DB には保存しない」という上記の決定そのものを見直す
+   ことになる。ここで決めるのは遡及適用を受け入れるかどうかであって、両方式の
+   選択ではない
+4. Health Connect の睡眠相関機能（要件定義書 §17/§18、§25 で v1.2 以降）とは別の
+   設計問題として切り離すこと——本項目のきっかけにはなったが、実装の必要条件では
+   ない
 
 ---
 
