@@ -50,6 +50,7 @@
         }
       ],
       "./plugins/withAndroidNoBackup.js",
+      "./plugins/withoutScreenCaptureDetectionPermissions.js",
       "expo-localization"
     ],
     "experiments": {
