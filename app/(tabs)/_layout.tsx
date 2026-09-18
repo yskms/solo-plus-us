@@ -1,16 +1,12 @@
 /**
- * UI/UX §5 Navigation: three tabs, glyphs straight from the mockup
- * (`● Today  □ Calendar  ◇ Insights`) rather than an icon library — no
- * extra dependency for this, and it matches the spec's own ASCII exactly.
+ * UI/UX §5 Navigation: three tabs (Today / Calendar / Insights).
+ * Icons use @expo/vector-icons (Ionicons), matching this team's other
+ * Expo Router apps (filto-app) instead of the mockup's raw ASCII glyphs.
  */
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Text, type ColorValue } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../constants/theme';
-
-function TabGlyph({ glyph, color }: { glyph: string; color: ColorValue }) {
-  return <Text style={{ fontSize: 18, color }}>{glyph}</Text>;
-}
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -26,15 +22,30 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Today', tabBarIcon: ({ color }) => <TabGlyph glyph="●" color={color} /> }}
+        options={{
+          title: 'Today',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'today' : 'today-outline'} size={24} color={color} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="calendar"
-        options={{ title: 'Calendar', tabBarIcon: ({ color }) => <TabGlyph glyph="□" color={color} /> }}
+        options={{
+          title: 'Calendar',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={24} color={color} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="insights"
-        options={{ title: 'Insights', tabBarIcon: ({ color }) => <TabGlyph glyph="◇" color={color} /> }}
+        options={{
+          title: 'Insights',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={24} color={color} />
+          ),
+        }}
       />
     </Tabs>
   );

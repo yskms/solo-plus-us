@@ -8,6 +8,7 @@ import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
@@ -79,7 +80,7 @@ export default function TodayScreen() {
             accessibilityRole="button"
             accessibilityLabel="Settings"
           >
-            <Text style={[styles.settingsIcon, { color: colors.textPrimary }]}>⚙</Text>
+            <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
           </Pressable>
         </View>
         <Text style={[styles.dateLine, { color: colors.textSecondary }]}>{weekdayHeader()}</Text>
@@ -130,7 +131,7 @@ export default function TodayScreen() {
         accessibilityRole="button"
         accessibilityLabel="Record activity"
       >
-        <IntersectPlus size={26} />
+        <IntersectPlus size={26} tint="#FFFFFF" />
       </Pressable>
     </SafeAreaView>
   );
@@ -141,7 +142,6 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, paddingBottom: 120, gap: spacing.md },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   appName: { fontSize: 22, fontWeight: '700' },
-  settingsIcon: { fontSize: 22 },
   dateLine: { fontSize: 14 },
   card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: spacing.md, gap: spacing.sm },
   sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
