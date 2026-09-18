@@ -1461,6 +1461,37 @@ iOS はこれと事情が異なる：App Switcher のマスクは `enableAppSwit
 App Switcher スナップショットは、この限界の範囲内にある既知の制限として受け入れる
 （パッチや回避を試みない）。
 
+**追記（2026-09-18、ユーザーからのフィードバックにより決定2を撤回）**
+
+**決定2（iOS でもスクリーンショット・画面収録をブロックする）を撤回し、オプトインに変更する。**
+
+Google Health など同種のアプリはスクリーンショットを禁止していない。本人が自分のデータを
+スクリーンショットしたい正当な理由（長期グラフの保存、医師への共有、バグ報告、端末間の
+一時的な共有）は多くあり、これを一律に禁止するのは「Your intimate life belongs to you」
+というブランド思想（本人のデータに対する自由）とも矛盾する。プライバシー保護の目的は
+Recent Apps プレビューのような**意図しない露出を防ぐこと**であり、本人が意図して行う
+操作まで制限する理由にはならない。
+
+**新しい決定**：
+
+| 保護 | 既定 | 設定可否 |
+|---|---|---|
+| Recent Apps／App Switcher プレビュー非表示 | 常時オン | 不可（決定1は維持） |
+| スクリーンショット・画面収録のブロック | OFF | 可（`privacy.blockScreenshots`、UI/UX §17 PRIVACY「Block Screenshots」） |
+
+**Android の技術的制約**：この2つを分離する OS API（`Activity.setRecentsScreenshotEnabled`）は
+Android 13（API 33）以降にしか存在しない。API 33 未満では `FLAG_SECURE` しか手段が無く、
+これは決定2以前と同じ「分離できない副作用」のまま——Recent Apps 非表示を優先し、
+`privacy.blockScreenshots` は実質 ON 固定（無効化不可）として受け入れる
+（ユーザーと相談のうえ決定。CLAUDE.md にも記録）。API 33 以降は `expo-screen-capture` への
+自前パッチ（`patches/expo-screen-capture+*.patch`）で `setRecentsScreenshotEnabled` を追加し、
+Recent Apps 非表示とスクリーンショットブロックを実際に分離した。iOS は元々
+`enableAppSwitcherProtectionAsync()`/`preventScreenCaptureAsync()` が独立しているため、
+コード変更は「常時呼んでいたものをオプトインに変える」だけで済む。
+
+詳細な実装（`lib/screenMask.ts`・`contexts/ScreenshotBlock.tsx`・
+`app/settings/block-screenshots.tsx`）は README「Phase 3 実装状況 > 画面マスク」を参照。
+
 ---
 
 ## 実装着手の前提条件

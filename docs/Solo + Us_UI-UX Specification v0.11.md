@@ -819,6 +819,7 @@ PRIVACY
 
 App Lock                         >
 Hide App Preview                 >
+Block Screenshots                >
 
 
 HEALTH

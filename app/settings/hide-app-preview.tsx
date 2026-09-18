@@ -6,6 +6,13 @@
  * App Lock's own enabled/disabled setting), so this screen states what's
  * always active rather than offering anything to configure.
  *
+ * 2026-09-18: this screen used to also claim screenshots/screen
+ * recordings are always blocked — no longer true (CLAUDE.md「スクリーン
+ * ショットに関する方針」). Screenshot blocking is now `settings/
+ * block-screenshots.tsx`'s opt-in toggle, except on Android below API 33
+ * where the two still can't be separated (see `lib/screenMask.ts`) — the
+ * copy below only asserts what's actually still unconditional here.
+ *
  * Does not simply assert the protection is on — `useScreenMask()` at the
  * app root never reports whether it actually succeeded (unavailable
  * device, or the native call itself rejecting or silently no-op'ing —
@@ -19,10 +26,13 @@
  * D-47 — this is not a claim the code below is in a position to make).
  */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { attemptScreenMask, type ScreenMaskResult } from '../../lib/screenMask';
+
+/** Below API 33, Android has no OS API to separate the two (see lib/screenMask.ts) — screenshots stay blocked as a side effect there, unlike everywhere else where it's now settings/block-screenshots.tsx's opt-in. */
+const ANDROID_LEGACY_FORCED_ON = Platform.OS === 'android' && Platform.Version < 33;
 
 export default function HideAppPreviewScreen() {
   const { colors } = useTheme();
@@ -61,8 +71,9 @@ export default function HideAppPreviewScreen() {
           </View>
           {result?.active === true && (
             <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              Solo + Us always hides your records from the app switcher and blocks screenshots — this can&apos;t be
-              turned off.
+              Solo + Us always hides your records from the app switcher — this can&apos;t be turned off.
+              {ANDROID_LEGACY_FORCED_ON &&
+                ' On this version of Android, that also blocks screenshots and screen recordings as a side effect.'}
             </Text>
           )}
           {result?.active === false && (
@@ -72,12 +83,20 @@ export default function HideAppPreviewScreen() {
 
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>WHAT THIS DOES</Text>
+          {/* Deliberately not gated on ANDROID_LEGACY_FORCED_ON (the
+              *current* device) — this is reference text describing both
+              Android cases, not a statement about this specific device.
+              Gating it would show an iOS reader an incomplete "Android"
+              description (only the API 33+ half). */}
           <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            On Android, the Recent Apps preview is replaced with a blank screen, and screenshots and screen
-            recordings are blocked.
+            On Android 13 and later, the Recent Apps preview is replaced with a blank screen, and screenshots and
+            screen recordings are allowed unless you turn on Block Screenshots. On Android 12 and earlier, hiding
+            the Recent Apps preview requires blocking screenshots and screen recordings too, so Block Screenshots
+            can&apos;t be turned off there.
           </Text>
           <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            On iOS, the app switcher preview is blurred, and screenshots and screen recordings are blocked.
+            On iOS, the app switcher preview is blurred. Screenshots and screen recordings are allowed unless you
+            turn on Block Screenshots.
           </Text>
         </View>
       </ScrollView>

@@ -1377,6 +1377,228 @@ AppState リスナーのコメント参照）。
   今回未確認**：起動できることの確認が主目的だったため、Recent Apps でのマスク自体の
   見た目は別途確認が必要
 
+#### スクリーンショット方針の反転（6回目、`phase3/screenshot-policy` ブランチ）
+
+2026-09-18、ユーザーからのフィードバックで決定2（スクリーンショット・画面収録を iOS でも
+常時ブロックする）を撤回した——CLAUDE.md「スクリーンショットに関する方針」・設計判断記録
+D-47 の追記参照。Google Health のような同種のアプリはスクリーンショットを禁止しておらず、
+本人が自分のデータをスクショしたい正当な理由（長期グラフの保存、医師への共有、バグ報告、
+端末間の一時共有）を一律に奪うのは「Your intimate life belongs to you」という思想と矛盾する、
+というのが理由。決定1（Recent Apps／App Switcher プレビュー非表示は常時オン）は変更なし。
+
+新しい既定：
+
+| 保護 | 既定 | 設定可否 |
+|---|---|---|
+| Recent Apps／App Switcher プレビュー非表示 | 常時オン | 不可 |
+| スクリーンショット・画面収録のブロック | OFF | 可（Settings > PRIVACY > Block Screenshots） |
+
+##### Android の技術的制約と対応
+
+この2つを分離する OS API（`Activity.setRecentsScreenshotEnabled`）は Android 13（API 33）
+以降にしか存在しない。API 33 未満では `FLAG_SECURE` しか手段が無く、Recent Apps 非表示を
+有効にすると必ずスクリーンショットも道連れでブロックされる——ユーザーと相談のうえ、この
+OS バージョン帯では Recent Apps 非表示を優先し、「Block Screenshots」は実質 ON 固定
+（無効化不可）として受け入れた。
+
+API 33 以降向けに、`node_modules/expo-screen-capture` へ `patch-package`
+（新規 devDependency、`postinstall` に追加）で新規ネイティブ関数
+`setRecentsScreenshotEnabled` を追加した（`patches/expo-screen-capture+57.0.3.patch`、
+Android 14 起動時クラッシュ修正のパッチに追記する形）：`Activity
+.setRecentsScreenshotEnabled(false)` を呼ぶだけで、Recent Apps のサムネイルだけを
+無効化し、スクリーンショット・画面収録には一切影響しない。Kotlin 側
+（`ScreenCaptureModule.kt`）・JS 側（`build/ScreenCapture.js`/`.d.ts`、コンパイル済みの
+方を編集——`src/*.ts` は Metro が読まない、Android 14 クラッシュ調査で判明した教訓を
+再利用）の両方にパッチを追加。
+
+##### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `types/Settings.ts`/`services/SettingsRepository.ts` | `privacy.blockScreenshots`（既定 `false`、`DEVICE_OWNED_SETTING_KEYS`——App Lock と同じ端末ローカルのセキュリティ設定、Export 対象外） |
+| `lib/screenMask.ts` | 大幅に再構成。常時オン経路（`attemptScreenMask`/`useScreenMask`/`handleAppStateChangeForReapply`）は Recent Apps／App Switcher 非表示のみに専念——iOS は `enableAppSwitcherProtectionAsync` のみ、Android は API 33+ で `setRecentsScreenshotEnabledAsync(false)`、API 33 未満は従来の `preventScreenCaptureAsync`（`FLAG_SECURE`、副作用としてスクリーンショットも道連れ）。新規 `applyScreenshotBlock`/`useScreenshotBlock` がオプトイン設定を担当——有効化のたびに新しい key を発行して追跡し、無効化時に発行済みの**すべての** key を解放する（`expo-screen-capture` の `activeTags` の仕組み上、1つでも残ると二度と `allowScreenCapture()` に到達できなくなるため）。Android 未満 API 33 では常時経路が既にブロックしているため no-op |
+| `contexts/ScreenshotBlock.tsx`（新規） | `privacy.blockScreenshots` の DB 読み込みと `useScreenshotBlock` への橋渡し。`AppLockProvider` と同じ「DB の値と React state を明示的に同期する」パターンだが、設定画面はすでに知っている新しい値をそのまま渡せるため DB 再読み込み（`refreshXxx`）は不要 |
+| `app/settings/block-screenshots.tsx`（新規） | Settings > PRIVACY の新規行。Android API 33 未満では Switch を ON 固定・操作不可にし、理由を明示する文言を表示 |
+| `app/settings/index.tsx`/`app/settings/hide-app-preview.tsx` | 新規行の追加、および「常時ブロックする」という古い説明文をバージョン別の正確な説明に修正 |
+| `app/_layout.tsx` | `ScreenshotBlockProvider` を `DatabaseProvider` の内側（`AppLockProvider` の外側）に追加。`useScreenMask`（常時オン経路）は DB 不要のため従来通り `DatabaseProvider` の外側のまま |
+| 設計判断記録 D-47・UI/UX §17 | 決定2の撤回を追記。UI/UX §17 のモックアップに「Block Screenshots」の行を追加 |
+
+##### テスト
+
+`lib/__tests__/screenMask.test.ts` を全面的に書き直し（25件）：`attemptScreenMask` の
+OS・Android API レベルによる分岐（iOS は switcher のみ／Android 33+ は
+`setRecentsScreenshotEnabledAsync` のみ／33 未満は `FLAG_SECURE`）、
+`handleAppStateChangeForReapply` の API レベル別の再適用方式、新規
+`applyScreenshotBlock`（有効化のたびの新規 key 発行、無効化時の全 key 解放、33 未満での
+no-op）、`useScreenshotBlock`（`enabled` 変化での適用、Android での「有効時のみ」再適用、
+iOS では購読しないこと）。`tsc --noEmit`・Jest スイート（215件）は全て通過を確認済み。
+
+##### 実機確認（Android）
+
+Pixel 11（API 34+、arm64-v8a）で確認。Settings > PRIVACY に「Block Screenshots」行が
+既定 OFF で追加されていること、その状態で実際にスクリーンショットが撮れること
+（＝分離前の「常時ブロック」ではなくなったこと）、ON にすると撮れなくなること、OFF に
+戻すと再び撮れるようになること、この間 Recent Apps のサムネイルは常に非表示のままである
+こと、いずれも確認済み。`setRecentsScreenshotEnabled` による分離が実機で意図どおり機能
+している。Activity 再生成後の再適用（構成変更時）は今回未確認。
+
+##### レビューで見つかり、修正したもの
+
+コードは変更せず指摘のみを受けるレビュー。Android の設計方針自体（API 33+ で分離、
+API 33 未満は Recent Apps 非表示優先）は CLAUDE.md・D-47 と一致していると確認された。
+
+1. **【重大】`patches/expo-screen-capture+57.0.3.patch` がブランチごとに異なり、
+   `fix/screen-mask-android14-registercallback`・`phase3/datetime-edit` の版には
+   Gradle のビルド成果物（`.dex`・`results.bin` 等のバイナリ、181件）が混入していた**：
+   実機ビルドを試した際に `node_modules/expo-screen-capture/android/build/` へ生成された
+   Gradle の中間出力を、`npx patch-package expo-screen-capture` がそのまま差分として
+   拾ってしまっていた（`.gitignore` は関係ない——patch-package は関知しない）。
+   クリーンな `npm ci` 環境（EAS 含む）には `android/build` が存在しないため、この
+   汚れたパッチが当たると不要なバイナリが書き込まれる、または適用自体が失敗する
+   おそれがある（未検証）。`rm -rf node_modules/expo-screen-capture/android/{build,.gradle,.cxx}`
+   で成果物を削除し、`--exclude "android/build|android/.gradle|android/.cxx"` を付けて
+   再生成——170行のクリーンな内容になった。3ブランチすべてで作り直した
+2. **【重大】`setRecentsScreenshotEnabled` の失敗が握りつぶされ、`attemptScreenMask()` が
+   常に `{ active: true }` を返していた**：新規追加した Kotlin 側の `AsyncFunction` が
+   `try/catch` で例外を `Log.e` に変換しており、JS 側の `preventScreenCaptureAsync` 同様
+   reject されるべきものが、成功として resolve されていた。JS 側の
+   `setRecentsScreenshotEnabledAsync` も、ネイティブ関数が無い場合に無言で `return`
+   していた（他の関数は `UnavailabilityError` を投げる）。どちらも「確認できていない
+   保護を表示しない」という D-47 の原則に反する後退——`preventScreenCaptureAsync` は
+   元々 reject をそのまま返していた。Kotlin 側の `try/catch` を削除して例外を素通しし、
+   JS 側は `UnavailabilityError` を投げるよう修正——`isRegistered`/`registerCallback`
+   （画面マスクの起動時クラッシュ修正、別関数）の意図的な握り潰しとは無関係で、あちらは
+   そのまま維持
+3. **【中】iOS で無効化を挟まずに `applyScreenshotBlock(true)` を2回呼ぶと、ネイティブの
+   レイヤー階層が壊れる**：`preventScreenshots()`（iOS）を2回連続で呼ぶと
+   `originalParent` が上書きされ復元不能になる問題（ファイル冒頭のコメントに以前から
+   明記）に、今回追加したテスト自身が正常系として抵触していた（本番経路では
+   `useEffect([enabled])` の変化時にしか呼ばれず到達しにくいが、StrictMode の
+   effect 二重実行等で将来踏みうる）。iOS では `activeScreenshotBlockKeys` が空でない
+   （＝既に有効）ときは何もせず戻るガードを追加。テストも Android 側のシナリオに
+   差し替え、iOS 専用に「2回目はネイティブへ到達しないこと」を確認するテストを追加した
+4. **【中】ネイティブ呼び出しが失敗しても Settings の Switch が ON のまま**：
+   `contexts/ScreenshotBlock.tsx` は DB への `setSetting` 成功後に `applyEnabled` を
+   呼ぶだけで、その先の `applyScreenshotBlock` が失敗しても `logError` に残るだけ
+   だった。`lib/screenMask.ts` の `applyScreenshotBlock` 自身の内部 `try/catch` を除去
+   して例外を呼び出し元へ伝播させ（自動再適用パス側——`useScreenshotBlock` の
+   Android resume・起動時の初回適用——は各呼び出し側で `catch` するよう変更）、
+   `ScreenshotBlockProvider.setEnabled` が `applyScreenshotBlock` を先に `await` し、
+   失敗したら DB 保存も `enabled` の更新もせずそのまま `throw` するよう修正。
+   設定画面（`block-screenshots.tsx`）は `setEnabled` を呼んで失敗を検知し
+   `Alert.alert` を表示する——Switch は Context の `enabled`（更新されていない）に
+   直結しているため、追加のロールバック処理なしで自然に元の値へ戻る
+5. **【軽微】Provider と設定画面が別々に DB を読んでいた**：4の修正と合わせて
+   `contexts/ScreenshotBlock.tsx` を `enabled` の唯一の正本にし、設定画面は自前の
+   `getSetting`/`setSetting` 呼び出しをやめて Context 経由に統一した
+6. **【軽微】`hide-app-preview.tsx` の「WHAT THIS DOES」の説明文が、閲覧している
+   端末によって内容が変わっていた**：Android の説明文が `ANDROID_LEGACY_FORCED_ON`
+   （＝今動いている端末の API レベル）で分岐していたため、iOS 端末で読むと
+   「Android では常に screenshots allowed」という、API 33 未満の制約を欠いた説明に
+   なっていた。この参考説明は「今の端末で何が起きるか」ではなく「Android 全般で何が
+   起きるか」を伝えるべき箇所のため、分岐をやめて両方のケースを常に説明するよう修正
+   （デバイス依存の分岐は、チェックマーク直下の「今の端末で実際どうなっているか」の
+   文言にのみ残した）
+- **`patch-package` が `devDependencies` にある点**：`npm ci --omit=dev` では
+  `postinstall` が走らずパッチが当たらない。EAS Build の既定設定はこれに該当しない
+  ため対応不要と判断（指摘者も同意）
+- **iOS・Android 13/14 の実機検証範囲**：iOS は実機ビルド自体が現状できない
+  （CLAUDE.md 参照）。Android は Pixel 11 のみで確認——他の Android 13/14 端末や
+  エミュレータでの `setRecentsScreenshotEnabled` の効き方の違いは未確認のまま
+  Known gaps に残す
+
+##### レビューで見つかり、修正したもの（2回目）
+
+コードは変更せず指摘のみを受けるレビュー。1回目の修正6件（patch のクリーン化、失敗の
+伝播、iOS 二重有効化ガード、設定画面のエラー表示、DB/Context の一本化、説明文の修正）は
+いずれも意図どおりと確認された。「失敗を呼び出し元に伝える」という1回目の修正自体が
+生んだ、新たな不整合が3件（🟡）見つかった。
+
+1. **【中】iOS で有効化が一度失敗すると、次の有効化が無反応で「成功」扱いになっていた**：
+   `applyScreenshotBlock` が `activeScreenshotBlockKeys.push(key)` を
+   `preventScreenCaptureAsync(key)` の**前**に呼んでいたため、ネイティブ呼び出しが失敗
+   しても key は配列に残ったままだった。次回の有効化はガード（`length > 0`）に引っかかり
+   ネイティブへ到達せず即座に成功扱いになる——1回目の修正（指摘4）が防ぎたかった
+   「Switch は ON なのに実際はブロックされていない」状態を、再試行の経路で再現していた。
+   `push` を `await` の**後**に移動し、失敗時は key を一切追跡しないよう修正。
+   「失敗後の再試行がネイティブまで届くこと」を確認するテストも追加した
+2. **【中】起動時の適用が失敗しても Switch は ON のまま——コメントと動作が逆だった**：
+   `contexts/ScreenshotBlock.tsx` の起動時 effect は `setEnabledState(value)` を
+   `applyScreenshotBlock(true)` より**前**に呼んでいたため、適用に失敗しても
+   `enabled` は `true` のままだった。コメントには「失敗時は switch off で表示される」と
+   書かれていたが、実際の動作は逆——iOS には Android の resume 再適用のような回復手段が
+   無いため、ON 表示のまま効いていない状態が起動のたびに続きうる。「`enabled` は DB の
+   希望ではなく、実際に適用できた状態を表す」という方針に統一し、適用が成功した場合のみ
+   `setEnabledState(true)` するよう修正
+3. **【低】DB への保存が失敗すると、ネイティブ側の変更が元に戻らなかった**：
+   `setEnabled` は `applyScreenshotBlock(next)` の成功後に `setSetting` を呼んでいるが、
+   その `setSetting`自体が失敗すると、ネイティブは `next` のまま・DB は古い値のまま、
+   という表示と実態がずれた状態が残っていた。`setSetting` 失敗時は
+   `applyScreenshotBlock(!next)` でネイティブ側を元の状態に戻してから、元の例外を
+   投げ直すよう修正（発生頻度は低いと判断しつつ対応）
+4. **【軽微】`ScreenshotBlockProvider` の `useEffect(() => {...}, [db])` は `db` が
+   途中で変わる場合を想定していないコメントが無かった**：現状 `DatabaseContext` の
+   `db` はアプリ生存中に安定しており（§8.8 Recovery bootstrap 未実装のため、DB を
+   差し替える経路自体が到達不能）、実害はまだ無いと判断——将来 Recovery bootstrap が
+   実装され `db` が差し替わるようになった場合、旧 `db` に対して有効化していたブロックが
+   ネイティブ側に残り得る点をコメントに明記するに留めた（指摘者も優先度低と同意）
+5. **【軽微】`setRecentsScreenshotEnabledAsync` のコメントが実際の挙動と逆だった**：
+   「Android 13 未満では `UnavailabilityError` を投げる」と書いていたが、実際には
+   ネイティブ関数自体は全 Android バージョンに登録されており（Kotlin 側の
+   `Build.VERSION.SDK_INT >= TIRAMISU` チェックが no-op にしているだけ）、
+   `UnavailabilityError` が投げられるのは iOS/web（ネイティブ関数が存在しない）のみ。
+   コメントを実態に合わせて修正した（`src/ScreenCapture.ts`・`build/ScreenCapture.js`・
+   `build/ScreenCapture.d.ts` の3箇所）
+
+`lib/__tests__/screenMask.test.ts` に1件追加（218件）。`tsc --noEmit`・Jest スイートは
+全て通過を確認済み。`contexts/ScreenshotBlock.tsx` 自体の単体テストは追加していない
+（`AppLockProvider` 等、他の Context も同様にテストなしという既存の方針に合わせ、
+分岐ロジックの本体は引き続き `lib/screenMask.ts` 側でテストする）。
+
+Pixel 11 で正常系の回帰確認済み：今回の修正はいずれも失敗時の経路のみを変更しており
+（実機で意図的にネイティブ呼び出しを失敗させる手段は無いため、その分岐自体は上記の
+Jest テストで検証）、Kotlin 側は無変更のため再ビルド不要——Metro のリロードのみで
+確認。Block Screenshots の ON/OFF・実際のスクリーンショット許可/ブロックの切り替え・
+Recent Apps サムネイルの非表示継続、いずれも1回目のレビュー後の確認と同じく問題なし。
+
+##### レビューで見つかり、修正したもの（3回目）
+
+A〜E の対応（2回目のレビュー）はいずれも意図どおりと確認された。A の修正自体が、
+新しい問題を1件生んでいた。
+
+1. **【中】有効化が一度失敗すると、そのセッション中は二度と無効化できなくなっていた**：
+   `expo-screen-capture` 自身の `preventScreenCaptureAsync`/`allowScreenCaptureAsync`
+   は内部で `activeTags` という `Set` を管理しており、**ネイティブ呼び出しの前に**
+   key をこの `Set` へ追加し、失敗時にもロールバックしない（このファイル冒頭のコメントに
+   常時オン経路向けとして以前から記載されていた、まさにその挙動）。2回目のレビューで
+   「失敗した key は追跡しない」よう修正したが、`expo-screen-capture` 側の `activeTags`
+   には失敗した key がそのまま残ってしまう——このアプリの追跡配列を空にしても、SDK 内部
+   の `Set` は空にならないため、`allowScreenCaptureAsync` の `activeTags.size === 0`
+   判定が成立せず、`allowScreenCapture()`（ネイティブの解除）に二度と到達しなくなる。
+   具体的には「有効化 → 自動再適用が失敗（例: `MissingActivity`） → 次の再適用は成功 →
+   無効化」という手順で、Switch は OFF 表示になってもスクリーンショットは
+   ブロックされたまま、アプリ再起動まで戻らない。`preventScreenCaptureAsync` が失敗した
+   場合、同じ key で `allowScreenCaptureAsync` を呼んで SDK 側の `Set` からも即座に
+   解放するよう修正——ネイティブの `preventScreenCapture()` 自体は失敗時点ではまだ
+   フラグを立てていないと考えられるため、直後の `allowScreenCapture()` 呼び出しは
+   無害な空振りになる
+2. 通常のモック（1回・成功/失敗を直接返すだけ）ではこの `activeTags` の状態遷移を
+   再現できず、1〜2回目のレビューのテストでは検出できなかった——`activeTags` 相当の
+   `Set` を自前で管理する専用モックを新設し、「失敗 → 成功 → 無効化」の手順で実際に
+   ネイティブの allow に到達することを確認するテストを追加した（2件）
+
+`lib/__tests__/screenMask.test.ts` に2件追加（220件）。`tsc --noEmit`・Jest スイートは
+全て通過を確認済み。Kotlin・patch には触れていないため実機再確認は省略——Jest が通れば
+十分と判断（レビューでもこの判断が示された）。
+
+##### Known gaps
+
+- **Activity 再生成後の再適用は未確認**：画面回転等の構成変更で Activity が再生成された
+  直後に、Recent Apps 非表示・オプトインのスクリーンショットブロックのどちらも正しく
+  再適用されるかは実機で確認していない
+- **iOS は実機未確認**（CLAUDE.md 参照、Xcode 26.3 のコンパイラ不具合で `expo run:ios`
+  自体ができない）
+
 ### 日時編集 UI
 
 `phase3/datetime-edit` ブランチ。基本設計 §18 の Phase 3 順序に従い、画面マスクの次
