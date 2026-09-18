@@ -50,7 +50,7 @@
  *    `AsyncFunction` は例外を投げないため、promise は成功として resolve
  *    される——「resolve した」ことは「実際に保護が有効になった」ことの
  *    証明にはならない。`useScreenMask()` を `RootLayout` で `loaded`
- *    （フォント読み込み完了・スプラッシュ非表示後）を待ってから呼ぶことで
+ *    （フォント読み込み完了・スプラッシュ非表示直前）を待ってから呼ぶことで
  *    この窓を狭めているが、JS からこれを完全に検証する手段は無い——
  *    `isAvailableAsync()` もネイティブ関数の存在確認のみで、この種の
  *    タイミング起因の失敗は検出しない。`{ active: true }` は
@@ -60,13 +60,43 @@
  * Android の `FLAG_SECURE` は `currentActivity.window` 単位で設定される
  * ため、`configChanges` で吸収されない構成変更で Activity が再生成される
  * と保護が失われ、再適用されない（起動時に一度呼ぶだけでは「常時オン」の
- * 保証にならない）。`useScreenMask()` は Android に限り、`AppState` が
+ * 保証にならない）。`useScreenMask()` は **Android に限り**、`AppState` が
  * `active` に戻るたびに**新しい key**で `preventScreenCaptureAsync` を
  * 呼び直す——`attemptScreenMask()` 自身のキャッシュは意図的にバイパスする
  * （そちらは「起動時に一度確認した結果」を表すためのものであり、この
- * 再適用は別の目的を持つ）。iOS の `enableAppSwitcherProtection()` は
- * モジュールインスタンス（プロセス寿命）に紐づく NotificationCenter
- * 監視であり、Activity 相当の再生成は無いためこの再適用は不要。
+ * 再適用は別の目的を持つ）。
+ *
+ * **iOS へこの再適用ロジックを広げてはならない——「不要」ではなく「有害」**
+ * （2回目のレビューで発見）：iOS の `enableAppSwitcherProtection()` は
+ * モジュールインスタンス（プロセス寿命）に紐づく NotificationCenter 監視
+ * であり Activity 相当の再生成は無いため「不要」という以上に、
+ * `preventScreenCaptureAsync`（内部で `preventScreenshots()` を呼ぶ）を
+ * 2回目以降に呼ぶと壊れる。`preventScreenshots()` は毎回新しい secure
+ * `UITextField` を作り、`originalParent = keyWindow.layer.superlayer` を
+ * 記録してから `keyWindow.layer` をその `UITextField` のレイヤの下へ
+ * 再親付けする。1回目の呼び出しで `keyWindow.layer` は既に1つ目の
+ * `UITextField` のレイヤの下にあるため、2回目の呼び出しの時点で
+ * `keyWindow.layer.superlayer` は「本来の親」ではなく「1回目の
+ * `UITextField` のレイヤ」を指している——`originalParent` がそれで
+ * 上書きされ、`allowScreenshots()` を呼んでも本来の親には戻らない
+ * （壊れたレイヤ階層のまま復元不能になる）。iOS 分岐にこの再適用処理を
+ * 足したくなっても、絶対に行わないこと。
+ *
+ * **既知の限界（README・設計判断記録 D-47 にも記載）**
+ * - `preventScreenCaptureAsync` に渡す再適用ごとの key は `allowScreenCaptureAsync`
+ *   で回収されない（このアプリは一度も呼ばない）ため、Android の
+ *   `activeTags` は `active` に戻るたびに増え続ける一方通行になる。現状の
+ *   設計（常時オン、無効化しない）では実害は無いばかりか望ましい方向だが、
+ *   将来「一時的に許可する」機能が必要になった場合、この `Set` が空になる
+ *   ことは二度と無いため `allowScreenCaptureAsync` はネイティブへ到達
+ *   しなくなる——設計上の既知の一方通行として記録しておく。
+ * - Activity が再生成されてから、この `AppState` リスナーが発火し非同期の
+ *   ネイティブ呼び出しが着地するまでの間は `FLAG_SECURE` が外れている。
+ *   この窓は JS からは詰められない。
+ * - `attemptScreenMask()` はメモ化されているため、`hide-app-preview.tsx`
+ *   が表示するのは起動時一度きりの結果である。この再適用（`active` 復帰
+ *   のたびの再試行）が後から失敗しても、`logError` に残るだけで設定画面
+ *   の表示（✓ のまま）には一切反映されない。
  */
 import { useEffect } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
@@ -146,18 +176,27 @@ export function __resetScreenMaskForTests(): void {
  * still called unconditionally (Rules of Hooks) — only the effect inside
  * is gated on `ready`.
  */
+/**
+ * Extracted so it's directly testable (see `lib/__tests__/screenMask.test.ts`)
+ * without needing to drive the whole `useScreenMask` effect lifecycle for
+ * this part specifically. A fresh, timestamp-based key every call is
+ * deliberate — see this file's doc comment on why reusing a key would
+ * silently short-circuit and never reach native again.
+ */
+export function handleAppStateChangeForReapply(next: AppStateStatus): void {
+  if (next !== 'active') return;
+  ScreenCapture.preventScreenCaptureAsync(`screen-mask-reapply-${Date.now()}`).catch((error) =>
+    logError('preventScreenCaptureAsync (reapply on resume) failed', error),
+  );
+}
+
 export function useScreenMask(ready: boolean): void {
   useEffect(() => {
     if (!ready) return;
     attemptScreenMask();
 
     if (Platform.OS !== 'android') return;
-    const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
-      if (next !== 'active') return;
-      ScreenCapture.preventScreenCaptureAsync(`screen-mask-reapply-${Date.now()}`).catch((error) =>
-        logError('preventScreenCaptureAsync (reapply on resume) failed', error),
-      );
-    });
+    const subscription = AppState.addEventListener('change', handleAppStateChangeForReapply);
     return () => subscription.remove();
   }, [ready]);
 }

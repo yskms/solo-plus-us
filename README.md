@@ -1196,13 +1196,60 @@ AppState リスナーのコメント参照）。
      （このアプリの中核である op-sqlite・expo-local-authentication 自体が web で動作
      しないため、実質的に到達しない経路）
 
+#### レビューで見つかり、修正したもの（3回目）
+
+1回目・2回目の判断（メモ化で再試行を諦める、iOS のぼかしは別 VC を覆えないので回避せず
+記録に残す）は妥当と確認された。新たに1件（高）と、2回目の修正に伴う残課題が見つかった。
+
+1. **【高】新規 plugin の READ_EXTERNAL_STORAGE 除去が expo-file-system の宣言も
+   消してしまう**：`plugins/withoutScreenCaptureDetectionPermissions.js` は
+   `READ_EXTERNAL_STORAGE` を「`expo-screen-capture` だけが持ち込むもの」として
+   除去していたが、`expo-file-system`（`android/src/main/AndroidManifest.xml`）も
+   同じ `android.permission.READ_EXTERNAL_STORAGE`（maxSdk 32）を宣言していた。
+   `uses-permission` のマージキーは `android:name` のみのため、`tools:node="remove"`
+   は属性を問わずマッチし、`expo-file-system` 側の宣言も道連れにする——実際に
+   `expo prebuild --platform android` した生成マニフェストで、同じパーミッションに
+   対する `tools:replace` 付きの宣言と `tools:node="remove"` が並ぶ自己矛盾した状態を
+   確認した。`READ_EXTERNAL_STORAGE` を `PERMISSIONS_TO_REMOVE` から外した——
+   `android:maxSdkVersion="32"` 付きのため Android 13+ では要求されず、ストア表示上の
+   実害も小さい。`READ_MEDIA_IMAGES`/`DETECT_SCREEN_CAPTURE` は `expo-screen-capture`
+   のみが宣言しており、この衝突は無い（生成マニフェストで確認済み）。再度
+   `expo prebuild` を実行し、衝突が解消されたことを確認した
+2. **【中】Android 再適用の残課題、4点とも文書化**：
+   - `activeTags` が `active` 復帰のたびに増え続ける一方通行であること
+     （`allowScreenCaptureAsync` を一度も呼ばない現在の設計では実害は無いが、
+     将来「一時的に許可」が必要になった際に必ず踏む）
+   - iOS へこの再適用ロジックを広げてはならない理由を「不要」から「有害」に
+     強化——`preventScreenshots()`（`ScreenCaptureModule.swift`）を2回目以降呼ぶと、
+     `originalParent` が「本来の親」ではなく「前回作った `UITextField` のレイヤ」で
+     上書きされ、復元不能なレイヤ階層になることをコードで確認した
+   - Activity 再生成後、`AppState` リスナーが発火してネイティブ呼び出しが着地する
+     までの窓は `FLAG_SECURE` が外れていること（JS からは詰められない制約）
+   - `attemptScreenMask()` がメモ化されているため、この再適用が後から失敗しても
+     `hide-app-preview.tsx` の表示（✓）には一切反映されないこと
+   いずれも `lib/screenMask.ts` のコメントと設計判断記録 D-47 に明記した
+3. **【低】その他まとめて対応**：
+   - `plugins/withoutScreenCaptureDetectionPermissions.js` を冪等にした（既存の
+     remove エントリがあれば追加しない——`android/` を残したまま `--clean` 無しで
+     `expo prebuild` を再実行しても重複しない）
+   - `lib/__tests__/screenMask.test.ts` に `useScreenMask` 自体のテストを追加
+     （`react-test-renderer` を新規 devDependency として導入——Android では
+     `AppState.addEventListener`/`remove` が呼ばれること、iOS では一切呼ばれない
+     こと、`ready` が false の間は何もしないこと。既存8件と合わせて13件）。
+     `handleAppStateChangeForReapply` を独立した関数として切り出し、`active` 以外を
+     無視すること・毎回新しい key を使うことも直接テストした
+   - `loaded` のタイミングに関するコード内コメントの言い回しを README に揃えた
+     （「スプラッシュ非表示後」ではなく「非表示直前」——`_layout.tsx` の実際の
+     effect 登録順序に合わせた表現。挙動上の問題は無い）
+
 #### テスト
 
 `expo-screen-capture` 自体（実際のネイティブ呼び出し）は Jest では検証できない——
-`connection.ts`・`RecoveryService.ts` と同じ制約。`attemptScreenMask()` の分岐
-（`isAvailableAsync`/`preventScreenCaptureAsync`/`enableAppSwitcherProtectionAsync` それぞれの
-成功・失敗、プラットフォーム分岐、メモ化）は `jest.mock('expo-screen-capture')` で
-検証済み（`lib/__tests__/screenMask.test.ts`、8件）。
+`connection.ts`・`RecoveryService.ts` と同じ制約。`attemptScreenMask()` の分岐、
+`handleAppStateChangeForReapply`、`useScreenMask`（Android/iOS でのプラットフォーム分岐、
+`ready` ゲート、`AppState` の購読・unmount 時の unsubscribe）は
+`jest.mock('expo-screen-capture')` + `react-test-renderer` で検証済み
+（`lib/__tests__/screenMask.test.ts`、13件）。
 
 #### Known gaps
 
@@ -1212,6 +1259,8 @@ AppState リスナーのコメント参照）。
   サムネイルの空白化、両 OS でのスクリーンショット・画面収録のブロック、Android の
   Activity 再生成後の再適用、`plugins/withoutScreenCaptureDetectionPermissions.js` の
   Gradle マニフェストマージ後の最終結果は、いずれも実機・実ビルドでしか確認できない
+  （マニフェストの `tools:node="remove"` 自体は `expo prebuild` の実行で生成内容を
+  確認済み——上記1回目・3回目のレビュー参照——が、Gradle が実際にどうマージするかは別）
 - **スクリーンショットブロックと Recent Apps マスクが Android で分離できない**：
   要求されているのは「バックグラウンド移行時のマスク」だが、Android では
   `preventScreenCaptureAsync()` が唯一の関連 API であり、これがスクリーンショット
@@ -1230,3 +1279,13 @@ AppState リスナーのコメント参照）。
   返すため `hide-app-preview.tsx` は赤い「!」を表示するが、op-sqlite・
   expo-local-authentication 自体が web で動作せずこの画面まで到達できないため、
   実質的に問題にならない想定——明示的な web 対応は行っていない
+- **Android の `activeTags` が一方通行で増え続ける**：`allowScreenCaptureAsync` を
+  一度も呼ばない現在の設計（常時オン）では実害は無いが、将来「一時的に許可する」
+  機能が必要になった場合、この `Set` は空にならないため `allowScreenCaptureAsync`
+  がネイティブへ到達しなくなる（設計判断記録 D-47 参照）
+- **Activity 再生成後の再適用には着地までの窓がある**：新しい Activity が描画されて
+  から `AppState` リスナーが発火し非同期のネイティブ呼び出しが着地するまで、
+  `FLAG_SECURE` は外れたまま。JS からは詰められない制約
+- **再適用の失敗は設定画面に反映されない**：`attemptScreenMask()` がメモ化されている
+  ため、`hide-app-preview.tsx` が表示するのは起動時一度きりの結果。Activity 再生成後の
+  再適用が失敗しても `logError` に残るだけで画面表示（✓ のまま）には反映されない
