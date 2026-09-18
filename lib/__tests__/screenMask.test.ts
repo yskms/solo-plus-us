@@ -7,6 +7,13 @@
  * （`AppState` の購読・`active` 以外は無視・key でメモ化をバイパスする・
  * unmount 時の unsubscribe）だけであり、モックした関数が実機で本当に
  * 同じ形で動くかは実機でしか確認できない。
+ *
+ * `react-test-renderer` は React 19 で公式に非推奨だが、`useScreenMask`
+ * 自体（副作用・購読・unmount のクリーンアップ）を検証するにはコンポーネント
+ * をマウントする必要があり、react/react-native と同じバージョンで既に
+ * 依存ツリーに存在する分だけ `@testing-library/react-native` を新規追加
+ * するより軽いと判断した。この用途以外に広げず、他のテストが同様の理由で
+ * 増えるようなら `@testing-library/react-native` への移行を検討する。
  */
 import React from 'react';
 import { act, create } from 'react-test-renderer';
@@ -127,6 +134,11 @@ describe('handleAppStateChangeForReapply', () => {
     // failed attempt silently short-circuit to success on retry (see this
     // file's doc comment / attemptScreenMask's memoization).
     expect(firstKey).not.toBe('default');
+    // The two keys must actually differ — two calls landing in the same
+    // millisecond would otherwise collide on Date.now() alone, which is
+    // exactly why handleAppStateChangeForReapply also appends a monotonic
+    // counter.
+    expect(firstKey).not.toBe(secondKey);
   });
 });
 
@@ -150,17 +162,23 @@ describe('useScreenMask', () => {
   });
 
   it('does nothing until ready is true', () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    const addSpy = jest.spyOn(AppState, 'addEventListener');
+
     let renderer: ReturnType<typeof create>;
     act(() => {
       renderer = create(React.createElement(TestHost, { ready: false }));
     });
     expect(mockIsAvailableAsync).not.toHaveBeenCalled();
+    expect(addSpy).not.toHaveBeenCalled(); // the ready gate must also hold off the AppState subscription, not just attemptScreenMask
+
     act(() => {
       renderer.unmount();
     });
+    addSpy.mockRestore();
   });
 
-  it('on Android, subscribes to AppState and unsubscribes on unmount', () => {
+  it('on Android, subscribes to AppState with handleAppStateChangeForReapply itself and unsubscribes on unmount', () => {
     Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
     const addSpy = jest.spyOn(AppState, 'addEventListener');
     const removeSpy = jest.fn();
@@ -170,7 +188,11 @@ describe('useScreenMask', () => {
     act(() => {
       renderer = create(React.createElement(TestHost, { ready: true }));
     });
-    expect(addSpy).toHaveBeenCalledWith('change', expect.any(Function));
+    // The exact handler, not just "some function" — pins the subscription
+    // to handleAppStateChangeForReapply specifically, so swapping in an
+    // inline closure with different (or missing) reapply behavior would
+    // fail this test.
+    expect(addSpy).toHaveBeenCalledWith('change', handleAppStateChangeForReapply);
 
     act(() => {
       renderer.unmount();

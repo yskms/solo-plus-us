@@ -161,6 +161,26 @@ export function __resetScreenMaskForTests(): void {
   memoizedAttempt = null;
 }
 
+let reapplyKeyCounter = 0;
+
+/**
+ * Extracted so it's directly testable (see `lib/__tests__/screenMask.test.ts`)
+ * without needing to drive the whole `useScreenMask` effect lifecycle for
+ * this part specifically. A fresh key every call is deliberate — see this
+ * file's doc comment on why reusing a key would silently short-circuit
+ * and never reach native again. `Date.now()` alone is millisecond-
+ * precision, not guaranteed unique if `active` somehow fires twice within
+ * the same millisecond (unlikely in practice, but a monotonic counter
+ * suffix costs nothing and removes the possibility entirely rather than
+ * leaving it as a theoretical gap).
+ */
+export function handleAppStateChangeForReapply(next: AppStateStatus): void {
+  if (next !== 'active') return;
+  ScreenCapture.preventScreenCaptureAsync(`screen-mask-reapply-${Date.now()}-${reapplyKeyCounter++}`).catch((error) =>
+    logError('preventScreenCaptureAsync (reapply on resume) failed', error),
+  );
+}
+
 /**
  * Fire-and-forget setup, called once app startup has reached `ready` —
  * see `attemptScreenMask` for the version that reports its own result,
@@ -176,20 +196,6 @@ export function __resetScreenMaskForTests(): void {
  * still called unconditionally (Rules of Hooks) — only the effect inside
  * is gated on `ready`.
  */
-/**
- * Extracted so it's directly testable (see `lib/__tests__/screenMask.test.ts`)
- * without needing to drive the whole `useScreenMask` effect lifecycle for
- * this part specifically. A fresh, timestamp-based key every call is
- * deliberate — see this file's doc comment on why reusing a key would
- * silently short-circuit and never reach native again.
- */
-export function handleAppStateChangeForReapply(next: AppStateStatus): void {
-  if (next !== 'active') return;
-  ScreenCapture.preventScreenCaptureAsync(`screen-mask-reapply-${Date.now()}`).catch((error) =>
-    logError('preventScreenCaptureAsync (reapply on resume) failed', error),
-  );
-}
-
 export function useScreenMask(ready: boolean): void {
   useEffect(() => {
     if (!ready) return;

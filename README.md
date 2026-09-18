@@ -1289,3 +1289,25 @@ AppState リスナーのコメント参照）。
 - **再適用の失敗は設定画面に反映されない**：`attemptScreenMask()` がメモ化されている
   ため、`hide-app-preview.tsx` が表示するのは起動時一度きりの結果。Activity 再生成後の
   再適用が失敗しても `logError` に残るだけで画面表示（✓ のまま）には反映されない
+
+#### レビューで見つかり、修正したもの（4回目）
+
+【高】は解消確認のみで、残りは全て低優先度。
+
+- **再適用 key がミリ秒精度で衝突しうる**：`screen-mask-reapply-${Date.now()}` は同一
+  ミリ秒内に `active` が2回発火すると同じ key になり、2回目が SDK 側の `activeTags`
+  で短絡してネイティブに到達しなくなる——まさにこの仕組みを避けるために新しい key を
+  使っている箇所なので、本末転倒になる。モノトニックなカウンタを付与し
+  （`${Date.now()}-${counter++}`）、テストも「2つの key が実際に異なること」を
+  アサートするよう強化した（以前は文字列パターンの一致しか見ていなかった）
+- **JSDoc が2つ連なって `handleAppStateChangeForReapply` に付き、`useScreenMask` 自身には
+  無かった**：関数切り出し時の取り残し。`useScreenMask` 用のコメントを正しい位置へ移動
+- **`react-test-renderer` のバージョン指定・非推奨の扱い**：`^19.2.3` を `19.2.3`
+  （`react`/`react-dom` と同じ固定バージョン）に変更。React 19 で公式に非推奨である旨と、
+  `@testing-library/react-native` より依存が軽いという導入判断の理由をテストファイルの
+  冒頭コメントに残した
+- **テストの強化**：`toHaveBeenCalledWith('change', expect.any(Function))` を
+  `handleAppStateChangeForReapply` そのものを渡す形に変更（インラインの別関数へ
+  差し替わる回帰を拾えるように）。「`ready` が false の間は何もしない」テストに
+  `AppState.addEventListener` 未呼び出しの確認も追加（`attemptScreenMask` 側だけでなく
+  購読自体もゲートされていることを固定）
