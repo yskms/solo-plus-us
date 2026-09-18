@@ -5,21 +5,27 @@
  * あるため、`DatabaseProvider` の外側で呼ばれる `useScreenMask()`（`app/_layout.tsx`）
  * とは別に、DB にアクセスできるこの Provider の内側で管理する。
  *
- * `AppLockProvider`（`refreshAppLockSettings`）と同じ「DB の値と React
- * state を明示的に同期する」パターンだが、設定画面側は保存する値を
- * すでに知っているため、DB 再読み込みではなく直接 `setEnabled` で即時反映
- * する（`refreshXxx()` 相当は不要）。
+ * この Context が `enabled` の唯一の正本——`app/settings/block-screenshots.tsx`
+ * は自分で DB を読み直さず、ここから読む（読み取り元が2つあると値がずれる
+ * 余地があるため、レビューで指摘）。
+ *
+ * `setEnabled` は `applyScreenshotBlock` を待ち、失敗したら例外をそのまま
+ * 呼び出し元（設定画面）に伝える——ネイティブ側の適用に失敗したのに DB へ
+ * 保存し「オンになった」と表示するのは、D-47 の「確認できていない保護を
+ * 表示しない」という原則に反する（レビューで指摘）。適用が成功した場合のみ
+ * DB へ保存し、`enabled` を更新する。
  */
-import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useDatabase } from './DatabaseContext';
-import { getSetting } from '../services/SettingsRepository';
-import { useScreenshotBlock } from '../lib/screenMask';
+import { getSetting, setSetting } from '../services/SettingsRepository';
+import { applyScreenshotBlock, useScreenshotBlock } from '../lib/screenMask';
 import { logError } from '../lib/log';
 
 interface ScreenshotBlockContextValue {
   enabled: boolean;
-  /** Applies immediately (via `useScreenshotBlock`) — callers still separately persist the value with `setSetting`. */
-  setEnabled: (next: boolean) => void;
+  loaded: boolean;
+  /** Applies natively first — throws on failure without touching the persisted setting or `enabled`, so a failed change never gets reported as saved. */
+  setEnabled: (next: boolean) => Promise<void>;
 }
 
 const ScreenshotBlockContext = createContext<ScreenshotBlockContextValue | null>(null);
@@ -32,18 +38,50 @@ export function useScreenshotBlockSetting(): ScreenshotBlockContextValue {
 
 export function ScreenshotBlockProvider({ children }: { children: ReactNode }) {
   const db = useDatabase();
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabledState] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    getSetting(db, 'privacy.blockScreenshots')
-      .then(setEnabled)
-      .catch((error) => logError('Loading privacy.blockScreenshots failed', error));
+    let cancelled = false;
+    (async () => {
+      let value = false;
+      try {
+        value = await getSetting(db, 'privacy.blockScreenshots');
+      } catch (error) {
+        logError('Loading privacy.blockScreenshots failed', error);
+      }
+      if (cancelled) return;
+      setEnabledState(value);
+      setLoaded(true);
+      if (value) {
+        // Best-effort at startup — no UI is waiting on this specific
+        // call, unlike setEnabled below. A failure here just means the
+        // Settings screen (once visited) shows the switch off from the
+        // next attempt, rather than a silently-not-actually-blocking on.
+        try {
+          await applyScreenshotBlock(true);
+        } catch (error) {
+          logError('Applying privacy.blockScreenshots at startup failed', error);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [db]);
 
-  // Applies on mount (once the setting above has loaded) and keeps
-  // reapplying on Android across Activity recreation for as long as
-  // `enabled` is true — see lib/screenMask.ts's useScreenshotBlock.
+  // Keeps it reapplied on Android across Activity recreation for as
+  // long as `enabled` is true — see lib/screenMask.ts's useScreenshotBlock.
   useScreenshotBlock(enabled);
 
-  return <ScreenshotBlockContext.Provider value={{ enabled, setEnabled }}>{children}</ScreenshotBlockContext.Provider>;
+  const setEnabled = useCallback(
+    async (next: boolean) => {
+      await applyScreenshotBlock(next); // throws on failure — caller (Settings screen) handles it, nothing persisted below if so
+      await setSetting(db, 'privacy.blockScreenshots', next);
+      setEnabledState(next);
+    },
+    [db],
+  );
+
+  return <ScreenshotBlockContext.Provider value={{ enabled, loaded, setEnabled }}>{children}</ScreenshotBlockContext.Provider>;
 }

@@ -9,47 +9,34 @@
  * of the always-on Recent Apps protection. The switch there is locked
  * on, with copy explaining why, rather than offering a toggle that
  * wouldn't actually do anything.
+ *
+ * Reads/writes through `useScreenshotBlockSetting()` rather than its own
+ * `getSetting`/`setSetting` calls — `contexts/ScreenshotBlock.tsx` is the
+ * single source of truth for the current value (see that file's doc
+ * comment on why a second DB read here would risk drifting from it).
  */
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
-import { useDatabase } from '../../contexts/DatabaseContext';
 import { useScreenshotBlockSetting } from '../../contexts/ScreenshotBlock';
-import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { logError } from '../../lib/log';
 
 const ANDROID_LEGACY_FORCED_ON = Platform.OS === 'android' && Platform.Version < 33;
 
 export default function BlockScreenshotsSettingsScreen() {
   const { colors } = useTheme();
-  const db = useDatabase();
-  const { setEnabled: applyEnabled } = useScreenshotBlockSetting();
-
-  const [enabled, setEnabledState] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const { enabled, loaded, setEnabled } = useScreenshotBlockSetting();
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    const value = await getSetting(db, 'privacy.blockScreenshots');
-    setEnabledState(value);
-    setLoaded(true);
-  }, [db]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
 
   const persist = async (next: boolean) => {
     setBusy(true);
     try {
-      await setSetting(db, 'privacy.blockScreenshots', next);
-      setEnabledState(next);
-      applyEnabled(next);
+      await setEnabled(next);
     } catch (error) {
+      // `enabled` was never updated on failure (see ScreenshotBlock.tsx),
+      // so the Switch — bound directly to it — naturally reverts to the
+      // last actually-applied value without any extra state here.
       logError('Saving privacy.blockScreenshots failed', error);
       Alert.alert('Could not save', 'Please try again.');
     } finally {

@@ -287,29 +287,38 @@ export function useScreenMask(ready: boolean): void {
 let activeScreenshotBlockKeys: string[] = [];
 let screenshotBlockKeyCounter = 0;
 
+/**
+ * Deliberately does NOT catch its own failures — unlike the always-on
+ * path (`attemptScreenMask`), this is called both from a place that
+ * needs to know about failure (`contexts/ScreenshotBlock.tsx`'s
+ * `setEnabled`, which must not tell the Settings screen "saved" when the
+ * native call actually failed — D-47: never claim a protection is
+ * active without a genuine confirmed attempt) and from places that are
+ * intentionally best-effort (the initial apply at startup, and Android's
+ * resume reapply below) — those call sites catch and log around their
+ * own calls instead.
+ */
 export async function applyScreenshotBlock(enabled: boolean): Promise<void> {
   if (Platform.OS !== 'ios' && !isAndroidRecentsApiAvailable()) return;
 
   if (enabled) {
+    if (Platform.OS === 'ios' && activeScreenshotBlockKeys.length > 0) {
+      // Already active — must never call preventScreenCaptureAsync (→
+      // preventScreenshots()) a second time without disabling first, see
+      // file doc comment on the broken layer hierarchy this causes on
+      // iOS. Only Android's resume reapply needs a fresh key on every
+      // "still enabled" call; iOS never needs reapplying at all.
+      return;
+    }
     const key = `privacy-block-screenshots-${Date.now()}-${screenshotBlockKeyCounter++}`;
     activeScreenshotBlockKeys.push(key);
-    try {
-      await ScreenCapture.preventScreenCaptureAsync(key);
-    } catch (error) {
-      logError('preventScreenCaptureAsync (privacy.blockScreenshots) failed', error);
-    }
+    await ScreenCapture.preventScreenCaptureAsync(key);
     return;
   }
 
   const keys = activeScreenshotBlockKeys;
   activeScreenshotBlockKeys = [];
-  await Promise.all(
-    keys.map((key) =>
-      ScreenCapture.allowScreenCaptureAsync(key).catch((error) =>
-        logError('allowScreenCaptureAsync (privacy.blockScreenshots) failed', error),
-      ),
-    ),
-  );
+  await Promise.all(keys.map((key) => ScreenCapture.allowScreenCaptureAsync(key)));
 }
 
 /** Only for tests that need a clean slate between cases. */
@@ -318,29 +327,34 @@ export function __resetScreenshotBlockForTests(): void {
 }
 
 /**
- * Wires `privacy.blockScreenshots` to `applyScreenshotBlock`, including
- * reapplying it on Android after Activity recreation while the setting
- * is on — same concern as `useScreenMask`'s own reapply, same reason
- * this must never run on iOS (see file doc comment). `enabled` is read
- * through a ref inside the AppState listener so the listener always
- * reads the latest value without needing to resubscribe on every change
- * (same pattern `contexts/AppLock.tsx` uses for its own AppState
- * listener).
+ * Keeps `privacy.blockScreenshots` reapplied on Android after Activity
+ * recreation, for as long as `enabled` is true — same concern as
+ * `useScreenMask`'s own reapply, same reason this must never run on iOS
+ * (see file doc comment). Best-effort: catches and logs its own
+ * failures rather than propagating them, since there's no UI in this
+ * path to report to (contrast `contexts/ScreenshotBlock.tsx`'s
+ * `setEnabled`, which lets `applyScreenshotBlock` throw so the Settings
+ * screen can react).
+ *
+ * Does NOT apply the initial value on mount — that's the caller's job
+ * (`contexts/ScreenshotBlock.tsx`, which needs to know if it succeeded).
+ * `enabled` is read through a ref inside the AppState listener so the
+ * listener always reads the latest value without needing to resubscribe
+ * on every change (same pattern `contexts/AppLock.tsx` uses for its own
+ * AppState listener).
  */
 export function useScreenshotBlock(enabled: boolean): void {
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
   useEffect(() => {
-    applyScreenshotBlock(enabled);
-  }, [enabled]);
-
-  useEffect(() => {
     if (Platform.OS !== 'android') return;
     const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (next !== 'active') return;
       if (!enabledRef.current) return;
-      applyScreenshotBlock(true);
+      applyScreenshotBlock(true).catch((error) =>
+        logError('applyScreenshotBlock (reapply on resume) failed', error),
+      );
     });
     return () => subscription.remove();
   }, []);

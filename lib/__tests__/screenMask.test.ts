@@ -237,8 +237,11 @@ describe('applyScreenshotBlock', () => {
     expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
   });
 
-  it('disabling releases every key issued while enabled, not just the latest', async () => {
-    setPlatform('ios');
+  it('on Android, disabling releases every key issued while enabled, not just the latest', async () => {
+    // Android is the only platform where a second `true` call while
+    // already enabled actually reaches native again (resume reapply) —
+    // see the iOS-specific guard test below.
+    setPlatform('android', 33);
     await applyScreenshotBlock(true);
     await applyScreenshotBlock(true); // simulates a reapply-on-resume while already enabled
     const [key1] = mockPreventScreenCaptureAsync.mock.calls[0];
@@ -249,6 +252,24 @@ describe('applyScreenshotBlock', () => {
     const releasedKeys = mockAllowScreenCaptureAsync.mock.calls.map(([key]) => key);
     expect(releasedKeys).toEqual(expect.arrayContaining([key1, key2]));
     expect(releasedKeys).toHaveLength(2);
+  });
+
+  it('on iOS, a second enable call while already enabled never reaches native — calling preventScreenCaptureAsync twice without disabling breaks the layer hierarchy (see file doc comment)', async () => {
+    setPlatform('ios');
+    await applyScreenshotBlock(true);
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+
+    await applyScreenshotBlock(true); // must be a no-op, not a fresh key
+    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+
+    await applyScreenshotBlock(false);
+    expect(mockAllowScreenCaptureAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates a native failure to the caller instead of swallowing it — callers that need to know (contexts/ScreenshotBlock.tsx) rely on this', async () => {
+    setPlatform('ios');
+    mockPreventScreenCaptureAsync.mockRejectedValue(new Error('boom'));
+    await expect(applyScreenshotBlock(true)).rejects.toThrow('boom');
   });
 
   it('disabling with nothing enabled does not call allowScreenCaptureAsync at all', async () => {
@@ -357,31 +378,30 @@ describe('useScreenshotBlock', () => {
     Object.defineProperty(Platform, 'Version', { value: originalVersion, configurable: true });
   });
 
-  it('applies the initial value on mount', () => {
+  it('does not apply anything on mount — the initial value is the caller’s (ScreenshotBlockProvider’s) job', () => {
     setPlatform('ios');
     act(() => {
       create(React.createElement(TestHost, { enabled: true }));
     });
-    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
   });
 
-  it('re-applies when the enabled prop changes', () => {
+  it('does not apply anything when the enabled prop changes — only ScreenshotBlockProvider.setEnabled applies user-driven changes', () => {
     setPlatform('ios');
     let renderer: ReturnType<typeof create>;
     act(() => {
       renderer = create(React.createElement(TestHost, { enabled: false }));
     });
-    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
 
     act(() => {
       renderer.update(React.createElement(TestHost, { enabled: true }));
     });
-    expect(mockPreventScreenCaptureAsync).toHaveBeenCalledTimes(1);
+    expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
 
     act(() => {
       renderer.update(React.createElement(TestHost, { enabled: false }));
     });
-    expect(mockAllowScreenCaptureAsync).toHaveBeenCalledTimes(1);
+    expect(mockAllowScreenCaptureAsync).not.toHaveBeenCalled();
   });
 
   it('on Android, reapplies on resume only while enabled is true', () => {

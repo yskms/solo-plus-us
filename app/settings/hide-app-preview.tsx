@@ -83,11 +83,16 @@ export default function HideAppPreviewScreen() {
 
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>WHAT THIS DOES</Text>
+          {/* Deliberately not gated on ANDROID_LEGACY_FORCED_ON (the
+              *current* device) — this is reference text describing both
+              Android cases, not a statement about this specific device.
+              Gating it would show an iOS reader an incomplete "Android"
+              description (only the API 33+ half). */}
           <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            On Android, the Recent Apps preview is replaced with a blank screen.
-            {ANDROID_LEGACY_FORCED_ON
-              ? ' On this version of Android, screenshots and screen recordings are also blocked, as a side effect that can’t be turned off separately.'
-              : ' Screenshots and screen recordings are allowed unless you turn on Block Screenshots.'}
+            On Android 13 and later, the Recent Apps preview is replaced with a blank screen, and screenshots and
+            screen recordings are allowed unless you turn on Block Screenshots. On Android 12 and earlier, hiding
+            the Recent Apps preview requires blocking screenshots and screen recordings too, so Block Screenshots
+            can&apos;t be turned off there.
           </Text>
           <Text style={[styles.caption, { color: colors.textTertiary }]}>
             On iOS, the app switcher preview is blurred. Screenshots and screen recordings are allowed unless you
