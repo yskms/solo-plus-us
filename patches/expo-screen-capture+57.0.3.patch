@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt b/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt
-index e76da2f..a63060e 100644
+index e76da2f..2e1b127 100644
 --- a/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt
 +++ b/node_modules/expo-screen-capture/android/src/main/java/expo/modules/screencapture/ScreenCaptureModule.kt
 @@ -92,6 +92,25 @@ class ScreenCaptureModule : Module() {
@@ -15,7 +15,7 @@ index e76da2f..a63060e 100644
 +    // screenshots allowed" instead of blocking both. No-op below API 33,
 +    // where no such split API exists — callers must fall back to
 +    // preventScreenCapture there (see lib/screenMask.ts).
-+    AsyncFunction<Unit>("setRecentsScreenshotEnabled") { enabled: Boolean ->
++    AsyncFunction("setRecentsScreenshotEnabled") { enabled: Boolean ->
 +      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 +        try {
 +          currentActivity.setRecentsScreenshotEnabled(enabled)

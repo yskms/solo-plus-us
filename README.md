@@ -1434,10 +1434,19 @@ OS・Android API レベルによる分岐（iOS は switcher のみ／Android 33
 no-op）、`useScreenshotBlock`（`enabled` 変化での適用、Android での「有効時のみ」再適用、
 iOS では購読しないこと）。`tsc --noEmit`・Jest スイート（215件）は全て通過を確認済み。
 
+##### 実機確認（Android）
+
+Pixel 11（API 34+、arm64-v8a）で確認。Settings > PRIVACY に「Block Screenshots」行が
+既定 OFF で追加されていること、その状態で実際にスクリーンショットが撮れること
+（＝分離前の「常時ブロック」ではなくなったこと）、ON にすると撮れなくなること、OFF に
+戻すと再び撮れるようになること、この間 Recent Apps のサムネイルは常に非表示のままである
+こと、いずれも確認済み。`setRecentsScreenshotEnabled` による分離が実機で意図どおり機能
+している。Activity 再生成後の再適用（構成変更時）は今回未確認。
+
 ##### Known gaps
 
-- **実機での動作確認が未実施**：`setRecentsScreenshotEnabled` が実機（Android 13+）で
-  「Recent Apps のサムネイルは隠れるがスクリーンショットは撮れる」という分離を実際に
-  実現するか、Activity 再生成後の再適用が着地するかは未確認
+- **Activity 再生成後の再適用は未確認**：画面回転等の構成変更で Activity が再生成された
+  直後に、Recent Apps 非表示・オプトインのスクリーンショットブロックのどちらも正しく
+  再適用されるかは実機で確認していない
 - **iOS は実機未確認**（CLAUDE.md 参照、Xcode 26.3 のコンパイラ不具合で `expo run:ios`
   自体ができない）
