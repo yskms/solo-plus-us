@@ -8,7 +8,9 @@
  * Rule: Solo / Partnered must never be distinguished by color alone. Always
  * pair a color with a label or icon (see §3 "Semantic usage").
  */
+import { useContext } from 'react';
 import { useColorScheme } from 'react-native';
+import { AppearanceContext } from './appearanceContext';
 
 export interface ThemeColors {
   solo: string;
@@ -40,6 +42,19 @@ export interface ThemeColors {
   destructive: string;
 }
 
+/**
+ * `background` below is hand-synced in two other places that can't import
+ * this file — `app.json`'s top-level `backgroundColor` (light only; the
+ * splash/root native background) and, for `darkColors.background`,
+ * `plugins/withAndroidNightColors.js`'s `DARK_ACTIVITY_BACKGROUND` (see
+ * that file's doc comment for why: Android's `windowBackground` needs a
+ * `values-night/` value of its own, generated at `expo prebuild` time from
+ * a plain string constant, not read from here at build time). Changing
+ * either color means updating both spots, or the two fall out of sync
+ * silently (README "Phase 3 実装状況 > Appearance" has the story on why
+ * this mismatch matters — it's the root cause behind a real
+ * screen-transition bug, not just cosmetic).
+ */
 export const lightColors: ThemeColors = {
   solo: '#2E7D6B',
   partnered: '#F4A699',
@@ -63,7 +78,7 @@ export const darkColors: ThemeColors = {
   partneredStrong: '#F0B2A6',
   intersection: '#7FB3A6',
 
-  background: '#121615',
+  background: '#121615', // plugins/withAndroidNightColors.js の DARK_ACTIVITY_BACKGROUND と同期させること
   surface: '#1B211F',
 
   textPrimary: '#F2F4F3',
@@ -102,7 +117,14 @@ export const radius = {
 /** Minimum touch target from §23 Accessibility. */
 export const minTouchTarget = 44;
 
+/**
+ * `preferences.appearance` (`AppearanceContext`) overrides the OS scheme
+ * when set to `'light'`/`'dark'`; `'system'` or no provider mounted yet
+ * (see `contexts/Appearance.tsx`) falls back to `useColorScheme()`.
+ */
 export function useTheme(): { colors: ThemeColors; scheme: 'light' | 'dark' } {
-  const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const osScheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const override = useContext(AppearanceContext)?.appearance ?? 'system';
+  const scheme = override === 'system' ? osScheme : override;
   return { colors: scheme === 'dark' ? darkColors : lightColors, scheme };
 }

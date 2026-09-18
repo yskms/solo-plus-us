@@ -11,6 +11,9 @@
  * Screenshots" is a real opt-in toggle (default off), added 2026-09-18
  * when always-on screenshot blocking was reversed to opt-in — see
  * CLAUDE.md's「スクリーンショットに関する方針」and `lib/screenMask.ts`.
+ * PREFERENCES has only "Appearance" — §17's mockup also lists First Day of
+ * Week / Time Format there, but those aren't built yet, so (same rule as
+ * above) they don't get placeholder rows.
  */
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -63,6 +66,9 @@ export default function SettingsIndexScreen() {
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
         <SettingsGroup rows={[{ label: 'Export & Import', onPress: () => router.push('/settings/data') }]} />
+
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PREFERENCES</Text>
+        <SettingsGroup rows={[{ label: 'Appearance', onPress: () => router.push('/settings/appearance') }]} />
       </ScrollView>
     </SafeAreaView>
   );

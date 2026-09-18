@@ -42,3 +42,14 @@
 OS バージョン帯では「Recent Apps 非表示」を優先し、副作用として「Block Screenshots」
 設定が事実上 ON 固定（無効化不可）になることを受け入れる方針とした（2026-09-18）。
 詳細は README「Phase 3 実装状況 > 画面マスク」参照。
+
+### Android のダーク/ライト切替まわりの落とし穴
+
+画面遷移中に一瞬見える帯や、テーマ切替の反映漏れは `contentStyle`（React Navigation
+の各画面コンテナ）や `useColorScheme()` のオーバーライドだけでは直らないことがある。
+原因はそれより下のネイティブ層（`android:windowBackground`、`AppCompatDelegate` の
+Day/Night モード、ステータスバー）にあることが多く、`values-night/colors.xml` や
+`Appearance.setColorScheme()`、`expo-system-ui` での対応が必要になる。色の定数は
+`constants/theme.ts`・`plugins/withAndroidNightColors.js`・`app.json` の3箇所に
+手動同期が必要（自動参照する手段が無い）。詳細と発見の経緯は README「Phase 3
+実装状況 > Appearance」参照。

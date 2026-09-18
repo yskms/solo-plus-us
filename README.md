@@ -1783,3 +1783,156 @@ Partnered の通常記録、いずれも問題なし。iOS は上記「iOS ロ�
   既に保存時に確定した値であり、区切り時刻を後から変えると過去データの再計算が必要になる
   点も含めて検討が要る。今回は実装せず、次の設計判断記録レビュー時の検討事項として記録する
   のみ
+
+### Appearance
+
+UI/UX §17 PREFERENCES「Appearance」。ダーク/ライトの描画自体は Phase 1 から
+`constants/theme.ts`（OS の `useColorScheme()` に追従）で実装済みで、DB スキーマにも
+`preferences.appearance`（`'system'|'light'|'dark'`）が既にあった。未実装だったのは
+Settings 画面での切替 UI のみ。
+
+`contexts/Appearance.tsx`（`AppearanceProvider`、`useAppearanceSetting`）が
+`preferences.appearance` の読み書きを担い、`constants/theme.ts` の `useTheme()` は
+`'system'` 以外が選ばれていれば OS のダーク/ライト判定を上書きする。
+`app/settings/appearance.tsx` が System/Light/Dark を選ぶ新画面、`app/settings/index.tsx`
+に PREFERENCES セクションと Appearance 行を追加した（§17 モックの First Day of Week /
+Time Format は未実装のため、他の未実装セクションと同じ理由でプレースホルダー行は置いていない）。
+
+#### 循環インポートによるクラッシュ（実機で発見、修正済み）
+
+初回実装では `AppearanceContext` を `contexts/Appearance.tsx` に直接定義し、
+`constants/theme.ts` がそこから import していた。これが
+`theme.ts → contexts/Appearance.tsx → contexts/DatabaseContext.tsx → constants/theme.ts`
+という循環 import を作ってしまい、実機（Android, Pixel 11）で起動直後に
+`RecoveryScreen.tsx` の `StyleSheet.create({ ... spacing.md ... })` が
+`Cannot read property 'md' of undefined` で落ちた——循環の途中で読み込まれた時点では
+`theme.ts` の `spacing` エクスポートがまだ未初期化だったため。
+`AppearanceContext` の定義だけを依存の無い独立ファイル `constants/appearanceContext.ts`
+に切り出し、`theme.ts`・`contexts/Appearance.tsx` の両方がそこから読む形にして解消した。
+
+#### React Navigation のヘッダーがテーマに追従していなかった（実機で発見、修正済み）
+
+`app/_layout.tsx` の `<Stack>` はヘッダー用の `screenOptions` を渡しておらず、
+React Navigation のデフォルト（常にライト配色）のままだった。画面の中身は
+`useTheme()` で正しくダーク表示されるため、Settings/Appearance 等のヘッダーバーだけ
+白く浮いた状態になる——Phase 1 から存在した見た目の不整合だが、テーマ切替が無かった
+これまでは「OS がダークならアプリ全体もダーク、ただしヘッダーだけ常に白」という状態が
+常態化しており目立たなかった。Appearance 画面を Light に切り替えた直後に実機で発覚。
+
+`<Stack>` に `headerStyle`/`headerTintColor`/`headerTitleStyle` を `useTheme()` の
+`colors` から渡すよう修正。ただしこの `useTheme()` 呼び出しは `AppearanceProvider` の
+**内側**の子コンポーネント（新設した `AppShell`）で行う必要がある——`RootLayout` 自身は
+`AppearanceProvider` の外側（`DatabaseProvider` の子として `AppearanceProvider` を
+レンダーする側）にあり、そこで直接 `useTheme()` を呼ぶと override を見つけられない
+（`DatabaseProvider` 自身が `useTheme()` を呼ぶ理由と同じ制約、
+`contexts/Appearance.tsx` の doc comment 参照）。
+
+#### 画面遷移中、右端に薄い帯が残っていた（実機レビューで発見、修正済み）
+
+上記2つの修正後も、実機で Settings 系画面をスワイプバック（または戻る）すると、
+遷移の途中で右端に薄い帯（ライト/ダーク双方の理論値とも異なる中間色）が一瞬見える
+問題が残っていた。原因はネイティブ側に2つあった。
+
+1. **`android:windowBackground` に dark 版が無い**：`android/`（`expo prebuild` で
+   都度生成、gitignore 対象）の `values/colors.xml` は `activityBackground`
+   （`AppTheme` の `windowBackground` が参照）を `#F8F7FA`（ライト）固定で定義して
+   いたが、`values-night/colors.xml` は空。`contentStyle`（各画面自身のコンテナ）は
+   両方の画面のどちらの内側にも入らない、**ウィンドウそのものの背景**までは
+   届かない——遷移中に両画面のどちらにも覆われていない領域はこのウィンドウ背景が
+   透けて見える。`plugins/withAndroidNightColors.js`（Config Plugin、
+   `withDangerousMod` で `values-night/colors.xml` を生成）を追加し、
+   `constants/theme.ts` の `darkColors.background`（`#121615`）と同じ値を
+   dark 版として与えた。
+2. **Android の Day/Night モード自体が OS 設定に固定されたまま**：(1)を直しても、
+   `AppCompatDelegate` の Day/Night モードを切り替える経路がどこにも無ければ、
+   アプリ内で Dark を選んでも Android 側は「今は昼モード」のままなので (1)の
+   dark 版リソースへ切り替わらない。`contexts/Appearance.tsx` に
+   `Appearance.setColorScheme('light'|'dark'|'unspecified')`（React Native 0.86,
+   Android 実装は `AppearanceModule.kt` 経由で
+   `AppCompatDelegate.setDefaultNightMode()` を呼ぶ）を追加し、選択が変わるたびに
+   ネイティブの Day/Night モード自体も切り替えるようにした。
+
+ここまでで帯はほぼ収まったが、実機で `adb shell screenrecord` を使い
+遷移中のフレームを抜き出して確認したところ、まだ薄いグレーの帯が数フレーム残って
+いた。原因は `AndroidManifest.xml` の `MainActivity` が
+`android:configChanges="...|uiMode|..."` を宣言していること——RN アプリでは
+システムのテーマ変更で Activity が破棄・再生成される（＝ JS ランタイムが落ちる）のを
+防ぐための標準的な設定だが、副作用として `AppCompatDelegate.setDefaultNightMode()`
+を実行時に呼んでも、**Window 自体が生成時に確定させた背景は自動では再読込されない**。
+`expo-system-ui`（インストール済み）の `SystemUI.setBackgroundColorAsync()` は
+Day/Night のテーマ解決経路を経由せず、ルートビューの背景色を直接設定するため、
+この再読込の欠落を回避できる。`AppShell` に `useTheme()` の `colors.background` が
+変わるたびに呼ぶ `useEffect` を追加し、これで解消を確認した（`screenrecord` で
+遷移を録画し `ffmpeg` でフレームを抜き出して右端の色をサンプリングし、帯が
+消えたことを数値でも確認済み）。
+
+#### ステータスバーのアイコン色が追従していなかった（実機レビューで発見、修正済み）
+
+上記の Day/Night 切り替えだけでは、ステータスバーのアイコン色（`expo-status-bar`
+が管理する、Day/Night とは別のレイヤー）は追従しない。OS がダークでアプリ内を
+Light にすると、白いアイコンが白い背景に重なって読めなくなっていた。`AppShell` に
+`<StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />` を追加して解消。
+
+#### Import（置き換え復元）後に外観が更新されない問題（実機レビューで発見、修正済み）
+
+`preferences.appearance` は `EXPORTABLE_SETTING_KEYS` に含まれるため、Import の
+置き換え復元で DB 上の値が書き換わりうる。しかし `AppearanceProvider` は元々
+`DataRevisionProvider` の外側（`app/_layout.tsx`）にあり、`useDataRevision()` の
+`revision`（Import 完了時に `bump()` される、§9 Undo のための「何か変わった」
+シグナル）を購読できず、Import 直後もアプリ再起動まで外観が古いままになる余地が
+あった。Provider の入れ子順序を `DatabaseProvider > DataRevisionProvider >
+AppearanceProvider > ...` に入れ替え、`AppearanceProvider` の DB 再読み込み
+`useEffect` の依存配列に `revision` を追加した。
+
+#### 実機確認（Android）
+
+Pixel 11（API 34+、arm64-v8a）で確認。System/Light/Dark の切替、OS がダークでも
+Light 選択時にアプリ全体（画面本体・ヘッダーバー・ステータスバー・画面遷移中の
+ネイティブ背景とも）がライト表示に上書きされること、その逆（OS ライト・アプリ内
+Dark）も同様に確認、アプリを強制終了して再起動しても選択が保持されること
+（DB 永続化）を確認済み。iOS は「iOS ローカルビルドがブロック中」（CLAUDE.md 参照）
+のため未確認——iOS 側は `Appearance.setColorScheme()` の実装が Android と異なる
+（`overrideUserInterfaceStyle` 相当のはず）ため、Android での確認だけでは
+iOS の動作を保証しない。
+
+**`System` 選択時、OS のテーマ変更後の反映も確認**（コードレビューで「`'unspecified'`
+への復帰は RN のバージョンによって不具合報告がある」と指摘され、追加で検証）：
+`adb shell cmd uimode night yes/no` で OS 側のテーマを強制的に切り替え、アプリ内で
+`Dark`/`Light` から `System` に戻す→即座に新しい OS テーマへ切り替わることをその場で
+（アプリ再起動なし）確認。さらにアプリを強制終了して再起動しても正しい OS テーマで
+起動することを、双方向（OS ライト・OS ダーク）×複数回のコールドスタートで確認。
+**ただし1回だけ**、OS テーマを切り替えた直後（1秒未満）に強制終了→即再起動した
+ケースで、起動時に古いテーマのまま表示される事象が発生した。原因は未特定——
+`AppCompatDelegate.setDefaultNightMode()` はプロセス内メモリの状態でしかなく
+（`SharedPreferences` への永続化は行っていないはず。React Native の
+`AppearanceModule` 側にもそうした永続化処理は無い、コード上未確認）、レビューで
+指摘の通りその線の推測は誤り。`cmd uimode` による OS 側の変更が全体に行き渡る前に
+アプリのプロセスが起動した、など OS 側のタイミングに起因する可能性の方が高いが、
+確認できていない（コミットや通常の操作ペースでは起きない、OS 側テーマ変更と
+アプリの強制終了をほぼ同時に行った場合のみの再現）。その後の同条件での再現は取れず、
+それ以降は毎回正しく起動した。実利用でこの競合が起きる可能性は低いと判断し、既知の
+制限として下記に記録するに留め、追加の対策は入れていない。
+
+#### Known gaps
+
+- **First Day of Week / Time Format は未実装**：§17 モックには同じ PREFERENCES
+  セクションにあるが、今回のスコープは Appearance のみ
+- **iOS は実機/シミュレータでの動作確認が未実施**：CLAUDE.md 参照。上記の
+  Day/Night・ステータスバー・ウィンドウ背景まわりの修正は Android 固有の実装を
+  含むため、iOS で同じ視覚的な不整合が起きないかは未検証
+- **OS テーマ変更とアプリの強制終了がほぼ同時に起きた場合の稀な競合**：上記
+  「実機確認」参照。1回だけ再現し、それ以降は再現しなかった。実利用での発生可能性は
+  低いと判断し、追加対策はしていない
+- **起動直後、一瞬だけ OS の配色で表示される**：`AppearanceProvider` は
+  `preferences.appearance` を DB から非同期に読み込むため、その読み込みが終わる
+  までの間（数十 ms 程度）は初期値 `'system'` で描画される。保存されている値が
+  OS の配色と異なる場合（例：OS はライトだが保存値は Dark）、起動のたびに一瞬
+  OS 配色→保存値、と切り替わって見える。`contexts/ScreenshotBlock.tsx` の
+  `enabled` 初期値やその他の DB 由来設定と同じ「読み込み前は無効/既定値」という
+  既存パターンに合わせたもので、今回はスプラッシュを追加で引き延ばすような対応は
+  していない
+- **`DatabaseProvider` 自身のローディング/Recovery 画面は Appearance を見ない**：
+  `contexts/Appearance.tsx` の file doc comment の通り意図的な制約——
+  `AppearanceProvider` は DB 接続確立後にしかマウントできないため、DB 接続前の
+  画面はこの override を原理的に見られない（OS の配色のみに従う）。ユーザーから
+  見れば見た目が完全には統一されないが、許容する仕様として扱う
