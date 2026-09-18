@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "dependencies": {
     "@op-engineering/op-sqlite": "^18.2.3",
+    "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~57.0.23",
     "expo-application": "~57.0.3",
     "expo-constants": "~57.0.18",

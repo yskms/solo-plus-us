@@ -19,3 +19,10 @@ export function formatLocalTime(localTime: string, format: TimeFormat): string {
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${hour12}:${mm} ${period}`;
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Shared "Mon D, YYYY · time" display used by both Activity Detail (from stored `occurredLocalDate`/`occurredLocalTime`) and Add Activity's date/time picker (from a raw local `Date`) — kept as one function so the format only needs changing in one place. */
+export function formatCalendarDateTime(year: number, month0: number, day: number, localTime: string, format: TimeFormat): string {
+  return `${MONTHS[month0]} ${day}, ${year} · ${formatLocalTime(localTime, format)}`;
+}

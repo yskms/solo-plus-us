@@ -221,6 +221,22 @@ export function addSecondsIso(iso: string, seconds: number): string {
 }
 
 /**
+ * Minute-level identity check — used by the Add Activity date/time picker
+ * (`app/record.tsx`) to tell "opened and confirmed without actually
+ * changing anything" apart from a real edit, since `occurred_at_utc` is
+ * minute precision anyway (§4.2).
+ */
+export function sameMinute(a: Date, b: Date): boolean {
+  return Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
+}
+
+/** Never allow a future recorded time (`app/record.tsx`'s date/time picker), regardless of what a platform picker itself enforces — Android's `maximumDate` only constrains the date dialog, not the time dialog that follows it. */
+export function clampToNow(date: Date): Date {
+  const now = new Date();
+  return date.getTime() > now.getTime() ? now : date;
+}
+
+/**
  * §4.2: `occurred_at_utc` specifically must always have `:00` seconds —
  * unlike `created_at`/`updated_at`, which keep real second precision.
  * `parseStrictUtcIso` alone only checks the format is well-formed; this is

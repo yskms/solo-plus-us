@@ -15,7 +15,9 @@ Repository → Quick Record → Undo → 履歴 → Export/Import の往復）�
 画面マスク → 日時編集 UI。基本設計 §18 の元の順序から Export/Import の UI を画面マスク・
 日時編集 UI より前に繰り上げ——Recovery の「バックアップから復元する」が、利用者が事前に
 Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面・
-Export/Import の UI はクローズ済み、現在は画面マスクに着手中。詳細は下記の各「実装状況」を参照。
+Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI は実装済み・実機ビルド未検証**
+（`@react-native-community/datetimepicker` はネイティブモジュールのため、現在の開発ビルドに
+組み込むには再ビルドが必要）。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -253,12 +255,9 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 - **iOS の DB 配置**：Documents ではなく Library/Application Support の方が用途に適しているという
   指摘は妥当だが、expo-file-system に対応する高レベル API が無く、プラットフォーム間で安全に
   パスを組み立てる手段が未確認のため、バックアップ除外の実装と合わせて Phase 3 で対応する
-- **日時編集 UI**：過去日時への記録・編集（§11.4/§4.4）は未実装。ネイティブの日時ピッカーを追加する前に
-  まず SQLCipher 配線を実機で確認したかったため、意図的に後回し。基本設計 §18 の Phase 1〜4 に
-  明記が無かったため Phase 2 レビューで指摘され、**Phase 3 に割り当てる**ことを決定（App Lock /
-  Recovery 画面 / 画面マスク / Export・Import UI と並行）。実機ビルドが通ることが前提
-- **Settings 画面一式**：Activity Details カスタマイズ、App Lock、Health Connect、Data(Export/Import UI)
-  はいずれも Phase 3。`ExportService`/`ImportService` は実装・テスト済みだが、呼び出す UI がまだ無い
+- **日時編集 UI**：Phase 3 で実装済み（下記「Phase 3 実装状況」参照）
+- **Settings 画面一式**：Activity Details カスタマイズ・Health Connect は未実装のまま
+  （Phase 3/4 の残り）。App Lock・Data（Export/Import UI）は Phase 3 で実装済み（下記参照）
 - **Insights**：プレースホルダーのみ（Phase 3。合計・内訳・平均間隔、§14 の統計定義）
 - **Health Connect 同期の実行部分**：`HealthConnectService` / `SyncWorker` は未実装（Phase 4）。
   ジョブのキューイング自体（`ActivityService` → `health_sync_jobs`）は実装・テスト済みで、
@@ -1316,3 +1315,173 @@ AppState リスナーのコメント参照）。
   差し替わる回帰を拾えるように）。「`ready` が false の間は何もしない」テストに
   `AppState.addEventListener` 未呼び出しの確認も追加（`attemptScreenMask` 側だけでなく
   購読自体もゲートされていることを固定）
+
+### 日時編集 UI
+
+`phase3/datetime-edit` ブランチ。基本設計 §18 の Phase 3 順序に従い、画面マスクの次
+（Phase 3 の最終項目）に着手。§11.4「過去
+日時への記録」：「Add Activity の「Just now」から日時変更に入る。オフセットの決定規則は §4.4
+に従う」。§4.4（DST を跨ぐ過去記録のオフセット計算）・`lib/datetime.ts` の
+`resolveOffsetMinutesForZone`/`buildOccurredAtFields` は Phase 1 から実装・テスト済みで、
+`services/ActivityService.ts` の `recordActivity` も任意の `instantUtc`/`timezoneId` を
+既に受け付けていた（`app/record.tsx` が常に `new Date()` しか渡していなかっただけ）。当初の
+スコープは UI 側のみで新規ロジックは追加していなかったが、2回目のレビューを受けて
+`clampToNow`/`sameMinute` を `lib/datetime.ts` の純粋関数として切り出した（下記「実装済み」
+「レビューで見つかり、修正したもの（2回目）」参照）——それ以外の計算ロジック（オフセット・
+分単位丸め）は Phase 1 のまま変更していない。
+
+#### スコープの判断：日時を編集できるのは記録前（Add Activity）のみ
+
+UI/UX §27・基本設計 §4.4 の見出しはどちらも「過去日時への**記録・編集**」という文言を使って
+おり、字面だけを見ると記録済み Activity の事後編集も含むように読める。ただし UI/UX §27 の
+Phase 3 行自体に「§8『Just now』からの日時変更入口」という括弧書きの限定があり、§11.4 本文も
+「Add Activity の『Just now』から日時変更に入る」としか書いていない——「編集」という語は
+Add Activity 画面内で日時候補を選び直す操作を指しており、記録済み Activity
+（`app/activity/[id].tsx`、Activity Detail 画面）の日時を事後に変更する UI を指すとは
+読めない。そのため本 Phase では Add Activity 側のみを実装し、Activity Detail の DATE & TIME
+は引き続き表示専用のまま据え置いた。事後編集を別途求めるなら、UI/UX §27 の当該行の括弧書きを
+先に見直すか、設計判断記録に新規項目として起票する必要がある（今回はレビューで指摘を受け、
+「仕様に記載が無い」という誤った説明を上記のとおり修正した）。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `@react-native-community/datetimepicker`（新規依存） | `expo install` で追加。`app.json` の `plugins` に自動追加された（config plugin 自体は追加の設定不要） |
+| `lib/timeFormat.ts` | `formatCalendarDateTime`（新規）：「Mon D, YYYY · time」表示の共通化。`app/activity/[id].tsx` の `formatDateTime`（保存済みの `occurredLocalDate`/`occurredLocalTime` 文字列が入力）と `app/record.tsx` のピッカー表示（生の `Date` オブジェクトが入力）の両方が同じ月名配列と組み立てロジックを個別に持っていた重複を解消 |
+| `app/record.tsx` | UI/UX §8 のモックアップ通り「Just now（現在値）」と「Change date & time（操作）」の2行に分離。iOS は `mode="datetime"` の spinner を、画面内に絶対配置した素の `View`（RN の `<Modal>` は使わない）で下から重ねて表示。Android は `mode="datetime"` の単一コントロールが無いため、`DateTimePickerAndroid.open()` で date → time の順に2つのネイティブダイアログを連鎖させる（公式に推奨されている命令的 API）。`useAppLockActions().isLocked()` を picker を開く前・Android の時刻選択確定時・iOS の Done 確定時の3か所で再チェックし、ロック中に選んだ値が適用されないようにした。ピッカーを開いただけで何も変更せず確定した場合は、選ばれた瞬間の時刻に固定せず「Just now」（またはそれまでの値）のまま維持する（`sameMinute` による分単位の未変更判定）。変更後は「Use now instead」で `null`（＝記録時に現在時刻を使う）へ戻せる。Solo/Partnered をタップするだけの既定フローの操作数は変わらない（§11.1 の2アクション以内を維持） |
+| `contexts/AppLock.tsx` | 既存の「`record.tsx` はネイティブの modal presentation を使わない」という設計原則のドキュメントコメントに、今回の日時ピッカーがどう従っているか（iOS はこの原則どおり同じ view tree 内に留める／Android はネイティブダイアログを `AppState` で明示的に閉じる、その理由）を追記（2回目のレビュー後の内容に更新済み） |
+| `lib/datetime.ts`（2回目のレビュー後に追加） | `clampToNow`（未来日時を現在時刻でクランプ）・`sameMinute`（分単位の同一性判定）。当初 `app/record.tsx` にローカル関数として置いていたが、テストできる場所に切り出した |
+
+`services/ActivityService.ts` の変更は無し（既存の `instantUtc`/`timezoneId` 引数をそのまま
+使うだけで済んだ）。`lib/datetime.ts` は上記 `clampToNow`/`sameMinute` の追加のみで、
+既存の `resolveOffsetMinutesForZone`/`buildOccurredAtFields` 等は変更していない。
+
+#### レビューで見つかり、修正したもの（1回目）
+
+1. **【中〜高】Android で未来の日時を記録できた**：`maximumDate` は日付ダイアログにしか
+   効かず、続く時刻ダイアログには効かない。「今日」の日付を選んだうえで現在時刻より後の
+   時刻を選ぶと、そのまま未来の日時として保存されていた。`clampToNow` を導入し、日付＋時刻を
+   合成した結果を現在時刻でクランプするよう修正（`record()` 内の最終防衛としても同じ関数を
+   適用）
+2. **【中】ピッカーが App Lock の画面より上に出てしまう可能性**：`contexts/AppLock.tsx` の
+   ドキュメントコメントが明記している「`record.tsx` はネイティブの modal presentation を
+   使わない（ロック中のオーバーレイが覆えない、別レイヤーになるため）」という原則に、
+   追加した RN `<Modal>`（iOS）とネイティブダイアログ（Android）がどちらも反していた。
+   iOS 側は `<Modal>` をやめ、画面内に絶対配置した素の `View` に置き換え——`record.tsx` 自体が
+   通常の `card` 表示で App Lock のオーバーレイに覆われる対象である以上、ピッカーも同じ
+   view tree に留めればオーバーレイが自動的に覆う。Android は当初「このライブラリに
+   non-dialog モードが無いため回避不能」として許容する例外にしたが、これは2回目のレビューで
+   誤りと判明——詳細は下記「2回目」参照
+3. **【中】「記録済み Activity の日時編集は仕様に記載が無い」という説明が事実と異なっていた**：
+   UI/UX §27・基本設計 §4.4 の見出しはどちらも「記録・編集」という語を使っている。上記
+   「スコープの判断」を、仕様の文言を正しく引用したうえで判断理由を書き直す形に修正した
+4. **【中】実機ビルドで未検証のまま Phase 3 を「クローズ済み」としていた**：
+   `@react-native-community/datetimepicker` はネイティブモジュールで、現在の開発ビルドには
+   まだリンクされていない（ビルドし直すまで `record` 画面を開くとクラッシュしうる）。ステータス
+   の記載を「実装済み・実機確認待ち」に戻した（下記 Known gaps、README 冒頭「ステータス」参照）
+5. **【低】ピッカーを開いただけで（何も操作しなくても）時刻が固定される**：開いた瞬間の
+   値のまま Done/確定すると、それが「Just now」として固定保存されてしまい、実際に記録する
+   までの間ずれた時刻になっていた。`sameMinute` で「開いたときの値から変わっていないか」を
+   判定し、変わっていなければ元の値（`null` を含む）を維持するよう修正
+6. **【低】DST の切り替わりで存在しない時刻を選べる（Android）**：`setHours` で日付と時刻を
+   合成しているため、夏時間が始まる日の存在しない時刻を選ぶと JS が自動でずらす。現在の
+   開発・テスト環境（UTC、DST 無し）では起きないため、既知の制限として `openAndroidPicker`
+   にコメントを残すに留めた（要件定義書に「主要ユーザーは日本のタイムゾーン」という記載は
+   無く、2回目のレビューでその前提の根拠が無いと指摘されたため、コメントの表現も修正した）
+7. **【低】日付フォーマット処理が2か所で重複していた**：`app/record.tsx` と
+   `app/activity/[id].tsx` がそれぞれ独自に月名配列と組み立てロジックを持っていた。
+   `lib/timeFormat.ts` の `formatCalendarDateTime` に切り出し、両方から呼ぶよう修正
+8. **【低】設定読み込みにエラー処理が無かった**：`getSetting(...).then(setTimeFormat)` に
+   `.catch` が無く、失敗すると未処理の rejection になっていた。他画面と同じく
+   `logError` を伴う `.catch` を追加
+9. **【低】「Use now instead」のタップ領域・アクセシビリティ**：`minTouchTarget` を
+   満たしておらず `accessibilityRole` も無かった。`minHeight: minTouchTarget` と
+   `accessibilityRole="button"`/`accessibilityLabel` を追加
+10. **【低】UI/UX §8 のモックアップと表示構成が違っていた**：モックは「Just now」と
+    「Change date & time」を2行に分けているが、実装は1行に結合していた。モック通り2行に
+    分離した
+
+#### レビューで見つかり、修正したもの（2回目）
+
+コードは変更せず指摘のみを受けるレビュー（1回目の修正10件はすべて反映確認済み）。
+
+1. **【中】Android のネイティブダイアログを「回避不能な例外」として許容していたのは誤り**：
+   `@react-native-community/datetimepicker` には `DateTimePickerAndroid.dismiss(mode)` が
+   あり、コードから明示的に閉じられる。`AppLock.tsx`/README の「ライブラリの制約上、
+   ネイティブダイアログという別ウィンドウが一瞬見え得ることは避けられない」という説明は
+   不正確だった。また `isLocked()` の再チェックが時刻ダイアログの `onChange` にしか
+   無かったため、ロック中に日付ダイアログで確定すると、ロック画面の上にさらに時刻
+   ダイアログが開く経路も残っていた。`record.tsx` に `AppState` リスナーを追加し、
+   `active` から外れた瞬間に `DateTimePickerAndroid.dismiss('date')`/`dismiss('time')`
+   （Android）・`setIosPickerVisible(false)`（iOS）でピッカーを閉じるよう修正。日付
+   ダイアログの `onChange` にも `isLocked()` チェックを追加した。`AppLock.tsx` の
+   コメントと README（上記レビュー #2）を実態に合わせて修正した
+2. **【中】main へ直接コミットする前にブランチを分けるべき**：
+   `@react-native-community/datetimepicker` は現在の開発ビルドにリンクされておらず、
+   RN 0.86 の New Architecture 下では特に、`record.tsx` を開いた時点で失敗しうる——日時を
+   変更しない通常の記録（Just now）まで含め、アプリの中心機能が壊れるおそれがある。
+   画面マスクのとき（`phase3/screen-mask`）と同じ手順に合わせ、`phase3/datetime-edit`
+   ブランチで作業し、再ビルド・実機確認を経てから `main` にマージする方針にした
+3. **【低】iOS のピッカー表示中、下の画面が VoiceOver で操作できてしまう**：`<Modal>` を
+   やめたことで、VoiceOver のフォーカスが下の Solo/Partnered ボタンにも移れるように
+   なっていた（確定前の `pendingInstant` ではなく、それまでの `customInstant` で記録されて
+   しまう）。ピッカーのシート側の `View` に `accessibilityViewIsModal` を追加した
+4. **【低】未来時刻を選ぶと黙って現在時刻に丸められる**：`clampToNow` 自体は正しく動作して
+   おり、レビューでも「仕様上は問題ない」との判断。実機確認時にこの挙動（無言の丸め）を
+   許容するかどうかを判断する、という形でそのまま残した
+5. **【低】ドキュメント・テストの細部**：`AppLock.tsx` の追記部分にあった `*` の無い空行
+   （JSDoc の書式崩れ）を修正。「主要ユーザーは日本のタイムゾーン」という根拠の無い前提を
+   上記レビュー #6 のとおり修正。`clampToNow`/`sameMinute` を `app/record.tsx` から
+   `lib/datetime.ts` の純粋関数に移し、`lib/timeFormat.ts` の `formatCalendarDateTime` と
+   合わせてユニットテストを追加（下記「テスト」参照）。1回目のレビュー記録冒頭の
+   「コードは変更せず指摘のみを受けるレビュー。」という書き方も分かりにくかったため、
+   見出しに「（1回目）」と付けるだけの形に直した
+
+#### レビューで見つかり、修正したもの（3回目）
+
+2回目の修正5件（dismiss での明示クローズ、日付ダイアログの isLocked チェック、ブランチ分離、
+VoiceOver、ドキュメント/テストの整理）はいずれも意図どおりと確認された。コードは変更せず、
+このセクション自体の記述漏れのみ3件見つかった。
+
+1. **【低】上記「実装済み」「テスト」の記述が2回目の修正内容を反映していなかった**：
+   「今回のスコープは UI 側のみ：新規のロジックは追加していない」「`lib/datetime.ts` の変更は
+   無し」「UI のみの変更のため新規テストは追加していない」がいずれも、2回目のレビューで
+   `clampToNow`/`sameMinute` を `lib/datetime.ts` に切り出しテストを追加した事実と矛盾していた。
+   上記「実装済み」に `lib/datetime.ts` の行を追加し、該当する文言を修正した
+2. **【低】DST コメントの「テスト環境（UTC）」という記述に根拠が無かった**：
+   `package.json` の Jest 設定にも他の箇所にも `TZ` の指定は無く、実行マシンのタイムゾーンで
+   動く。「DST のあるタイムゾーンで実機検証していない」という、確認できる事実だけを書く
+   表現に修正した（`openAndroidPicker` のコメント、README 上記レビュー #6）
+3. **【任意】`DateTimePickerAndroid.dismiss()` の Promise が未処理だった**：通常は reject
+   しないが、未処理の rejection を避けるため `.catch(logError)` を追加した
+
+#### テスト
+
+UI 自体（`app/record.tsx` の JSX・ネイティブダイアログの連鎖・`AppState` 連携）はコンポーネント
+テストが無いためカバーしていないが、2回目のレビューを受けて `clampToNow`/`sameMinute` を
+`lib/datetime.ts` の純粋関数に切り出し、`lib/__tests__/datetime.test.ts` にテストを追加
+（分単位の同一性判定、未来日時のクランプ）。`lib/timeFormat.ts` の `formatCalendarDateTime`
+（月名・0始まりの月インデックス・12h/24h）も `lib/__tests__/timeFormat.test.ts` に追加。
+既存の `resolveOffsetMinutesForZone`/`buildOccurredAtFields` の DST 境界テストは今回変更して
+いない計算ロジックを引き続きカバーしている。`tsc --noEmit`・Jest スイート（210件）は全て
+通過を確認済み。
+
+#### Known gaps
+
+- **実機ビルド・実機での動作確認が未実施**：`@react-native-community/datetimepicker` は
+  ネイティブモジュールのため、現在の開発ビルドに組み込むには再ビルドが必要（未実施）。
+  `phase3/datetime-edit` ブランチで再ビルド・実機確認してから `main` にマージする（上記
+  2回目レビュー #2 参照）。特に、iOS の spinner・Android の連鎖ダイアログの実際の見た目・
+  操作感、`AppState` での dismiss が実機で確実に効くこと、Android の画面マスク
+  （`FLAG_SECURE`）がダイアログの別ウィンドウにも効くかどうかは、実機/シミュレータでのみ
+  確認できる（Phase 1/2/3 の他項目と同じ制約）
+- **タイムゾーン選択 UI は無い**（§4.4 既知の制限、Phase 1 から変更なし）：旅行先の
+  出来事を帰国後に入力すると、常に現在地（デバイスの現在の IANA タイムゾーン）のオフセットが
+  適用される
+- **記録済み Activity の日時編集は範囲外**：上記「スコープの判断」参照。`app/activity/[id].tsx`
+  の DATE & TIME は引き続き表示専用
+- **Android の DST ギャップ（存在しない時刻）は未対応**：上記レビュー #6 参照。既知の制限として
+  コメントに残すのみ
+- **未来時刻を選ぶと無言で現在時刻に丸められる**：上記2回目レビュー #4 参照。仕様上は問題ないと
+  判断済みだが、実機確認時に許容するか再判断する

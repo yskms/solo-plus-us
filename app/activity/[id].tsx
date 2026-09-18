@@ -18,15 +18,14 @@ import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as ActivityService from '../../services/ActivityService';
 import { getSetting } from '../../services/SettingsRepository';
 import { contextLabel } from '../../lib/labels';
-import { formatLocalTime } from '../../lib/timeFormat';
+import { formatCalendarDateTime } from '../../lib/timeFormat';
 import { logError } from '../../lib/log';
 import type { Activity } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
 
 function formatDateTime(activity: Activity, timeFormat: TimeFormat): string {
   const [y, m, d] = activity.occurredLocalDate.split('-').map(Number);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[m - 1]} ${d}, ${y} · ${formatLocalTime(activity.occurredLocalTime, timeFormat)}`;
+  return formatCalendarDateTime(y, m - 1, d, activity.occurredLocalTime, timeFormat);
 }
 
 function TriState({

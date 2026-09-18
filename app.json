@@ -51,7 +51,8 @@
       ],
       "./plugins/withAndroidNoBackup.js",
       "./plugins/withoutScreenCaptureDetectionPermissions.js",
-      "expo-localization"
+      "expo-localization",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

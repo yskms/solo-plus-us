@@ -3,6 +3,7 @@ import {
   isValidOccurredAtUtc,
   addSecondsIso,
   buildOccurredAtFields,
+  clampToNow,
   deriveLocalDateTime,
   formatUtcIso,
   isLocalDateTimeConsistent,
@@ -12,6 +13,7 @@ import {
   nowUtcIso,
   parseStrictUtcIso,
   resolveOffsetMinutesForZone,
+  sameMinute,
   truncateToMinute,
 } from '../datetime';
 
@@ -180,5 +182,29 @@ describe('hasZeroSeconds / isValidOccurredAtUtc (§4.2 occurred_at_utc invariant
   it('isValidOccurredAtUtc still rejects malformed strings entirely', () => {
     expect(isValidOccurredAtUtc('not-a-date')).toBe(false);
     expect(isValidOccurredAtUtc(123)).toBe(false);
+  });
+});
+
+describe('sameMinute', () => {
+  it('treats two instants in the same minute as equal, ignoring seconds', () => {
+    expect(sameMinute(new Date('2026-09-14T14:42:00Z'), new Date('2026-09-14T14:42:59Z'))).toBe(true);
+  });
+
+  it('treats instants a minute apart as different', () => {
+    expect(sameMinute(new Date('2026-09-14T14:42:00Z'), new Date('2026-09-14T14:43:00Z'))).toBe(false);
+  });
+});
+
+describe('clampToNow', () => {
+  it('passes through a date at or before now unchanged', () => {
+    const past = new Date(Date.now() - 60_000);
+    expect(clampToNow(past)).toBe(past);
+  });
+
+  it('clamps a future date down to now', () => {
+    const future = new Date(Date.now() + 60_000);
+    const clamped = clampToNow(future);
+    expect(clamped.getTime()).toBeLessThan(future.getTime());
+    expect(clamped.getTime()).toBeLessThanOrEqual(Date.now());
   });
 });
