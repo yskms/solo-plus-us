@@ -17,7 +17,10 @@ Repository → Quick Record → Undo → 履歴 → Export/Import の往復）�
 Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面・
 Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI は Android 実機（Pixel 11）で
 確認済み・iOS は未確認**（`expo run:ios` が Xcode 26.3 のコンパイラ不具合で実行できない
-ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。詳細は下記の各「実装状況」を参照。
+ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。**Phase 4**（Health Connect 同期）
+に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・ビルド確認まで
+完了、`services/HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator` はこれから。
+詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -2084,3 +2087,68 @@ iOS の動作を保証しない。
   `AppearanceProvider` は DB 接続確立後にしかマウントできないため、DB 接続前の
   画面はこの override を原理的に見られない（OS の配色のみに従う）。ユーザーから
   見れば見た目が完全には統一されないが、許容する仕様として扱う
+
+## Phase 4 実装状況
+
+基本設計 §18 の順序（clientRecordId/clientRecordVersion 確認 → 同期 → リトライ →
+削除同期 → Health apps declaration 提出 → ストア申請）に従って着手。
+`phase4/health-connect-foundation` ブランチ。
+
+### ステップ1: react-native-health-connect 導入 + expo prebuild（完了）
+
+- `react-native-health-connect@4.1.3` を追加。design doc（設計判断記録
+  D-04/D-19/D-41、基本設計 §9.4）でソース読解済みのバージョンと完全一致
+  （`connect-client:1.1.0` 固定依存も一致）——再検証は不要
+- `app.json` の `android.permissions` に
+  `android.permission.health.WRITE_SEXUAL_ACTIVITY` のみ追加。**READ 権限は
+  追加していない**（D-20/§9.7：削除の存在確認のために READ 権限を追加する
+  経路は採らない、D-12：審査面積を自分から増やさない）
+- `expo-build-properties` で `minSdkVersion` を 24→26 に変更。Health Connect
+  自体が API 26（Android 8.0）未満を対応外としているため必須の変更——
+  Health Connect 機能に限らず**アプリ全体の対応 OS 範囲が変わる**（Android
+  7.0/7.1 端末が対象外になる）。v1 はまだリリース前のため、この時点で対応を
+  絞ることに実害はないと判断した
+- [plugins/withHealthConnectPermissionsRationale.js](plugins/withHealthConnectPermissionsRationale.js)
+  を新規作成。Health Connect の permission 画面から起動される rationale
+  Activity（Android 13-: intent-filter 直接 / Android 14+:
+  `ViewPermissionUsageActivity` activity-alias 経由）を追加する。
+  **`react-native-health-connect` の README サンプルは alias の
+  `targetActivity` を `.MainActivity` としているが、Android 公式ドキュメント
+  （developer.android.com の Health Connect get-started）を直接確認したところ
+  `.PermissionsRationaleActivity` を指すのが正しい実装だったため、公式に
+  合わせた**（MainActivity に同じ intent-filter を重複させると解決が曖昧に
+  なる）
+- rationale 画面の内容は「Play Console に登録するプライバシーポリシーと
+  同一でなければならない」（Android 公式ドキュメント）が、ホスト済みの
+  プライバシーポリシーページはまだ存在しない（ストア申請は本 Phase の
+  最終ステップ）。暫定的にアプリ内蔵の静的テキスト（WebView で外部 URL を
+  読み込まない）で実装した。**実際のプライバシーポリシーを公開する際は、
+  この画面の文言をそのポリシーと一致させること**
+- MainActivity への手動編集は不要（permission delegate の登録は
+  `react-native-health-connect` 同梱の Expo Module が
+  `ReactActivityHandler` 経由で自動的に行う。ソースを確認し、MainActivity.kt
+  に編集が入っていないことを確認済み）
+- `expo prebuild -p android --clean` → `cd android && ./gradlew
+  assembleDebug` で実機なしのビルド成功を確認済み（BUILD SUCCESSFUL）
+
+### Known gaps（次のステップ）
+
+- `services/HealthConnectService.ts` / `services/SyncWorker.ts` は未実装
+  （§9.5/§9.6 の claim/finalize/リトライループ本体。DB プリミティブは
+  `repositories/HealthSyncJobRepository.ts` / `HealthSyncRepository.ts` として
+  Phase 1 で実装済み）
+- `SyncCoordinator`（§9.12、破壊的操作との排他制御）は未実装
+- Settings 画面の Health Connect UI（ON/OFF・未同期の変更・手動再試行/破棄）は
+  未実装
+- **「同期しないことを選んだ」永続状態が未設計**：`services/syncJobPlanner.ts`
+  の `planForEdit` doc comment 参照。D-35 の「この記録を Health Connect へ
+  同期しない」を選んだ record と、単に一度も同期対象になったことがない
+  record を区別する永続状態が今のところ無い。手動解決 UI（§9.6）実装前に
+  設計判断が必要
+- **§9.11 のリリースビルド分離（`without-health-connect` /
+  `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
+  含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
+  まだ存在しない）
+- Android 9〜13（非プラットフォーム統合パス）での実機検証（D-20）は未実施。
+  `HealthConnectService` 実装時に Pixel 3 で insert/delete と合わせて検証する
+  予定（README「ステータス」参照）
