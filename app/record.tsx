@@ -14,91 +14,30 @@
  * `timezoneId` default (`getDeviceTimeZoneId()`), which also resolves the
  * DST-correct offset for that moment (`resolveOffsetMinutesForZone`).
  *
- * The iOS picker is rendered as a plain absolutely-positioned View inside
- * this screen, deliberately NOT React Native's `<Modal>` — `contexts/
- * AppLock.tsx`'s doc comment explains why `record.tsx` avoids a separate
- * native layer (a native Modal/screen-stack "modal" presentation runs
- * outside the view hierarchy the App Lock overlay covers, so it can't be
- * covered by it). Staying inside the normal view tree means the picker
- * gets covered by the lock overlay for free, same as everything else on
- * this screen.
- *
- * Android's native date/time dialogs (`openAndroidPicker`) ARE a separate
- * window the lock overlay can't cover by construction, but — unlike the
- * iOS case — they're dismissible from code
- * (`DateTimePickerAndroid.dismiss`), so the `AppState` listener below
- * closes them (and the iOS sheet) the moment the app leaves `active`,
- * rather than leaving them open across a lock. `isLocked()` is also
- * re-checked in both the date and time dialogs' own callbacks as a second
- * layer, for the gap between a dialog's callback firing and the listener
- * closing it.
+ * The iOS picker sheet and Android's chained dialogs are handled by
+ * `hooks/useNativeDateTimePicker.ts`, shared with `app/activity/
+ * [id].tsx`'s post-hoc edit (D-50) — see that hook's doc comment and
+ * `contexts/AppLock.tsx` for why the iOS sheet is a plain
+ * absolutely-positioned `View`, not RN's `<Modal>`, and why the Android
+ * dialogs are dismissed the moment `AppState` leaves `active`.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAppLockActions } from '../contexts/AppLock';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
-import { clampToNow, sameMinute } from '../lib/datetime';
-import { formatCalendarDateTime } from '../lib/timeFormat';
+import { useNativeDateTimePicker } from '../hooks/useNativeDateTimePicker';
+import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
+import { clampToNow } from '../lib/datetime';
+import { formatPickedDateTime } from '../lib/timeFormat';
 import { logError } from '../lib/log';
 import * as ActivityService from '../services/ActivityService';
 import { getSetting } from '../services/SettingsRepository';
 import type { ActivityContext } from '../types/Activity';
 import type { TimeFormat } from '../types/Settings';
-
-function formatChosenDateTime(date: Date, timeFormat: TimeFormat): string {
-  const localTime = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-  return formatCalendarDateTime(date.getFullYear(), date.getMonth(), date.getDate(), localTime, timeFormat);
-}
-
-/**
- * Android has no combined date+time control, so date and time are two
- * chained native dialogs (the imperative API — a declarative/inline
- * picker would otherwise stay permanently on-screen on this platform).
- * `maximumDate` on the date dialog only blocks picking a *future day*; the
- * time dialog that follows has no date context and would happily accept
- * e.g. 23:00 on today's date even if it's currently 09:00, producing a
- * future instant. `clampToNow` on the combined result is what actually
- * prevents that.
- */
-function openAndroidPicker(current: Date, isLocked: () => boolean, onPicked: (date: Date) => void) {
-  DateTimePickerAndroid.open({
-    value: current,
-    mode: 'date',
-    maximumDate: new Date(),
-    onChange: (dateEvent, pickedDate) => {
-      if (dateEvent.type !== 'set' || !pickedDate) return;
-      // Checked before opening the second dialog too, not just in the
-      // time dialog's own callback below: without this, confirming the
-      // date while locked would still pop the time dialog on top of the
-      // lock screen.
-      if (isLocked()) return;
-      DateTimePickerAndroid.open({
-        value: current,
-        mode: 'time',
-        onChange: (timeEvent, pickedTime) => {
-          if (timeEvent.type !== 'set' || !pickedTime) return;
-          if (isLocked()) return;
-          const combined = new Date(pickedDate);
-          // DST gap edge case: if the chosen wall-clock time doesn't
-          // exist because a DST transition skips over it, `setHours`
-          // silently shifts it forward by the gap rather than rejecting
-          // it. Not verified on a real device in a DST-observing
-          // timezone, so left as a known limitation rather than a
-          // dedicated check.
-          combined.setHours(pickedTime.getHours(), pickedTime.getMinutes(), 0, 0);
-          const clamped = clampToNow(combined);
-          if (sameMinute(clamped, current)) return; // confirmed without actually changing it
-          onPicked(clamped);
-        },
-      });
-    },
-  });
-}
 
 export default function RecordScreen() {
   const { colors } = useTheme();
@@ -107,53 +46,15 @@ export default function RecordScreen() {
   const { isLocked } = useAppLockActions();
   const [saving, setSaving] = useState(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
-  const [customInstant, setCustomInstant] = useState<Date | null>(null);
-  const [iosPickerVisible, setIosPickerVisible] = useState(false);
-  const [pendingInstant, setPendingInstant] = useState<Date | null>(null);
-  const [pickerBase, setPickerBase] = useState<Date | null>(null);
+  const getNow = () => new Date();
+  const { customInstant, iosPickerVisible, pendingInstant, setPendingInstant, open, confirmIos, cancelIos, reset } =
+    useNativeDateTimePicker(getNow, getNow, isLocked);
 
   useEffect(() => {
     getSetting(db, 'preferences.timeFormat')
       .then(setTimeFormat)
       .catch((error) => logError('Loading preferences.timeFormat failed', error));
   }, [db]);
-
-  // Closes any open picker the moment the app leaves `active` (backgrounded,
-  // or a system overlay like the App Lock biometric prompt makes it
-  // `inactive`), rather than leaving it open across a lock — see the file
-  // doc comment. `DateTimePickerAndroid.dismiss` is safe to call even when
-  // no dialog of that mode is currently open (no-op).
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') return;
-      if (Platform.OS === 'android') {
-        DateTimePickerAndroid.dismiss('date').catch((error) => logError('Dismissing date picker failed', error));
-        DateTimePickerAndroid.dismiss('time').catch((error) => logError('Dismissing time picker failed', error));
-      } else {
-        setIosPickerVisible(false);
-      }
-    });
-    return () => subscription.remove();
-  }, []);
-
-  const openPicker = () => {
-    if (isLocked()) return; // shouldn't be reachable (this screen sits behind the lock overlay), but guards the picker itself against ever opening while locked
-    const base = customInstant ?? new Date();
-    if (Platform.OS === 'android') {
-      openAndroidPicker(base, isLocked, setCustomInstant);
-    } else {
-      setPickerBase(base);
-      setPendingInstant(base);
-      setIosPickerVisible(true);
-    }
-  };
-
-  const confirmIosPicker = () => {
-    if (!isLocked() && pendingInstant && pickerBase && !sameMinute(pendingInstant, pickerBase)) {
-      setCustomInstant(clampToNow(pendingInstant));
-    }
-    setIosPickerVisible(false);
-  };
 
   const record = async (context: ActivityContext) => {
     if (saving) return; // guards against a double-tap firing two records
@@ -214,10 +115,10 @@ export default function RecordScreen() {
 
       <View style={styles.whenBlock}>
         <Text style={[styles.now, { color: colors.textTertiary }]}>
-          {customInstant ? formatChosenDateTime(customInstant, timeFormat) : 'Just now'}
+          {customInstant ? formatPickedDateTime(customInstant, timeFormat) : 'Just now'}
         </Text>
         <Pressable
-          onPress={openPicker}
+          onPress={open}
           disabled={saving}
           style={({ pressed }) => [styles.changeRow, { opacity: pressed ? 0.7 : 1 }]}
           accessibilityRole="button"
@@ -227,7 +128,7 @@ export default function RecordScreen() {
         </Pressable>
         {customInstant && (
           <Pressable
-            onPress={() => setCustomInstant(null)}
+            onPress={reset}
             style={styles.resetRow}
             accessibilityRole="button"
             accessibilityLabel="Use current time instead"
@@ -237,39 +138,14 @@ export default function RecordScreen() {
         )}
       </View>
 
-      {Platform.OS === 'ios' && iosPickerVisible && (
-        <View style={styles.pickerOverlay}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setIosPickerVisible(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss date picker"
-          />
-          {/* accessibilityViewIsModal: without it, VoiceOver can still reach the
-              Solo/Partnered buttons underneath while this sheet is open — it
-              isn't a real OS-level modal (see file doc comment), so nothing
-              else marks it as the only reachable content. */}
-          <View style={[styles.pickerSheet, { backgroundColor: colors.surface }]} accessibilityViewIsModal>
-            <View style={styles.pickerSheetHeader}>
-              <Pressable onPress={() => setIosPickerVisible(false)} hitSlop={8}>
-                <Text style={{ color: colors.textSecondary, fontSize: 16 }}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={confirmIosPicker} hitSlop={8}>
-                <Text style={{ color: colors.solo, fontSize: 16, fontWeight: '700' }}>Done</Text>
-              </Pressable>
-            </View>
-            <DateTimePicker
-              value={pendingInstant ?? new Date()}
-              mode="datetime"
-              display="spinner"
-              maximumDate={new Date()}
-              onChange={(event, date) => {
-                if (date) setPendingInstant(date);
-              }}
-            />
-          </View>
-        </View>
-      )}
+      <DateTimePickerSheet
+        visible={iosPickerVisible}
+        value={pendingInstant ?? getNow()}
+        maximumDate={getNow()}
+        onChange={setPendingInstant}
+        onCancel={cancelIos}
+        onDone={confirmIos}
+      />
     </SafeAreaView>
   );
 }
@@ -298,20 +174,4 @@ const styles = StyleSheet.create({
   changeLink: { fontSize: 13, fontWeight: '600' },
   resetRow: { minHeight: minTouchTarget, justifyContent: 'center', alignItems: 'center' },
   resetLink: { fontSize: 12, textDecorationLine: 'underline' },
-  pickerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  pickerSheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: spacing.lg },
-  pickerSheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: spacing.md,
-  },
 });

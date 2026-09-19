@@ -16,6 +16,8 @@
 - v0.11 で D-21 から残っていた要約条件を削除（正本参照のみにする）
 - v0.12 で D-48 を追加（多言語対応をロードマップ外とするスコープ確定）
 - v0.13 で D-49 を追加（「日の切り替え時刻」設定を実装する場合の設計方針。着手時期は未定）
+- v0.14 で D-50 を追加（記録済み Activity の日時事後編集をスコープに含める。D-48 と
+  同様の経緯で、以前の README 記載のスコープ判断を上書き）
 
 ---
 
@@ -1636,6 +1638,92 @@ END
 4. Health Connect の睡眠相関機能（要件定義書 §17/§18、§25 で v1.2 以降）とは別の
    設計問題として切り離すこと——本項目のきっかけにはなったが、実装の必要条件では
    ない
+
+---
+
+## D-50 記録済み Activity の日時事後編集をスコープに含める（README のスコープ判断を上書き）
+
+（`phase3/datetime-edit` ブランチで Add Activity 側の日時変更 UI を実装した際、README
+「スコープの判断：日時を編集できるのは記録前（Add Activity）のみ」として、UI/UX §27
+Phase 3 行の括弧書き「§8『Just now』からの日時変更入口」を根拠に Activity Detail
+（`app/activity/[id].tsx`）の事後編集をスコープ外と判断していた。その後の利用者
+フィードバックで「Activity Detail の DATE & TIME もタップで編集できたほうがよい」との
+要望があり、本項目でスコープを明示的に拡張する。以下の「決定」は2回のレビューを経た
+最終形——レビューで見つかった問題とその経緯は README「日時編集 UI」の D-50 追記部分に
+記録している）
+
+**決定**
+
+Activity Detail 画面（`app/activity/[id].tsx`）の DATE & TIME 表示をタップすると、
+Add Activity（`app/record.tsx`）と同じネイティブ date/time picker が開き、事後編集が
+できるようにする。UI/UX §27 の Phase 3 行の文言はそのままだが、「§8『Just now』からの
+日時変更入口」という限定を、記録済み Activity の事後編集も含む形の運用として拡張する
+——本項目が正となる。
+
+- Android の連鎖ダイアログ・`clampToNow`・`sameMinute` は `lib/androidDateTimePicker.ts`
+  に、picker の state 管理・`AppState` dismiss・open/confirm/cancel は
+  `hooks/useNativeDateTimePicker.ts` に、iOS シートの JSX は
+  `components/DateTimePickerSheet.tsx` に、それぞれ共通化し `record.tsx`/`app/activity/
+  [id].tsx` の両方から使う（重複させない——1回目のレビューで iOS 側の重複が指摘された）
+- iOS のシートは `record.tsx` 同様、RN の `<Modal>` ではなく画面内に絶対配置した素の
+  `View`（`contexts/AppLock.tsx` の原則——ネイティブの modal presentation は
+  App Lock オーバーレイの外側に出てしまうため使わない）
+- 選んだ値はこの画面の他フィールド（Orgasm・Duration・Note 等）と同じく、画面下部の
+  Save ボタンを押すまで DB に反映しない（`customInstant` が `null` のままなら
+  `occurred_*`/`timezoneId` は patch に含めず、既存値をそのまま保持する）
+- **`timezoneId` は記録済みの Activity 自身が持つ値を使う（`null` のときのみ端末の
+  現在の IANA ゾーンにフォールバック）。record.tsx（新規記録）とは前提が違う**：
+  新規記録は「今いる場所で今起きたこと」なので端末の現在ゾーンで正しいが、事後編集は
+  元の記録場所の情報（`activity.timezoneId`）を既に持っており、それを編集時にいる
+  場所のゾーンで上書きしてはならない（1回目のレビューで発見・修正——東京で記録した分を
+  LA で編集すると `occurredAtUtc` が約17時間ずれ、`RECENT`/カレンダーの並びまで壊れる
+  不具合だった）
+- **picker に渡す `Date` は、実際の瞬間ではなく「年月日・時分の数字を運ぶだけの入れ物」
+  として扱う**（`app/activity/[id].tsx` の `toLocalDate`：保存済み
+  `occurredLocalDate`/`occurredLocalTime` の数字をローカル `Date` コンストラクタに
+  そのまま渡す）。ネイティブ picker はタイムゾーンを意識できず、常に**端末の現在の
+  ゾーンとして** `Date` を表示・編集する（§4.4 既知の制限）ため、`Date` 自体の
+  `.getTime()`（＝端末の現在ゾーンとして解釈した瞬間）を信用してはならない。保存時に
+  初めて、選んだ数字を `activity.timezoneId` の時刻とみなして UTC へ変換する
+  （`lib/datetime.ts` の `zonedComponentsToUtc`、`resolveOffsetMinutesForZone` の逆変換）
+  ——この2段階（数字を運ぶ→保存時に記録ゾーンで解決）を守ることで、DATE & TIME の
+  テキスト・picker の表示・保存値のすべてが常に同じ「記録時のゾーンの時刻」で揃う
+  （2回目のレビューで発見・修正——1回目の修正で保存値自体は正しくなったが、代わりに
+  「picker に実際の瞬間を渡す」方式を採ったため、端末の現在ゾーンと記録ゾーンが違うと
+  テキスト・picker・保存後の表示がそれぞれ違う時刻を示すようになっていた）
+- **picker 自身の未来日時ガード（ネイティブ `maximumDate`・Android の連鎖ダイアログ内の
+  丸め）も、数字の入れ物どうしを比較する形に揃える**。picker に渡す値が数字の入れ物で
+  ある以上、その未来判定を実際の「今」（`new Date()`）と比較するのは誤り——記録ゾーンが
+  端末より東にある場合、正しい過去の時刻が「端末換算では未来」に見えてしまい、`Save`
+  を押す前の時点で picker がその値を無言で別の時刻に丸めて上書きしてしまう（3回目の
+  レビューで発見・修正）。`lib/datetime.ts` の `nowAsZonedDigits(timezoneId)` で「今」を
+  記録ゾーンの数字の入れ物として表し、`hooks/useNativeDateTimePicker.ts` の `getMax`
+  （`app/record.tsx` では従来どおり `() => new Date()`）・`lib/androidDateTimePicker.ts`
+  の `maximumDate`/連鎖ダイアログ内の丸めの両方をこれに揃える。`resolveOccurredAtEdit`
+  内の `clampToNow`（実際の瞬間どうしの比較）は最終防衛として変更なし——picker 側の
+  ガードはあくまで Save 前の目安であり、権威ある判定ではない
+
+**理由**
+
+- 事後編集を求める実際の要望があり、UI/UX §27 の限定は「意図的にスコープ外にした」
+  というより「Add Activity 側の実装時点でそこまで手を広げなかった」という経緯の方が
+  実質に近い（README 参照）
+- 必要なロジック（`buildOccurredAtFields`/`resolveOffsetMinutesForZone`/
+  `clampToNow`/`sameMinute`）は Phase 1/3 で実装・テスト済みで、
+  `ActivityRepository.updateActivity`/`ActivityService.updateActivity` も
+  `occurredAtUtc`/`occurredLocalDate`/`occurredLocalTime`/`timezoneOffsetMinutes`/
+  `timezoneId` の patch を既に受け付けていた（型 `ActivityUpdateInput` に既存）——
+  新規のDB層変更は不要で、UI 層のみの追加で済む
+- Android のネイティブダイアログ連鎖・iOS シートの App Lock 対応は record.tsx で
+  実装・レビュー済みのロジックであり、そのまま共通化して転用すれば新規リスクを
+  増やさずに済む
+
+**却下した案**
+
+- UI/UX §27 Phase 3 行の文言（「§8『Just now』からの日時変更入口」）自体を書き換える
+  案——本ファイルの役割（決定・理由の記録、実装中に再議論しないための参照元）に
+  すでに合致するため、仕様書本文を書き換えるより本項目を追加する方が変更範囲が
+  小さく、経緯も残る
 
 ---
 

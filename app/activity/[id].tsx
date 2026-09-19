@@ -2,10 +2,51 @@
  * UI/UX §10/§11 Activity Detail. All optional fields shown unconditionally
  * for Phase 1 — the per-field "Activity Details" show/hide customization
  * (settings/activity-details.tsx, §17 UI/UX) is Phase 3, not built yet
- * (see README "Known gaps"). Date/time editing (基本設計 §12 "過去日時への
- * 記録") is also not built yet — it needs a native date/time picker, which
- * this phase deliberately avoids adding before the first on-device build
- * (see README).
+ * (see README "Known gaps").
+ *
+ * Date/time editing: originally scoped out of this screen (README read
+ * UI/UX §27's Phase 3 line as limited to the Add Activity entry point
+ * only), then brought into scope by 設計判断記録 D-50. Tapping DATE & TIME
+ * opens the same native picker as `app/record.tsx`'s "Change date & time"
+ * (`hooks/useNativeDateTimePicker.ts` + `components/DateTimePickerSheet.tsx`,
+ * shared by both screens — see that hook's doc comment and `contexts/
+ * AppLock.tsx` for why the iOS sheet is a plain absolutely-positioned
+ * `View`, not RN's `<Modal>`). Unlike `record.tsx`, there is no "use now
+ * instead" reset — this screen always has a real recorded value, never a
+ * "Just now" placeholder. The picked value is held in `customInstant` and
+ * only actually persisted when the screen's own Save button is pressed,
+ * same as every other field here.
+ *
+ * The picker is seeded from `toLocalDate(activity.occurredLocalDate,
+ * activity.occurredLocalTime)` below — a `Date` built by feeding those
+ * stored digits straight into the *local* `Date` constructor, read back
+ * only ever via *local* getters. This makes the `Date` a pure "carrier"
+ * for the Y/M/D/H/Min digits, not a real instant: the native picker
+ * always displays/edits a `Date` via those same local getters/setters
+ * (there's still no timezone-aware picker, §4.4's known v1 limitation),
+ * so this keeps the picker's *starting* position, every intermediate
+ * `formatPickedDateTime` display while editing, and the DATE & TIME text
+ * shown before you ever tap it, all showing the *same* wall-clock digits
+ * — no jump when you open it, no mismatch while you edit it.
+ *
+ * That Date's own `.getTime()` (its "instant", as far as JS is concerned)
+ * is meaningless and never used directly — it's whatever the device's
+ * *current* zone happens to make of those digits, which is wrong the
+ * moment the device's current zone differs from the zone the event was
+ * actually recorded in. Converting the final edited digits into the real
+ * UTC instant to save — as wall-clock time *in the record's own
+ * `timezoneId`*, never the device's current one — is `resolveOccurredAtEdit`'s
+ * job (`lib/datetime.ts`); see its doc comment for the two wrong
+ * approaches this replaced (D-50 review findings #1, across two rounds).
+ *
+ * The picker's own *future*-time guard (native `maximumDate` props, and
+ * the Android chained-dialog combine-then-clamp) must judge "future-ness"
+ * the same digit-carrier way — against `nowAsZonedDigits(activity.
+ * timezoneId)` (`getMax` below), not real "now". A 3rd review round found
+ * that comparing a digit carrier against real "now" silently replaced a
+ * genuinely valid *past* moment with an unrelated one whenever the
+ * record's zone is east of the device's — see `nowAsZonedDigits`'s doc
+ * comment in `lib/datetime.ts` for the concrete scenario.
  */
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -14,11 +55,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAppLockActions } from '../../contexts/AppLock';
+import { useNativeDateTimePicker } from '../../hooks/useNativeDateTimePicker';
+import { DateTimePickerSheet } from '../../components/DateTimePickerSheet';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as ActivityService from '../../services/ActivityService';
 import { getSetting } from '../../services/SettingsRepository';
 import { contextLabel } from '../../lib/labels';
-import { formatCalendarDateTime } from '../../lib/timeFormat';
+import { formatCalendarDateTime, formatPickedDateTime } from '../../lib/timeFormat';
+import { getDeviceTimeZoneId, nowAsZonedDigits, resolveOccurredAtEdit } from '../../lib/datetime';
 import { logError } from '../../lib/log';
 import type { Activity } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
@@ -26,6 +70,23 @@ import type { TimeFormat } from '../../types/Settings';
 function formatDateTime(activity: Activity, timeFormat: TimeFormat): string {
   const [y, m, d] = activity.occurredLocalDate.split('-').map(Number);
   return formatCalendarDateTime(y, m - 1, d, activity.occurredLocalTime, timeFormat);
+}
+
+/**
+ * Digit carrier for seeding the picker — see the file doc comment for why
+ * this must NOT be treated as a real instant. Known limitation: if the
+ * device's *current* zone doesn't recognize this wall-clock time (a DST
+ * "spring forward" gap), `Date`'s local constructor silently shifts it
+ * forward by the gap (e.g. a stored 02:30 becomes 03:30) rather than
+ * rejecting it — same class of undefended DST-gap edge case as
+ * `lib/androidDateTimePicker.ts`'s own comment. Very rare in practice
+ * (requires editing right as a DST transition is being crossed) and not
+ * specially handled.
+ */
+function toLocalDate(localDate: string, localTime: string): Date {
+  const [y, m, d] = localDate.split('-').map(Number);
+  const [hh, mm] = localTime.split(':').map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0, 0);
 }
 
 function TriState({
@@ -126,6 +187,10 @@ export default function ActivityDetailScreen() {
   const [note, setNote] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
+  const getBase = () => (activity ? toLocalDate(activity.occurredLocalDate, activity.occurredLocalTime) : new Date());
+  const getMax = () => (activity ? nowAsZonedDigits(activity.timezoneId ?? getDeviceTimeZoneId()) : new Date());
+  const { customInstant, iosPickerVisible, pendingInstant, setPendingInstant, open, confirmIos, cancelIos, reset } =
+    useNativeDateTimePicker(getBase, getMax, isLocked);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -144,8 +209,9 @@ export default function ActivityDetailScreen() {
       setDurationMinutes(found.durationSeconds ? String(Math.round(found.durationSeconds / 60)) : '');
       setDurationTouched(false);
       setNote(found.note ?? '');
+      reset();
     }
-  }, [db, id]);
+  }, [db, id, reset]);
 
   useFocusEffect(
     useCallback(() => {
@@ -180,6 +246,13 @@ export default function ActivityDetailScreen() {
       durationSeconds = Math.round(parsedMinutes * 60);
     }
 
+    // {} when the picker was never opened, or was opened and confirmed
+    // without actually changing the recorded minute — see
+    // `resolveOccurredAtEdit`'s doc comment (lib/datetime.ts) for why this
+    // must resolve against the record's own timezoneId, not the device's
+    // current one.
+    const dateTimePatch = resolveOccurredAtEdit(activity.occurredAtUtc, activity.timezoneId, customInstant);
+
     setSaving(true);
     try {
       await ActivityService.updateActivity(db, activity.id, {
@@ -190,6 +263,7 @@ export default function ActivityDetailScreen() {
         moodAfter,
         durationSeconds,
         note: note.trim() === '' ? null : note,
+        ...dateTimePatch,
       });
       router.back();
     } catch (error) {
@@ -227,6 +301,8 @@ export default function ActivityDetailScreen() {
     ]);
   };
 
+  const dateTimeText = customInstant ? formatPickedDateTime(customInstant, timeFormat) : formatDateTime(activity, timeFormat);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -234,7 +310,17 @@ export default function ActivityDetailScreen() {
 
         <View style={styles.fieldBlock}>
           <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>DATE & TIME</Text>
-          <Text style={[styles.dateTimeText, { color: colors.textPrimary }]}>{formatDateTime(activity, timeFormat)}</Text>
+          <Pressable
+            onPress={open}
+            disabled={saving}
+            style={({ pressed }) => [styles.dateTimeRow, { opacity: pressed ? 0.7 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel={dateTimeText}
+            accessibilityHint="Opens a date and time picker to change when this happened"
+          >
+            <Text style={[styles.dateTimeText, { color: colors.textPrimary }]}>{dateTimeText}</Text>
+            <Text style={[styles.dateTimeChevron, { color: colors.textTertiary }]}>›</Text>
+          </Pressable>
         </View>
 
         <TriState label="Orgasm" value={orgasm} onChange={setOrgasm} colors={colors} />
@@ -296,6 +382,15 @@ export default function ActivityDetailScreen() {
           <Text style={[styles.deleteButtonText, { color: colors.destructive }]}>Delete Activity</Text>
         </Pressable>
       </ScrollView>
+
+      <DateTimePickerSheet
+        visible={iosPickerVisible}
+        value={pendingInstant ?? getBase()}
+        maximumDate={getMax()}
+        onChange={setPendingInstant}
+        onCancel={cancelIos}
+        onDone={confirmIos}
+      />
     </SafeAreaView>
   );
 }
@@ -307,7 +402,9 @@ const styles = StyleSheet.create({
   fieldBlock: { gap: spacing.xs },
   fieldLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   fieldCaption: { fontSize: 12, lineHeight: 16 },
+  dateTimeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: minTouchTarget },
   dateTimeText: { fontSize: 16, fontWeight: '500' },
+  dateTimeChevron: { fontSize: 18, fontWeight: '600' },
   segmentedRow: { flexDirection: 'row', gap: spacing.xs },
   segment: {
     paddingVertical: 8,
