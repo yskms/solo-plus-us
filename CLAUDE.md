@@ -52,9 +52,8 @@ comment）。ネイティブ picker はタイムゾーンを意識できず、�
 **端末の現在ゾーン**として表示・編集するため、「実際の瞬間を渡せばシンプルになる」
 という一見自然な簡略化（`parseStrictUtcIso(activity.occurredAtUtc)` を直接渡す等）は
 誤りで、記録時のゾーンと端末の現在ゾーンが異なる場合に表示・保存がずれる不具合を
-再発させる。この事後編集機能は D-50（設計判断記録）の追加後、4回のレビューで
-タイムゾーン絡みの不具合が3回続けて見つかっており、変更する際は必ず
-`resolveOccurredAtEdit`／`nowAsZonedDigits` の doc comment を先に読むこと。
+再発させる。変更する際は必ず `resolveOccurredAtEdit`／`nowAsZonedDigits` の doc
+comment を先に読むこと。
 
 ### Android のダーク/ライト切替まわりの落とし穴
 
