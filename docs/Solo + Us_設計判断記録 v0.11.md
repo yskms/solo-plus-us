@@ -1210,6 +1210,59 @@ create を claim → 外部呼び出し中 → 置換復元が health_sync_jobs 
 | タイムアウト経過 | 破壊的操作を中止し、再試行を案内する |
 | 外部 Promise が未 settle | **Coordinator は in-flight のまま扱う** |
 
+> **確認結果（2026-09-19、ソース読解による。実機/エミュレータでの実行検証ではない）：
+> Health Connect の insert / delete は、いずれの経路でも明示的な cancel をサポートしない。
+> したがって JS 側がタイムアウトで待つのをやめても、ネイティブ呼び出しは止められず継続する
+> （継続を止める手段自体が存在しないため）。上表の「cancel できない」行が確定的に適用される。**
+>
+> - `react-native-health-connect` v4.1.3（commit `8d72b6a`）：`HealthConnectModule.kt` /
+>   `HealthConnectManager.kt` の `insertRecords` / `deleteRecordsByUuids` はいずれも
+>   `CoroutineScope(Dispatchers.IO).launch { ... }` で起動され、返り値の `Job` は保持されない。
+>   `HealthConnectModule.kt` の `@ReactMethod` 一覧に `cancel` に相当するメソッドは存在しない。
+>   JS 側が Promise を諦めても、この coroutine を止める手段が最初から無い。
+> - **Android 13 以前の経路**（`HealthConnectClientImpl` → 別プロセスの Health Connect アプリへ
+>   AIDL 経由）：根拠は **androidx 側の AIDL インターフェース**（`IHealthDataService`）に
+>   cancellation を渡す引数が無いこと。`delegate.insertData(...).await()` /
+>   `deleteData(...).await()` が呼ぶ `service.insertData(requestContext, request, callback)`
+>   （`ServiceBackedHealthDataClient.kt`）はこの3引数のみで、cancellation を伝える手段がない。
+>   coroutine 側の `.await()` を諦めても、別プロセスへ送信済みの Binder リクエストは止まらない。
+>   `IHealthDataService` はアプリに同梱される `androidx.health.connect:connect-client` 側が
+>   定義するインターフェースであり、相手の非公開実装（Health Connect アプリ）が一方的に
+>   cancel 用のメソッドを追加しても、同梱バージョンの connect-client からは呼べない。
+>   したがってこの結論が変わりうるのは connect-client の更新時であり、相手アプリの改訂ではない。
+> - **Android 14 以降の経路**（`HealthConnectClientUpsideDownImpl` → platform 統合パス）：
+>   根拠は **platform 側の公開 API `android.health.connect.HealthConnectManager` 自体**に
+>   cancellation の契約が存在しないこと。`insertRecords` / `deleteRecords` の全オーバーロードの
+>   シグネチャを、出荷版タグ `android-14.0.0_r32` と `main` HEAD
+>   `45168a88ae2a7e1abafe1cc81001d97ff00194e2`（2026-09-19時点の最新開発版）の**両方**で確認した
+>   （D-20 で確認済みの delete 挙動と同じ2点だが、今回は cancel シグネチャの有無として再確認した）。
+>   `CancellationSignal` を受け取るオーバーロードは1つもなく（`(records/request, executor,
+>   callback)` のみ）、両者は完全に同一シグネチャだった。androidx 側の実装
+>   （`suspendCancellableCoroutine { continuation -> healthConnectManager.insertRecords(
+>   records, executor, continuation.asOutcomeReceiver()) }`）も `CancellationSignal` を
+>   一切生成・登録していない。`androidx.core.os.asOutcomeReceiver` の KDoc 自身が
+>   「cancellation をサポートする API は `CancellationSignal` を作って
+>   `continuation.invokeOnCancellation { canceller.cancel() }` を登録すべき」と明記しているが、
+>   このパターンは使われていない。
+>
+> **結論：** 2つの経路は cancel 不可の根拠が異なる——Android 14 以降は「platform API 自体に
+> cancel の契約が無い」こと、Android 9〜13 は「androidx の AIDL インターフェースに cancel を
+> 渡す手段が無い」ことが理由であり、どちらも**ラッパーの実装漏れではない**。結論（cancel 不可）
+> は両経路で一致するが、根拠が別物なので、一方が将来変わっても他方の結論が自動的に変わるわけ
+> ではない。platform API 側（Android 14 以降）は AOSP タグと main HEAD で経路が一致することを
+> 確認したため、当面のバージョンでは安定していると考えてよい。androidx の AIDL 側（Android
+> 9〜13 の相手）は、`connect-client` のバージョンを固定している限り変わらない
+> （AIDL 定義は同梱する androidx 側にあり、相手の非公開実装が変わっても影響しない）。
+> **connect-client のバージョンを更新する際は再確認すること。**
+>
+> **未調査事項：** Health Connect 側・OS 側に独自のタイムアウトがあるか（ANR、Binder 切断、
+> 別プロセスの Health Connect アプリが kill される等で callback が失敗扱いになる経路）は
+> 調査していない。これは「外部 Promise が永久に settle しない」ケースがどれだけ起きるかに
+> 関わるが、D-41 は元々そのケースを「アプリ再起動のみが逃げ道」として扱っており、頻度に
+> 関わらず規則は変わらない。
+>
+> **ラッパー入れ替え・バージョン更新時は再確認すること。**
+
 **タイムアウトを「外部処理の終了」とみなさない。**
 「待ちきれないから強行する」経路も作らない。破壊的操作はやり直せるが、
 外部に取り残されたレコードは自力で見つけられない。
@@ -1779,12 +1832,15 @@ Add Activity（`app/record.tsx`）と同じネイティブ date/time picker が�
 - [x] **D-34 `clientRecordId` を指定した削除 API を露出しているか**
 - [x] **D-20 削除時の「存在しない」を成功として扱えるか**
       （Android 14 以降のみソースで確認。Android 9〜13 は未確認のため既知の制限を適用——詳細は D-20 の確認結果を参照）
-- [ ] **D-41 ネイティブ呼び出しがタイムアウト後も継続するか、明示的に cancel できるか**
+- [x] **D-41 ネイティブ呼び出しがタイムアウト後も継続するか、明示的に cancel できるか**
+      （全経路で cancel 不可と確認。14以降は platform API、9〜13 は androidx の AIDL が根拠——詳細は D-41 の確認結果を参照）
 
 **1・2件目（D-04/D-19・D-34）を満たせない場合は HC 同期の v1.0 投入を見送る。**
 **3件目（D-20）を満たせない場合は見送りにはせず、D-20 の「識別できない場合は既知の制限として
 受け入れる」を適用する。**
-4件目（D-41）は見送り条件ではないが、cancel できない場合は D-41 の「in-flight のまま扱う」規則が必須になる。
+**4件目（D-41）も cancel 不可と確定した。** 見送り条件ではないため v1.0 投入は妨げないが、
+D-41 の「in-flight のまま扱う」規則の適用が必須であることが確定した（cancel をサポートする場合
+との分岐は実質的に発生しない）。
 
 ### HealthKit 実装時の確認（v1.0 のゲートではない）
 

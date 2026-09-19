@@ -875,8 +875,42 @@ note や mood の編集頻度は低く、1件あたりの書き込みも小さ�
 > 成功と決めつけない）という結果面での違いが残る**というだけであり、これが D-20 / §9.7 の
 > 「識別できない場合は既知の制限として受け入れる」に当たる。
 >
-> 未確認のまま残るのは **4（cancel/タイムアウト、§9.12）と、上記の Android 9〜13 の削除挙動**。
-> いずれも見送り条件ではない（3 は元々「満たせない場合の代替扱い」が定義済みのため）。
+> **4 も確認済み：cancel 不可（2026-09-19、ソース読解による。実機/エミュレータでの実行検証
+> ではない）。したがって JS 側がタイムアウトで待つのをやめても、ネイティブ呼び出しは
+> 止められず継続する（継続を止める手段自体が存在しないため）。**
+>
+> - `react-native-health-connect` v4.1.3（commit `8d72b6a`）：`insertRecords` /
+>   `deleteRecordsByUuids` は `CoroutineScope(Dispatchers.IO).launch { ... }` で起動され、
+>   `Job` は保持されない。ネイティブ側に `cancel` に相当する `@ReactMethod` は存在しない。
+> - **Android 13 以前の経路**（`HealthConnectClientImpl` → 別プロセスの Health Connect
+>   アプリへ AIDL 経由）：根拠は **androidx 側の AIDL インターフェース**（`IHealthDataService`）
+>   に cancellation を渡す引数が無いこと。`IHealthDataService` はアプリに同梱される
+>   `androidx.health.connect:connect-client` 側が定義するインターフェースであり、相手
+>   （非公開実装の Health Connect アプリ）が一方的に変わっても、同梱バージョンの
+>   connect-client からは呼べない。**この結論が変わりうるのは connect-client の更新時のみ**
+>   （下記の platform API とは別に評価する必要がある）。
+> - **Android 14 以降の経路**（`HealthConnectClientUpsideDownImpl` → platform 統合パス）：
+>   根拠は **platform 側の公開 API `android.health.connect.HealthConnectManager` 自体**に
+>   cancellation の契約が存在しないこと。`insertRecords` / `deleteRecords` の全オーバーロードを
+>   AOSP タグ `android-14.0.0_r32` と `main` HEAD の両方で確認したが、`CancellationSignal` を
+>   受け取るものは無く、両者は同一シグネチャだった。androidx 側の実装は
+>   `suspendCancellableCoroutine` を使うが、`invokeOnCancellation` は登録していない。
+>
+> 2つの経路は cancel 不可の根拠が異なる（platform API 自体に契約が無い vs. androidx の AIDL に
+> 手段が無い）ため、一方が将来変わっても他方の結論が自動的に変わるわけではない。詳細・引用箇所は
+> 設計判断記録 D-41 の確認結果を参照。
+>
+> したがって §9.12 の「cancel できない」（タイムアウトは UI の待機打ち切りにのみ使う、
+> **Coordinator は in-flight のまま扱う**）が確定的に適用される。**ラッパー入れ替え時は
+> 再確認すること。**
+>
+> **未調査事項：** Health Connect 側・OS 側に独自のタイムアウトがあるか（ANR、Binder 切断、
+> 別プロセスの Health Connect アプリが kill される等）は調査していない。「外部 Promise が
+> 永久に settle しない」頻度に関わるが、§9.12 は元々そのケースを「アプリ再起動のみが逃げ道」
+> として扱っており、頻度に関わらず規則は変わらない。
+>
+> 未確認のまま残るのは**上記の Android 9〜13 の削除挙動のみ**。見送り条件ではない
+> （3 は元々「満たせない場合の代替扱い」が定義済みのため）。
 >
 > **HealthKit 実装時の確認事項（v1.0 のゲートではない）**
 > - メタデータ述語による削除が書き込み権限のみで可能か（§5.4）
@@ -1291,6 +1325,10 @@ mutex 解放            ← 誤り
 | タイムアウト経過 | 破壊的操作を**中止**し、利用者に再試行を案内する |
 | 外部 Promise が未 settle | **Coordinator は in-flight のまま扱う**。ワーカーは再開しない |
 | 実際に settle した | そこで初めて通常状態へ戻す |
+
+**Health Connect（insert / delete）は cancel 不可と確定済み**（§9.4 の確認結果 / 設計判断記録
+D-41 参照）。「cancel をサポートする」行は HealthKit 等、将来 provider を追加する場合のために
+一般規則として残しているが、HC 実装では使わない。
 
 ```text
 30秒経過
