@@ -71,9 +71,7 @@
     ],
     "collectCoverageFrom": [
       "lib/**/*.ts",
-      "services/**/*.ts",
-      "!services/HealthConnectService.ts",
-      "!services/SyncWorker.ts"
+      "services/**/*.ts"
     ]
   }
 }

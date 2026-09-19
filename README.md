@@ -2131,13 +2131,49 @@ iOS の動作を保証しない。
 - `expo prebuild -p android --clean` → `cd android && ./gradlew
   assembleDebug` で実機なしのビルド成功を確認済み（BUILD SUCCESSFUL）
 
+### ステップ2: HealthConnectService.ts・SyncWorker.ts（完了）
+
+- [services/HealthConnectService.ts](services/HealthConnectService.ts)：
+  `react-native-health-connect` への唯一の入口。`upsertActivity`
+  （create/update 合流、§9.2/§9.4）・`deleteActivityRecord`・
+  `recreateActivity`（§9.3.1、delete 失敗時は insert しない）を提供。
+  送るのは `time` と `protectionUsed` のみ（§9.9）、addressing は
+  `clientRecordId`（= activity.id）/`clientRecordVersion`（=
+  activity.syncVersion）で行い `external_record_id` は health_connect では
+  常に null（§5.4）。cancel 不可（D-41 確認済み）のため意図的に
+  `Promise.race()` によるタイムアウトを実装していない——タイムアウトの
+  判断は SyncCoordinator（次ステップ）の責務
+- エラー分類は `node_modules/.../ExceptionsUtils.kt` の code 文字列一覧を
+  ソースで確認して実装（推測なし）。`NOT_FOUND`/`RATE_LIMITED` に対応する
+  code は存在しないため、削除の「存在しない」は特別扱いせず
+  resolve=成功・reject=失敗の単一処理のみ（§9.7 確認結果通り）
+- [services/SyncWorker.ts](services/SyncWorker.ts)：§9.5 の claim/finalize
+  ループ（`processNextDueJob`）と、due なジョブを無くなるまで処理する
+  `drainDueJobs`。§9.5.1（外部の成功とジョブの完了を分ける）・§9.5.3
+  （内部不整合）・§9.6（バックオフ・上限到達で手動待ち）・§9.7（削除の
+  単純化された確定処理）を実装。**AppState 監視・定期実行・破壊的操作との
+  排他（§9.12）は含まない**——`lib/screenMask.ts` と同じく、純粋なループ本体と
+  「いつ呼ぶか」の配線を分離した（配線は次の SyncCoordinator ステップで行う）
+- 内部不整合（§9.5.3/§9.5.4）を検出した場合、**開発ビルドでも例外は投げない**
+  よう実装した。基本設計は「開発ビルドでは assert / テスト失敗とする」と
+  書いているが、文字通り実行時に throw すると `drainDueJobs` のループ全体が
+  止まり、他の due なジョブまで巻き添えで処理できなくなる（Rule 2 と矛盾）。
+  「テスト失敗とする」は自動テストがこの分岐を検出する形で満たし
+  （`test/__tests__/syncWorker.integration.test.ts`）、実行時は `logError`
+  （Activity の内容を含まない、§8.7）でジョブを進行不能マークするに留めた
+- テスト：`services/__tests__/HealthConnectService.test.ts`（`react-native-
+  health-connect` をモック化した単体テスト、エラー分類・値変換・recreate の
+  2段階を検証）、`test/__tests__/syncWorker.integration.test.ts`
+  （`HealthConnectService` をモック化し実 SQLite に対して claim/finalize の
+  状態遷移を検証）。既存テストと合わせて全20スイート・276件がパス
+- `package.json` の `jest.collectCoverageFrom` から2ファイルの除外エントリを
+  削除（実装・テストとも揃ったため）
+
 ### Known gaps（次のステップ）
 
-- `services/HealthConnectService.ts` / `services/SyncWorker.ts` は未実装
-  （§9.5/§9.6 の claim/finalize/リトライループ本体。DB プリミティブは
-  `repositories/HealthSyncJobRepository.ts` / `HealthSyncRepository.ts` として
-  Phase 1 で実装済み）
-- `SyncCoordinator`（§9.12、破壊的操作との排他制御）は未実装
+- `SyncCoordinator`（§9.12、破壊的操作との排他制御。`drainDueJobs` を
+  いつ・どのくらいの頻度で呼ぶか、AppState 配線、破壊的操作とのmutexを
+  ここで実装する）は未実装
 - Settings 画面の Health Connect UI（ON/OFF・未同期の変更・手動再試行/破棄）は
   未実装
 - **「同期しないことを選んだ」永続状態が未設計**：`services/syncJobPlanner.ts`
