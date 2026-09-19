@@ -32,19 +32,27 @@
  * this overlay to fail to cover, so nothing here needs to wait for
  * anything else to finish closing.
  *
- * Same reasoning shaped `app/record.tsx`'s date/time picker (§11.4): its
- * iOS sheet is a plain absolutely-positioned `View` inside the screen, not
- * RN's `<Modal>`, specifically so it stays inside the tree this overlay
- * covers instead of reintroducing the problem described above. Android's
- * `@react-native-community/datetimepicker` has no non-dialog mode at all
- * (its declarative API opens the same native `Dialog` window internally),
- * so that dialog genuinely is a separate window this overlay can't cover
- * by construction — but unlike the old `record.tsx` modal problem above,
- * it *can* be dismissed from code (`DateTimePickerAndroid.dismiss`), so
- * `record.tsx` closes it (and the iOS sheet) itself the moment `AppState`
- * leaves `active`, instead of accepting it as an uncloseable exception.
+ * Same reasoning shaped `app/record.tsx`'s date/time picker (§11.4), and
+ * later `app/activity/[id].tsx`'s (D-50, the post-hoc edit). Both screens
+ * share one implementation of this — `hooks/useNativeDateTimePicker.ts` +
+ * `components/DateTimePickerSheet.tsx` — specifically so this invariant
+ * only has to be upheld in one place rather than kept in sync across two
+ * independently-edited copies (an earlier version duplicated it per
+ * screen; a review flagged the drift risk that created). The iOS sheet is
+ * a plain absolutely-positioned `View`, not RN's `<Modal>`, so it stays
+ * inside the tree this overlay covers instead of reintroducing the
+ * problem described above. Android's `@react-native-community/
+ * datetimepicker` has no non-dialog mode at all (its declarative API
+ * opens the same native `Dialog` window internally), so that dialog
+ * genuinely is a separate window this overlay can't cover by construction
+ * — but unlike the old `record.tsx` modal problem above, it *can* be
+ * dismissed from code (`DateTimePickerAndroid.dismiss`), so the hook
+ * closes it (and the iOS sheet) itself the moment `AppState` leaves
+ * `active`, instead of accepting it as an uncloseable exception.
  * `isLocked()` is also re-checked in the dialog's own callbacks, for the
- * gap between a selection landing and that listener closing it.
+ * gap between a selection landing and that listener closing it. The
+ * chained-dialog and clamp-to-now logic itself lives in
+ * `lib/androidDateTimePicker.ts`, called from that same shared hook.
  *
  * No app-specific PIN, no bypass — `expo-local-authentication` (device
  * biometrics, falling back to device passcode by default) is the only way

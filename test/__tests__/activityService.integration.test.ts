@@ -96,6 +96,32 @@ describe('updateActivity', () => {
     expect(editedAgain.syncVersion).toBe(3);
   });
 
+  it('updates the recorded date/time together with its derived fields (D-50 Activity Detail post-hoc edit)', async () => {
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+      timezoneId: 'Asia/Tokyo',
+    });
+
+    const edited = await ActivityService.updateActivity(db, activity.id, {
+      occurredAtUtc: '2026-09-10T05:00:00Z',
+      occurredLocalDate: '2026-09-10',
+      occurredLocalTime: '14:00',
+      timezoneOffsetMinutes: 540,
+      timezoneId: 'Asia/Tokyo',
+    });
+
+    expect(edited.occurredAtUtc).toBe('2026-09-10T05:00:00Z');
+    expect(edited.occurredLocalDate).toBe('2026-09-10');
+    expect(edited.occurredLocalTime).toBe('14:00');
+    expect(edited.timezoneOffsetMinutes).toBe(540);
+    expect(edited.syncVersion).toBe(2); // D-19: bumped like any other edit
+    expect(edited.context).toBe('solo'); // untouched by this patch
+
+    const reread = await ActivityRepository.findActivityById(db, activity.id);
+    expect(reread).toEqual(edited);
+  });
+
   it('leaves an existing pending create job untouched on edit (§9.3, no payload on jobs)', async () => {
     await enableHealthConnect();
     const activity = await ActivityService.recordActivity(db, {

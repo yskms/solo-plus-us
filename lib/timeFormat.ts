@@ -26,3 +26,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function formatCalendarDateTime(year: number, month0: number, day: number, localTime: string, format: TimeFormat): string {
   return `${MONTHS[month0]} ${day}, ${year} · ${formatLocalTime(localTime, format)}`;
 }
+
+/** Same display as `formatCalendarDateTime`, but from a raw local `Date` (a date/time picker's in-progress value, not yet persisted as `occurredLocalDate`/`occurredLocalTime`) — used by both `app/record.tsx` and `app/activity/[id].tsx`'s pickers. */
+export function formatPickedDateTime(date: Date, format: TimeFormat): string {
+  const localTime = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return formatCalendarDateTime(date.getFullYear(), date.getMonth(), date.getDate(), localTime, format);
+}

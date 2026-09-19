@@ -221,19 +221,31 @@ export function addSecondsIso(iso: string, seconds: number): string {
 }
 
 /**
- * Minute-level identity check — used by the Add Activity date/time picker
- * (`app/record.tsx`) to tell "opened and confirmed without actually
- * changing anything" apart from a real edit, since `occurred_at_utc` is
- * minute precision anyway (§4.2).
+ * Minute-level identity check — used by the date/time pickers in
+ * `app/record.tsx` and `app/activity/[id].tsx` (via
+ * `hooks/useNativeDateTimePicker.ts` and `resolveOccurredAtEdit` below) to
+ * tell "opened and confirmed without actually changing anything" apart
+ * from a real edit, since `occurred_at_utc` is minute precision anyway
+ * (§4.2).
  */
 export function sameMinute(a: Date, b: Date): boolean {
   return Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
 }
 
-/** Never allow a future recorded time (`app/record.tsx`'s date/time picker), regardless of what a platform picker itself enforces — Android's `maximumDate` only constrains the date dialog, not the time dialog that follows it. */
+/**
+ * Generic upper-bound clamp. `clampToNow` below is the common case
+ * (`clampTo(date, new Date())`), but the date/time pickers' own internal
+ * future-guard (`hooks/useNativeDateTimePicker.ts`,
+ * `lib/androidDateTimePicker.ts`) needs a boundary that isn't necessarily
+ * *real* "now" — see `nowAsZonedDigits`'s doc comment for why.
+ */
+export function clampTo(date: Date, max: Date): Date {
+  return date.getTime() > max.getTime() ? max : date;
+}
+
+/** Never allow a future recorded time (the date/time pickers in `app/record.tsx` and `app/activity/[id].tsx`), regardless of what a platform picker itself enforces — Android's `maximumDate` only constrains the date dialog, not the time dialog that follows it. */
 export function clampToNow(date: Date): Date {
-  const now = new Date();
-  return date.getTime() > now.getTime() ? now : date;
+  return clampTo(date, new Date());
 }
 
 /**
@@ -250,4 +262,128 @@ export function hasZeroSeconds(utcIso: string): boolean {
 /** Combines format validation with the `occurred_at_utc`-specific seconds rule (§4.2/§13.4). */
 export function isValidOccurredAtUtc(value: unknown): value is string {
   return isValidUtcIso(value) && hasZeroSeconds(value);
+}
+
+/**
+ * Inverse of `resolveOffsetMinutesForZone`: the UTC instant whose
+ * wall-clock reads back as `year`/`month0`/`day`/`hour`/`minute` when
+ * formatted in `timeZoneId`. Two-pass approximation — guess the offset
+ * from a same-digits-as-UTC candidate, then re-resolve once more against
+ * that candidate's actual instant, which is enough to converge except
+ * exactly at a DST transition (same known, undefended edge case as
+ * `resolveOffsetMinutesForZone`'s own callers elsewhere in this file).
+ */
+export function zonedComponentsToUtc(
+  year: number,
+  month0: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZoneId: string,
+): Date {
+  const naiveUtcMs = Date.UTC(year, month0, day, hour, minute, 0, 0);
+  const firstGuessOffset = resolveOffsetMinutesForZone(timeZoneId, new Date(naiveUtcMs));
+  const candidateMs = naiveUtcMs - firstGuessOffset * 60_000;
+  const secondGuessOffset = resolveOffsetMinutesForZone(timeZoneId, new Date(candidateMs));
+  return new Date(naiveUtcMs - secondGuessOffset * 60_000);
+}
+
+/**
+ * "Now", expressed as a digit carrier (see `resolveOccurredAtEdit`'s doc
+ * comment for what that means) whose Y/M/D/H/Min — read via *local*
+ * (device-zone) getters — are what the wall clock currently reads in
+ * `timeZoneId`. `atInstant` defaults to the real current instant; the
+ * parameter exists so this is testable without depending on wall-clock
+ * time.
+ *
+ * This is `hooks/useNativeDateTimePicker.ts`'s own future-time boundary
+ * (its `getMax`) when editing a record in `app/activity/[id].tsx` —
+ * comparing a picked digit carrier against *real* "now" would judge
+ * "future-ness" using the device's own zone, which is wrong once the
+ * record's zone differs from the device's: a genuinely past moment in a
+ * zone *east* of the device's can read as numerically later than the
+ * device's own current wall clock (review finding, D-50, 3rd round — e.g.
+ * editing a Tokyo-recorded entry from a device currently in
+ * America/Los_Angeles: 05:00 JST tomorrow-device's-date is a perfectly
+ * valid *past* Tokyo moment whenever it's already past 05:00 JST "today",
+ * even though LA's own wall clock hasn't reached tomorrow yet). Comparing
+ * two digit carriers *both* expressed in the record's own zone — the
+ * picked value against this function's result — is the correct,
+ * apples-to-apples comparison. The *authoritative* clamp against a real
+ * instant still happens in `resolveOccurredAtEdit`; this is only the
+ * picker's own live, pre-Save guard (native `maximumDate` props, and the
+ * chained-dialog combine-then-clamp in `lib/androidDateTimePicker.ts`).
+ */
+export function nowAsZonedDigits(timeZoneId: string, atInstant: Date = new Date()): Date {
+  const offset = resolveOffsetMinutesForZone(timeZoneId, atInstant);
+  const { localDate, localTime } = deriveLocalDateTime(atInstant, offset);
+  const [y, m, d] = localDate.split('-').map(Number);
+  const [hh, mm] = localTime.split(':').map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0, 0);
+}
+
+/**
+ * Resolves what (if anything) `app/activity/[id].tsx`'s date/time picker
+ * should patch on Save (D-50, review findings #1/#2 — see the design
+ * decision record for the two wrong approaches this replaced). Returns
+ * `{}` — no patch at all — when the picker was never opened
+ * (`pickedLocalDigits` is `null`) or was opened and confirmed without
+ * actually changing the recorded minute: either way, the exact original
+ * `occurred_*` values must pass through unchanged rather than being
+ * recomputed from a "changed" value that isn't really different, which
+ * would otherwise bump `sync_version` (D-19) for a no-op edit and could
+ * queue a needless Health Connect update job.
+ *
+ * `pickedLocalDigits` is treated purely as a carrier for the Y/M/D/H/Min
+ * digits the picker displayed and the person edited — read via `Date`'s
+ * *local* (device-zone) getters, exactly as `app/activity/[id].tsx`'s
+ * `toLocalDate` constructs it and as the native picker components display
+ * and edit it (there being no timezone-aware picker, §4.4's known v1
+ * limitation). Those digits are then resolved into a real UTC instant as
+ * wall-clock time *in the record's own `recordedTimezoneId`* (falling
+ * back to the device's current zone only if it's `null`) — deliberately
+ * NOT the device's current zone unconditionally, and deliberately NOT by
+ * trusting `pickedLocalDigits.getTime()` directly (that epoch is
+ * meaningless here — it's whatever the device's *current* zone happens to
+ * make of those digits, which is only correct when the device's current
+ * zone equals `recordedTimezoneId`).
+ *
+ * This two-step split (read digits → resolve in the record's own zone) is
+ * what keeps the DATE & TIME text, the picker, and the saved value all
+ * showing/producing the *same* wall-clock time throughout an edit — an
+ * earlier version instead fed the picker a real parsed instant, which
+ * looked internally consistent but showed a *different* wall-clock number
+ * than the DATE & TIME text whenever the device's current zone differed
+ * from the record's — e.g. a 14:00 JST entry opened from a device
+ * currently in America/Los_Angeles showed "14:00" as static text but the
+ * picker itself opened already showing a different hour. `clampToNow` is
+ * applied to the *resolved* instant, not to `pickedLocalDigits` itself —
+ * this is the authoritative check. The picker's own live guard before
+ * Save (native `maximumDate` props, and `lib/androidDateTimePicker.ts`'s
+ * chained-dialog clamp) is a separate, zone-consistent comparison against
+ * `nowAsZonedDigits(recordedTimezoneId)` (see that function's doc
+ * comment) — the two only diverge right at a DST transition in the
+ * record's zone, which neither this function nor that one specially
+ * handles (same known, undefended edge case noted elsewhere in this
+ * file).
+ */
+export function resolveOccurredAtEdit(
+  recordedAtUtc: string,
+  recordedTimezoneId: string | null,
+  pickedLocalDigits: Date | null,
+): Partial<OccurredAtFields & { timezoneId: string }> {
+  if (!pickedLocalDigits) return {};
+  const timezoneId = recordedTimezoneId ?? getDeviceTimeZoneId();
+  const resolvedInstant = zonedComponentsToUtc(
+    pickedLocalDigits.getFullYear(),
+    pickedLocalDigits.getMonth(),
+    pickedLocalDigits.getDate(),
+    pickedLocalDigits.getHours(),
+    pickedLocalDigits.getMinutes(),
+    timezoneId,
+  );
+  const clamped = clampToNow(resolvedInstant);
+  const original = parseStrictUtcIso(recordedAtUtc);
+  if (sameMinute(clamped, original)) return {};
+  return { ...buildOccurredAtFields(clamped, timezoneId), timezoneId };
 }

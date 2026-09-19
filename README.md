@@ -1626,6 +1626,121 @@ Add Activity 画面内で日時候補を選び直す操作を指しており、�
 先に見直すか、設計判断記録に新規項目として起票する必要がある（今回はレビューで指摘を受け、
 「仕様に記載が無い」という誤った説明を上記のとおり修正した）。
 
+##### 追記（2026-09-19）：スコープを拡張し、Activity Detail の事後編集も実装
+
+上記の判断は 設計判断記録 D-50 で明示的に上書きした——記録済み Activity の日時事後編集を
+スコープに含める。`app/activity/[id].tsx` の DATE & TIME をタップすると、`app/record.tsx`
+と同じネイティブ picker（`hooks/useNativeDateTimePicker.ts` + `components/
+DateTimePickerSheet.tsx` に共通化——Android の連鎖ダイアログ／iOS の絶対配置シート）が開き、
+この画面の他フィールドと同様、選んだ値は Save ボタンを押すまで DB に反映されない。日時
+パッチの解決ロジックは `lib/datetime.ts` の `resolveOccurredAtEdit`（+その逆変換
+`zonedComponentsToUtc`）に集約した——詳細と最終的な決定は D-50 本文参照。
+`ActivityService.updateActivity` が `occurredAtUtc`/`occurredLocalDate`/`occurredLocalTime`/
+`timezoneOffsetMinutes`/`timezoneId` を一括で更新できることを確認する統合テストを
+`test/__tests__/activityService.integration.test.ts` に追加。UI 自体（`app/activity/
+[id].tsx` の picker タップ→保存）は Pixel 11 実機で確認済み（下記「実機確認（Android）」
+参照）。iOS は上記の理由で未確認のまま（Known gaps 参照）。
+
+##### レビューで見つかり、修正したもの（1回目）
+
+1. **【中】旅行先で編集すると、UTC 時刻と `timezoneId` が現在地のもので上書きされていた**：
+   初版の `toLocalDate()` は、保存済みの現地日付・時刻（`occurredLocalDate`/
+   `occurredLocalTime`）を**端末の現在のタイムゾーン**の時刻として読み直し、保存時も
+   `getDeviceTimeZoneId()` でオフセットを計算し直していた。東京で記録した分をロサンゼルスで
+   開いて分だけ直すと、`occurredAtUtc` が約17時間ずれ、`timezoneId` も
+   `America/Los_Angeles` に変わってしまう——RECENT やカレンダーの並びが UTC 基準である以上、
+   並び順まで壊れうる。`record.tsx` の「端末の現在ゾーン＝記録した瞬間のゾーン」という前提
+   （新規記録だから成立する）を、事後編集にもそのまま流用したのが原因。1回目の修正では
+   picker に実際の瞬間（`parseStrictUtcIso(activity.occurredAtUtc)`）を渡す形にしたが、
+   これは表示の不整合という新しい問題を生んだ——2回目のレビュー参照
+2. **【低〜中】一度変更したあと元の値に選び直しても「変更あり」のまま保存されていた**：
+   「変更なしと確定」の判定が、記録済みの元の値ではなく直前に選んだ値
+   （`customInstant`）と比較していた。変更→元に戻す、と操作すると `sync_version` が
+   無意味に上がり、Health Connect 同期が有効なら不要な update ジョブまで積まれる。
+   `resolveOccurredAtEdit` が、選んだ値を**記録済みの元の瞬間**と直接比較するようにした
+   ことで解消した（この判定方式自体は2回目の修正後も変わっていない）
+3. **【低】Android 共通化後も iOS 側の実装が2画面に重複していた**：`AppState` の
+   listener・iOS シートの JSX・`pickerOverlay`/`pickerSheet` のスタイル・
+   `pendingInstant`/`pickerBase`/`confirmIosPicker` が `record.tsx`/`app/activity/
+   [id].tsx` にほぼ同じ形で存在し、`contexts/AppLock.tsx` が「両画面が守る」前提とする
+   App Lock 対応（`<Modal>` を使わない、`AppState` 非 active で閉じる、`isLocked()` 再確認）
+   が片方だけ直されて drift する危険があった。`hooks/useNativeDateTimePicker.ts`
+   （state・`AppState` listener・open/confirm/cancel）と
+   `components/DateTimePickerSheet.tsx`（iOS シートの JSX・スタイル）に切り出し、両画面から
+   使う一つの実装にした
+4. **【低】DATE & TIME をタップ可能にしたことで、スクリーンリーダーが日時を読み上げなくなって
+   いた**：`accessibilityLabel="Change date and time"` が子 `Text`（実際の日時の値）の
+   読み上げを上書きしてしまい、以前は自動的に読み上げられていた値が VoiceOver/TalkBack で
+   読めなくなっていた（アクセシビリティの後退）。`accessibilityLabel` に表示中の日時の値
+   そのものを入れ、操作の説明は `accessibilityHint` に移した
+5. **【低】追加したテストが今回の新規ロジックを検証していなかった**：最初に追加した統合
+   テストは、既存の `ActivityService.updateActivity` が日時 patch を受け付けることの確認に
+   留まっていた（D-50 が「元々受け付けていた」と書いている部分）。日時を触っていないときは
+   patch に含めない・元の値に戻したら無変更扱いにする・タイムゾーンの解決、という今回の
+   新規ロジックは `resolveOccurredAtEdit` として純粋関数に切り出し、
+   `lib/__tests__/datetime.test.ts` に単体テストを追加した
+6. **【低】`sameMinute`/`clampToNow` の doc comment が `app/record.tsx` のみを参照した
+   まま古くなっていた**：利用元が増えたことに合わせて更新した
+
+##### レビューで見つかり、修正したもの（2回目）
+
+1. **【中】記録時と別のタイムゾーンで編集すると、画面の表示・picker・保存値の「時刻」が
+   ずれる**：1回目の修正で picker に実際の瞬間を渡すようにした結果、ネイティブ picker が
+   その瞬間を**端末の現在ゾーン**で表示・編集することと衝突していた。東京 14:00 の記録を
+   LA から開くと、タップ前のテキストは「14:00」（記録ゾーン）なのに picker は「前日
+   22:00」（端末ゾーン）から始まり、23:00 を選んだ直後の表示は「23:00」（端末ゾーン）、
+   保存して再読込すると「15:00」（記録ゾーン、UTC としては正しい）——テキストの「14:00」
+   を見て「15:00 にしよう」と選んだつもりが、実際には東京時間の翌日 07:00 として保存
+   される。UTC 自体は正しいが「表示だけの問題」とは言えない実害があった。修正：picker に
+   渡す `Date` を「年月日・時分の数字を運ぶ入れ物」として扱う方式（初版の `toLocalDate` と
+   同じ構築方法）に戻し、保存時にその数字を `activity.timezoneId` の時刻とみなして UTC に
+   変換する（`lib/datetime.ts` の `zonedComponentsToUtc`、`resolveOffsetMinutesForZone` の
+   逆変換）。これにより、テキスト・picker・保存後の表示のすべてが常に同じ記録ゾーンの
+   時刻で揃うようになった。保存時の最終的な未来判定（`resolveOccurredAtEdit` 内の
+   `clampToNow`）はゾーン解決した**後**の実際の瞬間に対して行うが、**picker 自身の
+   内部の未来判定は端末の現在ゾーンと比較したままだった**——これは3回目のレビューで
+   見つかった別の不具合として残った（下記「3回目」参照）
+2. **【中】設計判断記録 D-50 の「決定」本文が、1回目の修正後の実装のまま更新されておらず、
+   2回目の修正内容と食い違っていた**：「`timezoneId` は…常に端末の現在の IANA ゾーンを
+   使う」という記述が残っていた。設計判断記録は「再議論しないための参照元」であるため、
+   ここが古いままだと将来の実装者が誤った方針に戻しかねない。D-50 本文を現在の実装
+   （`hooks/useNativeDateTimePicker.ts`・`components/DateTimePickerSheet.tsx`・
+   `resolveOccurredAtEdit`・`zonedComponentsToUtc`）に合わせて書き直した
+3. **【低】`load` の `useCallback` 依存配列に `reset`（`customInstant` を `null` に戻す
+   関数）が入っていなかった**：実害はない（`reset` は安定した `setCustomInstant` を
+   呼ぶだけ）が、`hooks/useNativeDateTimePicker.ts` 側で `reset` を `useCallback` で
+   安定させたうえで、`load` の依存配列に追加した
+
+##### レビューで見つかり、修正したもの（3回目）
+
+1. **【中】記録ゾーンが端末より東にあると、picker 内部の丸め処理が正しい過去の時刻を
+   無言で別の時刻に置き換える**：2回目の修正で picker には「数字の入れ物」を渡すように
+   したが、その入れ物の**未来判定**（Android の連鎖ダイアログ内の丸め・両プラットフォーム
+   の `maximumDate`）は直さないままだったため、依然として実際の「今」（`new Date()`）と
+   比較していた。東京で記録した分を、ロサンゼルスで「今が LA の 9/19 10:00（＝東京の
+   9/20 02:00）」というタイミングで編集するケース：東京の 9/20 01:00 は正しい過去の
+   時刻だが、その数字を端末（LA）換算でそのまま「未来」と判定してしまい、picker 内部で
+   無言で「今」の数字（LA の 9/19 10:00）に置き換わる。保存時にはそれが東京時間として
+   解決され、利用者が選んでいない、何も表示されない別の時刻が保存される。修正：
+   `lib/datetime.ts` に `nowAsZonedDigits(timezoneId)`（「今」を指定ゾーンの数字の入れ物
+   として表す関数）と汎用の `clampTo(date, max)` を追加し、`hooks/
+   useNativeDateTimePicker.ts` に `getMax` を新設（`app/record.tsx` は従来どおり
+   `() => new Date()`、`app/activity/[id].tsx` は `() => nowAsZonedDigits(activity.
+   timezoneId ?? getDeviceTimeZoneId())`）。`lib/androidDateTimePicker.ts`
+   （`maximumDate`・連鎖後の丸め）と iOS シートの `maximumDate` の両方をこれに揃えた。
+   保存時の権威ある `clampToNow`（`resolveOccurredAtEdit` 内、実際の瞬間どうしの比較）は
+   変更していない——今回直したのはあくまで Save 前の picker 自身の目安
+2. **【低】端末のゾーンで存在しない時刻（夏時間の切り替わりのギャップ）を読み込むと
+   1時間ずれる**：`toLocalDate` が `new Date(y, m, d, hh, mm)` で数字の入れ物を組み立てる
+   際、その数字が端末の現在ゾーンで夏時間の「飛び」に当たっていると（例：東京 02:30 の
+   記録を、米国が夏時間入りする当日に NY の端末で開く）、JS の `Date` が黙って1時間
+   繰り上げる。既存の DST ギャップの既知の制限（`lib/androidDateTimePicker.ts` 参照）と
+   同種の、稀な未対応ケースとしてコメントに残すのみとした
+3. **【低】`hooks/useNativeDateTimePicker.ts` の doc comment が古いままだった**：
+   `getBase` の説明が「Activity Detail: the already-recorded instant」のままで、実際は
+   瞬間ではなく数字の入れ物であることを反映していなかった。`getMax` の追加と合わせて
+   書き直した
+
 #### 実装済み
 
 | 層 | 内容 |
@@ -1767,10 +1882,19 @@ Partnered の通常記録、いずれも問題なし。iOS は上記「iOS ロ�
 - **タイムゾーン選択 UI は無い**（§4.4 既知の制限、Phase 1 から変更なし）：旅行先の
   出来事を帰国後に入力すると、常に現在地（デバイスの現在の IANA タイムゾーン）のオフセットが
   適用される
-- **記録済み Activity の日時編集は範囲外**：上記「スコープの判断」参照。`app/activity/[id].tsx`
-  の DATE & TIME は引き続き表示専用
+- **Activity Detail の事後編集（D-50, 2026-09-19 追加）は Android 実機で確認済み、
+  iOS は未確認**：Pixel 11（実機・USB接続）で `app/activity/[id].tsx` の DATE & TIME
+  タップ→date→time の連鎖ダイアログ→未来日時が選べないこと（`maximumDate`）→Save→
+  Today 画面（RECENT の並び替え・LAST ACTIVITY）・詳細の再読込のいずれも正しく反映
+  されることを確認した（2・3回目のレビュー修正後も再確認済み）。iOS は上記「iOS
+  ローカルビルドがブロック中」のため未確認のまま。**端末のタイムゾーンと記録済みの
+  タイムゾーンが異なるケース**（2・3回目のレビューで修正した箇所）は、実機の言語/地域
+  設定を変えずに再現するのが難しいため実機確認はしておらず、`lib/__tests__/
+  datetime.test.ts` の `resolveOccurredAtEdit`/`zonedComponentsToUtc`/
+  `nowAsZonedDigits` テストでのみ検証している
 - **Android の DST ギャップ（存在しない時刻）は未対応**：上記レビュー #6 参照。既知の制限として
-  コメントに残すのみ
+  コメントに残すのみ（`app/activity/[id].tsx` の `toLocalDate` にも同種の未対応ケースが
+  あり、3回目のレビュー #2 で同じ扱いとした）
 - **未来時刻を選ぶと無言で現在時刻に丸められる**：上記2回目レビュー #4 参照。実機（Android）で
   確認済み、仕様として許容する
 - **TODO（v1.1 候補）：「その日」の境界（現地 00:00、§4.5）が固定で変更できない**：

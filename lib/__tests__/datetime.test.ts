@@ -3,18 +3,23 @@ import {
   isValidOccurredAtUtc,
   addSecondsIso,
   buildOccurredAtFields,
+  clampTo,
   clampToNow,
   deriveLocalDateTime,
   formatUtcIso,
+  getDeviceTimeZoneId,
   isLocalDateTimeConsistent,
   isValidLocalDate,
   isValidLocalTime,
   isValidUtcIso,
+  nowAsZonedDigits,
   nowUtcIso,
   parseStrictUtcIso,
+  resolveOccurredAtEdit,
   resolveOffsetMinutesForZone,
   sameMinute,
   truncateToMinute,
+  zonedComponentsToUtc,
 } from '../datetime';
 
 describe('parseStrictUtcIso', () => {
@@ -206,5 +211,114 @@ describe('clampToNow', () => {
     const clamped = clampToNow(future);
     expect(clamped.getTime()).toBeLessThan(future.getTime());
     expect(clamped.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+});
+
+describe('clampTo (generic upper bound — clampToNow is clampTo(date, new Date()))', () => {
+  it('passes through a date at or before max unchanged', () => {
+    const max = new Date('2026-01-01T00:00:00Z');
+    const before = new Date('2025-12-31T00:00:00Z');
+    expect(clampTo(before, max)).toBe(before);
+  });
+
+  it('clamps a date past max down to max', () => {
+    const max = new Date('2026-01-01T00:00:00Z');
+    const after = new Date('2026-06-01T00:00:00Z');
+    expect(clampTo(after, max)).toBe(max);
+  });
+});
+
+describe('nowAsZonedDigits (D-50 review finding #1, 3rd round — the date/time picker\'s own future guard)', () => {
+  it("returns a digit carrier reflecting the wall clock in the given zone at a given instant", () => {
+    // 2026-09-10T05:00:00Z is 2026-09-10 14:00 JST.
+    const digits = nowAsZonedDigits('Asia/Tokyo', new Date('2026-09-10T05:00:00Z'));
+    expect(digits.getFullYear()).toBe(2026);
+    expect(digits.getMonth()).toBe(8);
+    expect(digits.getDate()).toBe(10);
+    expect(digits.getHours()).toBe(14);
+    expect(digits.getMinutes()).toBe(0);
+  });
+
+  it('can read a wall clock that is on a different calendar day than the reference instant\'s UTC date', () => {
+    // 2026-09-19T20:00:00Z is 2026-09-20 05:00 JST — a day later than the UTC date.
+    const digits = nowAsZonedDigits('Asia/Tokyo', new Date('2026-09-19T20:00:00Z'));
+    expect(digits.getDate()).toBe(20);
+    expect(digits.getHours()).toBe(5);
+  });
+});
+
+describe('zonedComponentsToUtc (inverse of resolveOffsetMinutesForZone)', () => {
+  it('converts JST wall-clock digits to the correct UTC instant', () => {
+    // 2026-09-10 14:00 JST (+540, no DST) => 2026-09-10 05:00 UTC
+    expect(formatUtcIso(zonedComponentsToUtc(2026, 8, 10, 14, 0, 'Asia/Tokyo'))).toBe('2026-09-10T05:00:00Z');
+  });
+
+  it('converts US Eastern wall-clock digits correctly on either side of a DST transition', () => {
+    expect(formatUtcIso(zonedComponentsToUtc(2026, 0, 15, 9, 0, 'America/New_York'))).toBe('2026-01-15T14:00:00Z'); // EST, UTC-5
+    expect(formatUtcIso(zonedComponentsToUtc(2026, 6, 15, 9, 0, 'America/New_York'))).toBe('2026-07-15T13:00:00Z'); // EDT, UTC-4
+  });
+
+  it('round-trips with deriveLocalDateTime for an arbitrary zone', () => {
+    const utc = zonedComponentsToUtc(2026, 8, 10, 14, 5, 'Asia/Tokyo');
+    const offset = resolveOffsetMinutesForZone('Asia/Tokyo', utc);
+    expect(deriveLocalDateTime(utc, offset)).toEqual({ localDate: '2026-09-10', localTime: '14:05' });
+  });
+});
+
+describe('resolveOccurredAtEdit (D-50 Activity Detail post-hoc edit, review findings #1/#2, two rounds)', () => {
+  // `pickedLocalDigits` below is always built via the local `Date`
+  // constructor (never by parsing a UTC ISO string) — that's what makes
+  // it a "digit carrier" rather than a real instant, matching exactly how
+  // `app/activity/[id].tsx`'s picker produces it. Using an ISO-string
+  // `Date` here instead would make these tests silently depend on
+  // whatever zone the test happens to run in.
+
+  it('returns no patch when the picker was never opened', () => {
+    expect(resolveOccurredAtEdit('2026-09-10T05:00:00Z', 'Asia/Tokyo', null)).toEqual({});
+  });
+
+  it('returns no patch when the picked digits resolve back to the same minute as what is already recorded', () => {
+    // 2026-09-10T05:00:00Z is 2026-09-10 14:00 in Asia/Tokyo.
+    const pickedSameValue = new Date(2026, 8, 10, 14, 0);
+    expect(resolveOccurredAtEdit('2026-09-10T05:00:00Z', 'Asia/Tokyo', pickedSameValue)).toEqual({});
+  });
+
+  it("resolves the picked wall-clock digits in the record's OWN timezoneId, not the device's current one (review finding #1)", () => {
+    // Pick a zone guaranteed to differ (in offset, at this instant) from
+    // wherever this test happens to run — otherwise a regression to
+    // "always use the device's current zone" could accidentally pass just
+    // because the two happen to match on this particular machine.
+    const deviceZone = getDeviceTimeZoneId();
+    const referenceInstant = new Date('2026-09-10T05:00:00Z');
+    const deviceOffset = resolveOffsetMinutesForZone(deviceZone, referenceInstant);
+    const recordedZone = deviceOffset === 540 ? 'America/Los_Angeles' : 'Asia/Tokyo';
+    const recordedOffset = resolveOffsetMinutesForZone(recordedZone, referenceInstant);
+    expect(recordedOffset).not.toBe(deviceOffset);
+
+    // The original recorded instant, expressed as `recordedZone`'s own wall clock.
+    const { localDate, localTime } = deriveLocalDateTime(referenceInstant, recordedOffset);
+    const [y, m, d] = localDate.split('-').map(Number);
+    const [hh, mm] = localTime.split(':').map(Number);
+
+    // The picker shows exactly those digits (device-zone digit carrier), nudged 5 minutes later.
+    const pickedDigits = new Date(y, m - 1, d, hh, mm + 5);
+    const patch = resolveOccurredAtEdit(formatUtcIso(referenceInstant), recordedZone, pickedDigits);
+
+    expect(patch.timezoneId).toBe(recordedZone);
+    expect(patch.timezoneOffsetMinutes).toBe(recordedOffset);
+    expect(patch.occurredAtUtc).toBe(addSecondsIso(formatUtcIso(referenceInstant), 5 * 60));
+  });
+
+  it("falls back to the device's current zone only when the record has no timezoneId on file", () => {
+    const patch = resolveOccurredAtEdit('2026-09-10T05:00:00Z', null, new Date(2026, 8, 10, 14, 5));
+    expect(patch.timezoneId).toBe(getDeviceTimeZoneId());
+  });
+
+  it('clamps a future picked instant to now before computing the patch', () => {
+    const original = '2020-01-01T00:00:00Z'; // clearly not "now", so clamping is distinguishable from a no-op
+    const farFutureDigits = new Date(2099, 0, 1, 0, 0); // any zone resolves this to a real future instant
+    const patch = resolveOccurredAtEdit(original, 'Asia/Tokyo', farFutureDigits);
+    expect(patch.occurredAtUtc).toBeDefined();
+    expect(parseStrictUtcIso(patch.occurredAtUtc!).getTime()).toBeLessThanOrEqual(Date.now());
   });
 });
