@@ -43,6 +43,19 @@ OS バージョン帯では「Recent Apps 非表示」を優先し、副作用�
 設定が事実上 ON 固定（無効化不可）になることを受け入れる方針とした（2026-09-18）。
 詳細は README「Phase 3 実装状況 > 画面マスク」参照。
 
+### 日時 picker の「digit carrier」パターン（`app/activity/[id].tsx`）
+
+`app/activity/[id].tsx` の日時編集で picker に渡す `Date` は、実際の瞬間ではなく
+「年月日・時分の数字を運ぶだけの入れ物」として扱っている（`toLocalDate`・
+`nowAsZonedDigits`。詳細は `lib/datetime.ts` の `resolveOccurredAtEdit` の doc
+comment）。ネイティブ picker はタイムゾーンを意識できず、渡した `Date` を常に
+**端末の現在ゾーン**として表示・編集するため、「実際の瞬間を渡せばシンプルになる」
+という一見自然な簡略化（`parseStrictUtcIso(activity.occurredAtUtc)` を直接渡す等）は
+誤りで、記録時のゾーンと端末の現在ゾーンが異なる場合に表示・保存がずれる不具合を
+再発させる。この事後編集機能は D-50（設計判断記録）の追加後、4回のレビューで
+タイムゾーン絡みの不具合が3回続けて見つかっており、変更する際は必ず
+`resolveOccurredAtEdit`／`nowAsZonedDigits` の doc comment を先に読むこと。
+
 ### Android のダーク/ライト切替まわりの落とし穴
 
 画面遷移中に一瞬見える帯や、テーマ切替の反映漏れは `contentStyle`（React Navigation
