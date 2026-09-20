@@ -55,7 +55,6 @@
       "./plugins/withAndroidNightColors.js",
       "expo-localization",
       "@react-native-community/datetimepicker",
-      "react-native-health-connect",
       "./plugins/withHealthConnectPermissionsRationale.js",
       [
         "expo-build-properties",

@@ -81,14 +81,40 @@ async function finalizeUpsertSuccess(
   db: Transactor,
   provider: Provider,
   job: HealthSyncJobRow,
+  sentSyncVersion: number,
   externalRecordId: string | null,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const activity = await ActivityRepository.findActivityById(tx, job.activityId);
     if (activity) {
       await HealthSyncRepository.upsertMapping(tx, { activityId: job.activityId, provider, externalRecordId });
-      await HealthSyncJobRepository.deleteJobIfRevisionMatches(tx, job.id, job.revision);
-      // revision不一致なら何もしない — ジョブは新しい内容のまま残り、次のdrainで再送される（意図通り）。
+
+      if (activity.syncVersion !== sentSyncVersion) {
+        // §9.5.1「create送信中に編集→mappingは作られる→ジョブは残り、大きい
+        // sync_versionで送り直す」。planForEditは既存ジョブのrevisionに触れ
+        // ないため（§9.3、送信時に最新値を読む前提）、送信中に挟まった編集
+        // はrevisionでは検出できない——実際に送ったsyncVersionと現在値を
+        // 比較する必要がある。ジョブは削除せず、claimだけ外して即再送可能にする。
+        const released = await HealthSyncJobRepository.releaseClaimForResend(tx, job.id, job.revision, nowUtcIso());
+        if (!released) {
+          logError('SyncWorker: job disappeared during finalize despite Activity still existing (internal inconsistency, §9.5.4)', {
+            jobId: job.id,
+            provider,
+          });
+        }
+        return;
+      }
+
+      const deleted = await HealthSyncJobRepository.deleteJobIfRevisionMatches(tx, job.id, job.revision);
+      if (!deleted) {
+        // syncVersionが不変ということは編集は挟まっておらず、Activityも
+        // 存在する（削除でreplaceされてもいない）——この状態でrevisionが
+        // 不一致になる経路は無いはずの内部不整合。
+        logError('SyncWorker: job disappeared or was replaced unexpectedly during finalize (internal inconsistency, §9.5.4)', {
+          jobId: job.id,
+          provider,
+        });
+      }
       return;
     }
 
@@ -117,7 +143,14 @@ async function finalizeDeleteSuccess(db: Transactor, job: HealthSyncJobRow): Pro
   await HealthSyncJobRepository.deleteJobIfRevisionMatches(db, job.id, job.revision);
 }
 
-/** §9.6: 失敗時はバックオフ（attempts が上限を超えたら手動待ち = `not_before: null`）。 */
+/**
+ * §9.6: 失敗時はバックオフ（attempts が上限を超えたら手動待ち =
+ * `not_before: null`）。「上限（10）を超えた」の境界は文言上厳密には
+ * `attempts > 10`（11回目の失敗で手動待ち）とも読めるが、「上限は10」を
+ * 「自動試行は10回まで」と解釈し、10回目の失敗（`attempts === 10`、claim時
+ * 加算済み）で手動待ちへ切り替える方を採用した。バックオフ表自体が8段
+ * （attempts 8以降は24hで頭打ち）なので実質的な差は小さい。
+ */
 async function finalizeFailure(db: Transactor, job: HealthSyncJobRow, errorCode: SyncErrorCode): Promise<void> {
   const notBefore = job.attempts >= MAX_AUTOMATIC_ATTEMPTS ? null : addSecondsIso(nowUtcIso(), backoffSeconds(job.attempts));
   await HealthSyncJobRepository.markJobFailed(db, job.id, job.revision, { errorCode, notBefore });
@@ -129,8 +162,10 @@ async function finalizeFailure(db: Transactor, job: HealthSyncJobRow, errorCode:
  * （`drainDueJobs`）が確認済みという前提（§9.5 step0）。
  */
 export async function processNextDueJob(db: Transactor, provider: Provider): Promise<ProcessJobResult> {
-  const job = await HealthSyncJobRepository.claimNextDueJob(db, provider);
-  if (!job) return { status: 'no-due-job' };
+  const claimResult = await HealthSyncJobRepository.claimNextDueJob(db, provider);
+  if (claimResult === HealthSyncJobRepository.LOST_CLAIM_RACE) return { status: 'lost-claim-race' };
+  if (!claimResult) return { status: 'no-due-job' };
+  const job = claimResult;
 
   let activity: Activity | null = null;
   if (job.operation !== 'delete') {
@@ -154,7 +189,8 @@ export async function processNextDueJob(db: Transactor, provider: Provider): Pro
     if (job.operation === 'delete') {
       await finalizeDeleteSuccess(db, job);
     } else {
-      await finalizeUpsertSuccess(db, provider, job, result.externalRecordId);
+      // activity は非null（delete以外はstep3で存在確認済み）— 実際に送信したsyncVersionのスナップショット。
+      await finalizeUpsertSuccess(db, provider, job, activity!.syncVersion, result.externalRecordId);
     }
   } else {
     await finalizeFailure(db, job, result.errorCode);
@@ -181,7 +217,16 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
   }
 
   if (provider === 'health_connect') {
-    const ready = await HealthConnectService.ensureInitialized();
+    let ready: boolean;
+    try {
+      ready = await HealthConnectService.ensureInitialized();
+    } catch (error) {
+      // 未インストール等で initialize() 自体が reject するケース。個々の
+      // ジョブを claim して failure に追い込みバックオフを消費させるより、
+      // ここで諦める方が安全（呼び出し側に未処理rejectionを伝播させない）。
+      logError('SyncWorker: HealthConnectService.ensureInitialized() rejected', error);
+      ready = false;
+    }
     if (!ready) {
       return { processedCount: 0 };
     }
@@ -191,7 +236,10 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
   for (;;) {
     const result = await processNextDueJob(db, provider);
     if (result.status === 'no-due-job') break;
-    processedCount++;
+    if (result.status === 'processed') processedCount++;
+    // 'lost-claim-race': このプロセス内では今のところ起こらないはずだが
+    // （v1はフォアグラウンド単一runtime、§6.2/D-36）、起きても諦めずに次の
+    // due なジョブへ進む。
   }
   return { processedCount };
 }

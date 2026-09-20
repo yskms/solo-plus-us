@@ -75,19 +75,52 @@ describe('processNextDueJob — create/update success (§9.5.1)', () => {
     expect(mapping?.externalRecordId).toBeNull();
   });
 
-  it('still marks the job complete when the Activity is edited mid-flight — planForEdit leaves an in-flight job\'s revision untouched (§9.3), so the worker relies on having read current values just before the external call, not on revision to detect this particular race', async () => {
+  it('keeps the job (released, not deleted) for resend when the Activity is edited mid-flight — planForEdit leaves an in-flight job\'s revision untouched (§9.3), so finalize must detect this via syncVersion instead, per §9.5.1\'s race table ("create送信中に編集→ジョブは残り、大きいsync_versionで送り直す")', async () => {
     const activity = await recordDueActivity();
+    expect(activity.syncVersion).toBe(1);
     mockUpsertActivity.mockImplementation(async () => {
+      // The edit happens *during* the external call — after upsertActivity was
+      // invoked with syncVersion=1, but before it resolves.
       await ActivityService.updateActivity(db, activity.id, { protectionUsed: true });
       return { ok: true, externalRecordId: null };
     });
 
     await processNextDueJob(db, 'health_connect');
 
+    // The external send with the old (v1) data really did succeed — that fact must survive (§9.5.1).
     const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
     expect(mapping).not.toBeNull();
+
+    // But the job must survive so the edit (now syncVersion=2) gets sent too — not silently dropped.
     const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
-    expect(job).toBeNull(); // revision unchanged by the edit (activityService.integration.test.ts asserts this directly), so finalize's revision check still matches
+    expect(job).not.toBeNull();
+    expect(job?.operation).toBe('create');
+    expect(job?.claimedAt).toBeNull(); // released, so it's claimable again
+    expect(job?.notBefore).not.toBeNull();
+
+    // And a fresh drain actually resends it with the current (v2) data.
+    mockUpsertActivity.mockReset().mockResolvedValue({ ok: true, externalRecordId: null });
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE id = ?', ['2000-01-01T00:00:00Z', job!.id]);
+    await processNextDueJob(db, 'health_connect');
+    expect(mockUpsertActivity).toHaveBeenCalledWith(expect.objectContaining({ syncVersion: 2 }));
+    expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+  });
+
+  it('logs an internal-inconsistency (§9.5.4) instead of throwing if the job vanishes despite the Activity still existing and syncVersion being unchanged', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockImplementation(async () => {
+      // Something (that shouldn't be able to happen under §9.6's claimed-job guard)
+      // deletes the job row itself while the external call is in flight.
+      await db.execute('DELETE FROM health_sync_jobs WHERE activity_id = ?', [activity.id]);
+      return { ok: true, externalRecordId: null };
+    });
+
+    await expect(processNextDueJob(db, 'health_connect')).resolves.toEqual({
+      status: 'processed',
+      jobId: expect.any(String),
+    });
+    // The mapping must still be recorded even though the job bookkeeping couldn't complete.
+    expect(await HealthSyncRepository.findMapping(db, activity.id, 'health_connect')).not.toBeNull();
   });
 
   it('does not create a mapping, and attaches the external id to the replaced delete job, when the Activity was deleted mid-flight (§9.5.1 else, I10)', async () => {
@@ -254,5 +287,47 @@ describe('drainDueJobs', () => {
 
     expect(result.processedCount).toBe(0);
     expect(mockUpsertActivity).not.toHaveBeenCalled();
+  });
+
+  it('does not stop the whole drain when ensureInitialized() rejects — treats it the same as returning false', async () => {
+    await recordDueActivity();
+    mockEnsureInitialized.mockRejectedValue(new Error('not installed'));
+
+    await expect(drainDueJobs(db, 'health_connect')).resolves.toEqual({ processedCount: 0 });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+  });
+
+  it('keeps draining the rest of the queue after losing a claim race on one job, instead of stopping early (a lost race is not "queue empty")', async () => {
+    const a = await recordDueActivity();
+    const b = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const originalClaimNextDueJob = HealthSyncJobRepository.claimNextDueJob.bind(HealthSyncJobRepository);
+    const claimSpy = jest.spyOn(HealthSyncJobRepository, 'claimNextDueJob');
+    claimSpy.mockResolvedValueOnce(HealthSyncJobRepository.LOST_CLAIM_RACE);
+    claimSpy.mockImplementation((executor, provider, nowIso) => originalClaimNextDueJob(executor, provider, nowIso));
+
+    const result = await drainDueJobs(db, 'health_connect');
+
+    // Only 2 Activities were actually due; the lost-race call doesn't count as "processed".
+    expect(result.processedCount).toBe(2);
+    expect(await HealthSyncJobRepository.findJob(db, a.id, 'health_connect')).toBeNull();
+    expect(await HealthSyncJobRepository.findJob(db, b.id, 'health_connect')).toBeNull();
+
+    claimSpy.mockRestore();
+  });
+});
+
+describe('processNextDueJob — lost claim race', () => {
+  it('reports lost-claim-race distinctly from no-due-job', async () => {
+    await recordDueActivity();
+    const claimSpy = jest
+      .spyOn(HealthSyncJobRepository, 'claimNextDueJob')
+      .mockResolvedValueOnce(HealthSyncJobRepository.LOST_CLAIM_RACE);
+
+    await expect(processNextDueJob(db, 'health_connect')).resolves.toEqual({ status: 'lost-claim-race' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+
+    claimSpy.mockRestore();
   });
 });

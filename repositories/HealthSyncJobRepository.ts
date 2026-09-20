@@ -143,17 +143,24 @@ export async function clearAllClaims(executor: SqlExecutor): Promise<void> {
 // plain SQL with no native dependency.
 // ---------------------------------------------------------------------------
 
+/** Distinguishable from `null` (no due job at all) — a caller (`services/SyncWorker`) that loses the race should try the next due row instead of concluding the queue is empty. */
+export const LOST_CLAIM_RACE = Symbol('LOST_CLAIM_RACE');
+
 /**
  * §9.5 steps 1–2: finds the oldest due, unclaimed job for `provider` and
  * claims it (`claimed_at = now`, `attempts += 1`, `revision += 1` — §9.5.2:
  * attempts increases at claim time, not on failure). Returns `null` if
- * there is no due job, or if a concurrent caller claimed it first.
+ * there is no due job at all, or `LOST_CLAIM_RACE` if a concurrent caller
+ * claimed/replaced it first — the two are deliberately distinguishable so a
+ * caller can retry on the latter instead of treating the whole queue as
+ * empty (v1 has no concurrent worker yet, so this only matters once
+ * something drives `drainDueJobs` from more than one trigger at a time).
  */
 export async function claimNextDueJob(
   executor: SqlExecutor,
   provider: Provider,
   nowIso: string = nowUtcIso(),
-): Promise<HealthSyncJobRow | null> {
+): Promise<HealthSyncJobRow | null | typeof LOST_CLAIM_RACE> {
   const dueResult = await executor.execute(
     `SELECT * FROM health_sync_jobs
      WHERE provider = ? AND claimed_at IS NULL AND not_before IS NOT NULL AND not_before <= ?
@@ -170,12 +177,51 @@ export async function claimNextDueJob(
     [nowIso, dueRow.id, dueRow.revision],
   );
   if (claimResult.rowsAffected === 0) {
-    return null; // lost the race to a concurrent claim/replace
+    return LOST_CLAIM_RACE;
   }
 
   const claimed = await executor.execute('SELECT * FROM health_sync_jobs WHERE id = ?', [dueRow.id]);
   const row = claimed.rows?.[0] as unknown as HealthSyncJobDbRow | undefined;
   return row ? rowToJob(row) : null;
+}
+
+/**
+ * §9.5.1: deletes the job only if its revision still matches what the
+ * caller captured at claim time. Returns `false` (and leaves the row
+ * completely untouched) on mismatch — the caller is expected to have
+ * already recorded the external success via `HealthSyncRepository.
+ * upsertMapping` regardless of this result (§9.5.1: "外部呼び出しが成功した
+ * 事実は... 独立に記録する").
+ */
+/**
+ * §9.5.1's create/update/recreate race: "create 送信中に編集 → mapping は
+ * 作られる → ジョブは残り、大きい sync_version で送り直す". Unlike a
+ * concurrent delete (which routes through `replaceJob` and bumps
+ * `revision`), an edit while a job is already in flight is a documented
+ * no-op for the job row itself (`services/syncJobPlanner.ts`'s
+ * `planForEdit` — the worker is expected to read current values right
+ * before sending, §9.2). That means `revision` alone cannot detect an edit
+ * that lands *during* the external call, after that read already happened
+ * — the caller must compare the `syncVersion` it actually sent against the
+ * Activity's current one and call this instead of
+ * `deleteJobIfRevisionMatches` when they differ, so the job survives to be
+ * resent with the newer data. Still gated on `revisionAtClaim` (nothing
+ * else should have touched this job row while the Activity exists and
+ * wasn't deleted) — a `false` return here is `services/SyncWorker`'s
+ * §9.5.4 signal.
+ */
+export async function releaseClaimForResend(
+  executor: SqlExecutor,
+  jobId: string,
+  revisionAtClaim: number,
+  notBefore: string,
+): Promise<boolean> {
+  const result = await executor.execute(
+    `UPDATE health_sync_jobs SET claimed_at = NULL, not_before = ?, revision = revision + 1
+     WHERE id = ? AND revision = ?`,
+    [notBefore, jobId, revisionAtClaim],
+  );
+  return (result.rowsAffected ?? 0) > 0;
 }
 
 /**

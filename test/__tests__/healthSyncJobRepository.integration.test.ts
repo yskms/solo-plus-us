@@ -8,6 +8,7 @@
 import { createTestDb, type TestDb } from '../support/sqliteTestDb';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
+import type { SqlExecutor } from '../../database/SqlExecutor';
 
 let db: TestDb;
 
@@ -85,5 +86,97 @@ describe('attachExternalIdToDeleteJob', () => {
 
     const attached = await HealthSyncJobRepository.attachExternalIdToDeleteJob(db, inserted.id, 'hc-1');
     expect(attached).toBe(false);
+  });
+});
+
+describe('claimNextDueJob', () => {
+  it('returns null (not LOST_CLAIM_RACE) when there is simply no due job', async () => {
+    expect(await HealthSyncJobRepository.claimNextDueJob(db, 'health_connect')).toBeNull();
+  });
+
+  it('returns LOST_CLAIM_RACE, distinguishable from null, when the row was claimed/replaced between the SELECT and the UPDATE', async () => {
+    const activity = await makeActivity();
+    const inserted = await HealthSyncJobRepository.insertJob(db, {
+      activityId: activity.id,
+      provider: 'health_connect',
+      operation: 'create',
+      notBefore: '2026-09-14T14:42:05Z',
+    });
+
+    // claimNextDueJob runs a SELECT (find the due row) then an UPDATE (claim
+    // it, gated on the revision the SELECT just read). Bumping the revision
+    // *before* calling it would just make the SELECT see the new value and
+    // the UPDATE succeed — no race. To actually exercise the race, this
+    // executor wrapper injects a concurrent claim right after the SELECT
+    // runs but before claimNextDueJob's own UPDATE does.
+    let sawSelect = false;
+    const racingExecutor: SqlExecutor = {
+      execute: async (query, params) => {
+        const result = await db.execute(query, params);
+        if (!sawSelect && /^\s*SELECT/i.test(query)) {
+          sawSelect = true;
+          await db.execute('UPDATE health_sync_jobs SET revision = revision + 1 WHERE id = ?', [inserted.id]);
+        }
+        return result;
+      },
+    };
+
+    const result = await HealthSyncJobRepository.claimNextDueJob(
+      racingExecutor,
+      'health_connect',
+      '2026-09-14T14:42:10Z',
+    );
+
+    expect(result).toBe(HealthSyncJobRepository.LOST_CLAIM_RACE);
+    expect(result).not.toBeNull();
+  });
+});
+
+describe('releaseClaimForResend', () => {
+  it('clears the claim and sets not_before, bumping revision, without deleting the job', async () => {
+    const activity = await makeActivity();
+    const inserted = await HealthSyncJobRepository.insertJob(db, {
+      activityId: activity.id,
+      provider: 'health_connect',
+      operation: 'create',
+      notBefore: '2026-09-14T14:42:05Z',
+    });
+    const claimed = await HealthSyncJobRepository.claimNextDueJob(db, 'health_connect', '2026-09-14T14:42:10Z');
+    if (!claimed || claimed === HealthSyncJobRepository.LOST_CLAIM_RACE) throw new Error('setup failed');
+
+    const released = await HealthSyncJobRepository.releaseClaimForResend(
+      db,
+      claimed.id,
+      claimed.revision,
+      '2026-09-14T14:42:11Z',
+    );
+
+    expect(released).toBe(true);
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('create'); // untouched — still needs resending
+    expect(job?.claimedAt).toBeNull();
+    expect(job?.notBefore).toBe('2026-09-14T14:42:11Z');
+    expect(job?.revision).toBe(claimed.revision + 1);
+  });
+
+  it('returns false and changes nothing on revision mismatch', async () => {
+    const activity = await makeActivity();
+    const inserted = await HealthSyncJobRepository.insertJob(db, {
+      activityId: activity.id,
+      provider: 'health_connect',
+      operation: 'create',
+      notBefore: '2026-09-14T14:42:05Z',
+    });
+
+    const released = await HealthSyncJobRepository.releaseClaimForResend(
+      db,
+      inserted.id,
+      inserted.revision + 1, // wrong revision
+      '2026-09-14T14:42:11Z',
+    );
+
+    expect(released).toBe(false);
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.notBefore).toBe('2026-09-14T14:42:05Z'); // untouched
   });
 });

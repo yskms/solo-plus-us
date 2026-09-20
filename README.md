@@ -2165,9 +2165,68 @@ iOS の動作を保証しない。
   health-connect` をモック化した単体テスト、エラー分類・値変換・recreate の
   2段階を検証）、`test/__tests__/syncWorker.integration.test.ts`
   （`HealthConnectService` をモック化し実 SQLite に対して claim/finalize の
-  状態遷移を検証）。既存テストと合わせて全20スイート・276件がパス
+  状態遷移を検証）
 - `package.json` の `jest.collectCoverageFrom` から2ファイルの除外エントリを
   削除（実装・テストとも揃ったため）
+
+#### レビューで見つかり、修正したもの（1回目）
+
+- **🔴 送信中に Activity を編集すると、その編集が Health Connect へ永久に
+  送られないバグ**：`finalizeUpsertSuccess` は `deleteJobIfRevisionMatches`
+  だけでジョブ完了を判定していたが、`planForEdit`（Phase 1）は既存ジョブの
+  `revision` に触れない設計（§9.3、ワーカーが送信時に最新値を読む前提）
+  のため、外部呼び出し中に挟まった編集を revision では検出できず、
+  ジョブが削除されて編集が失われていた（§9.5.1「create送信中に編集→
+  ジョブは残り、大きいsync_versionで送り直す」に違反）。修正当時のテストは
+  この誤った挙動をそのまま期待値として固定していた。
+  `HealthSyncJobRepository.releaseClaimForResend` を新設し、送信した
+  `syncVersion` と再読込した現在値を比較、異なればジョブを削除せず claim
+  だけ解放して再送させるよう修正。該当テストの期待値も修正し、実際に
+  再送されることまで検証するテストを追加した
+- **🟠 permission rationale の intent-filter が MainActivity と
+  独自 Activity の両方に登録されていた**：`app.json` に併記していた
+  ライブラリ同梱の config plugin（`"react-native-health-connect"`）が
+  `.MainActivity` 自身にも同じ `ACTION_SHOW_PERMISSIONS_RATIONALE`
+  intent-filter を追加していたため、Android 13 以前で解決が曖昧になって
+  いた。ライブラリの plugin 自体を `app.json` から外し（permission delegate
+  の自動登録は Expo Modules autolinking 経由で別物のため影響なし）、
+  マニフェストへの追記を自作 plugin だけに一本化。生成済みマニフェストで
+  重複が消えたことを確認済み
+- **🟠 rationale 画面がダークモードで読めない**：`setTextColor(Color.BLACK)`
+  を固定していたが、Activity の theme（`Theme.AppCompat.DayNight`）は
+  window 背景をダークにするため黒文字が埋もれる。`theme.resolveAttribute
+  (android.R.attr.textColorPrimary, ...)` でテーマに追従する色を都度解決
+  するよう修正
+- **🟡 コメントの不整合**：存在しないファイル名
+  （`withHealthConnectPermissionsRationaleActivity.kt.js`）を参照していた
+  記述を削除
+- **🟡 `lost-claim-race` が実際には返らず、claim 競合で drain が早期終了する
+  可能性**：`claimNextDueJob` は「due なジョブが無い」と「claim 競合に
+  負けた」をどちらも `null` で返していたため区別できなかった。
+  `LOST_CLAIM_RACE` という区別可能な戻り値を追加し、`drainDueJobs` が
+  競合時に諦めず次の due なジョブへ進めるようにした（v1 は単一 runtime
+  なので現状は起きないが、`SyncCoordinator` 実装後に備えた）
+- **🟡 Activity が存在する側の §9.5.4（確定時にジョブが消えている）を
+  検出していなかった**：`deleteJobIfRevisionMatches`/`releaseClaimForResend`
+  の戻り値（成否）を確認せず握り潰していた箇所に、失敗時の `logError` を
+  追加
+- **🟡 `ensureInitialized()` が reject した場合に `drainDueJobs` 自体が
+  reject していた**：try/catch で包み、`processedCount: 0` を返すよう修正
+- **🟡 依存バージョンの指定**：`react-native-health-connect` を
+  `^4.1.3` → `4.1.3`（D-04/D-41 はこの正確なバージョンをソース読解した
+  結果であり、`^` だと未検証のマイナー更新が入りうるため）、
+  `expo-build-properties` を `^57.0.21` → `~57.0.21`（他の expo-* パッケージ
+  と同じ規約に合わせた）
+- **🟡 自動リトライ上限の境界**（`attempts >= 10` vs `> 10`）：仕様の文言
+  「上限（10）を超えた」は字面上どちらにも読めるため、「自動試行は10回
+  まで」という解釈を採用した理由をコードコメントに明記するに留めた
+  （挙動は変更なし）
+
+新たに追加した `HealthSyncJobRepository.releaseClaimForResend`・
+`LOST_CLAIM_RACE` の判定は `test/__tests__/healthSyncJobRepository.
+integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
+`test/__tests__/syncWorker.integration.test.ts` に追加。全20スイート・
+284件パス、`assembleDebug` でビルド成功も再確認済み
 
 ### Known gaps（次のステップ）
 

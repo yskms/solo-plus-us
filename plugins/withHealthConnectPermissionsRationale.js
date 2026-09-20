@@ -19,8 +19,19 @@
  * 実装している。**実際のプライバシーポリシーを公開する際は、この画面の
  * 文言をそのポリシーと一致させること。**
  *
- * このファイルはマニフェストのみを変更する。Kotlin ソース本体は
- * withHealthConnectPermissionsRationaleActivity.kt.js 側で生成する。
+ * `app.json` の plugins には `"react-native-health-connect"`（ライブラリ
+ * 同梱の config plugin）を意図的に含めていない。同梱 plugin は
+ * `.MainActivity` 自身にも同じ `ACTION_SHOW_PERMISSIONS_RATIONALE`
+ * intent-filter を追加してしまい、Android 13 以前でこの Activity と
+ * MainActivity の両方が同じ暗黙 intent を処理できる状態（解決が曖昧になる、
+ * 上記で避けたい状態そのもの）になることを生成済みマニフェストで確認した。
+ * permission delegate の自動登録（`HealthConnectPermissionDelegate`）は
+ * Expo Modules の autolinking（`expo-module.config.json`、`app.json` の
+ * plugins 配列とは別の仕組み）によるものなので、この plugin を外しても
+ * 影響しない——マニフェストへの追記はこのファイルだけで完結させる。
+ *
+ * このファイルがマニフェストと Kotlin ソースの両方を変更する
+ * （`withHealthConnectPermissionsRationaleManifest` / `...Source`）。
  */
 const fs = require('fs');
 const path = require('path');
@@ -32,8 +43,8 @@ const ALIAS_NAME = 'ViewPermissionUsageActivity';
 const RATIONALE_ACTIVITY_KOTLIN = `package com.yskms.soloplusus
 
 import android.app.Activity
-import android.graphics.Color
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
 import android.widget.ScrollView
 import android.widget.TextView
@@ -48,6 +59,16 @@ class PermissionsRationaleActivity : Activity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
+    // AppTheme (Theme.AppCompat.DayNight.NoActionBar) makes the window
+    // background follow Day/Night automatically, but a hardcoded text color
+    // does not — resolve it from the current theme instead of hardcoding
+    // black (would be unreadable against the dark windowBackground in Night
+    // mode; see CLAUDE.md's Android Day/Night pitfalls note).
+    val textColor = TypedValue().let {
+      theme.resolveAttribute(android.R.attr.textColorPrimary, it, true)
+      it.data
+    }
+
     val text = TextView(this).apply {
       text = "Solo + Us can optionally save the date, time, and whether " +
         "protection was used for each record to Health Connect, so other " +
@@ -57,7 +78,7 @@ class PermissionsRationaleActivity : Activity() {
         "app.\\n\\n" +
         "You can turn this off at any time in Solo + Us > Settings > Health Connect."
       textSize = 16f
-      setTextColor(Color.BLACK)
+      setTextColor(textColor)
       setPadding(48, 48, 48, 48)
       gravity = Gravity.START
     }
