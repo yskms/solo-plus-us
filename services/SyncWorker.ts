@@ -21,6 +21,7 @@ import * as HealthSyncRepository from '../repositories/HealthSyncRepository';
 import * as HealthConnectService from './HealthConnectService';
 import * as SyncCoordinator from './SyncCoordinator';
 import { getActiveProviders } from './ActivityService';
+import { setSetting } from './SettingsRepository';
 import type { Transactor } from '../database/SqlExecutor';
 import type { HealthConnectResult } from './HealthConnectService';
 import type { Activity } from '../types/Activity';
@@ -89,6 +90,11 @@ async function finalizeUpsertSuccess(
     const activity = await ActivityRepository.findActivityById(tx, job.activityId);
     if (activity) {
       await HealthSyncRepository.upsertMapping(tx, { activityId: job.activityId, provider, externalRecordId });
+      // Settings「Last synced」（§18/§10.4）表示用。upsertMapping 自体のコメント（D-32）
+      // が言う「外部呼び出しが成功した事実は、ジョブ行を消せるかとは無関係に記録する」
+      // と同じ理由で、下の syncVersion 不一致（再送）分岐より前・両方の分岐に共通して書く
+      // ——再送分岐でも、送った syncVersion に対する外部呼び出し自体は成功している。
+      await setSetting(tx, 'healthConnect.lastSyncedAt', nowUtcIso());
 
       if (activity.syncVersion !== sentSyncVersion) {
         // §9.5.1「create送信中に編集→mappingは作られる→ジョブは残り、大きい
@@ -139,9 +145,16 @@ async function finalizeUpsertSuccess(
   });
 }
 
-/** §9.7: delete ジョブの確定処理。成功なら revision 一致時のみジョブを削除するだけ——mapping は ActivityService.deleteActivity が同期削除済み。 */
+/**
+ * §9.7: delete ジョブの確定処理。成功なら revision 一致時のみジョブを削除するだけ——mapping は
+ * ActivityService.deleteActivity が同期削除済み。Settings「Last synced」用に、finalizeUpsertSuccess
+ * と同じ理由（外部呼び出し自体は成功している）で `healthConnect.lastSyncedAt` も更新する。
+ */
 async function finalizeDeleteSuccess(db: Transactor, job: HealthSyncJobRow): Promise<void> {
-  await HealthSyncJobRepository.deleteJobIfRevisionMatches(db, job.id, job.revision);
+  await db.transaction(async (tx) => {
+    await HealthSyncJobRepository.deleteJobIfRevisionMatches(tx, job.id, job.revision);
+    await setSetting(tx, 'healthConnect.lastSyncedAt', nowUtcIso());
+  });
 }
 
 /**

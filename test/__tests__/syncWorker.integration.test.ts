@@ -22,7 +22,7 @@ import * as ActivityService from '../../services/ActivityService';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
 import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
-import { setSetting } from '../../services/SettingsRepository';
+import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { processNextDueJob, drainDueJobs } from '../../services/SyncWorker';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
 
@@ -33,6 +33,13 @@ beforeEach(async () => {
   jest.resetAllMocks();
   mockEnsureInitialized.mockResolvedValue(true);
   await setSetting(db, 'healthConnect.enabled', true);
+  // Seeded explicitly (rather than left unset) so `getSetting` below hits the
+  // "row found" path directly — an unset read falls through to
+  // `resolveLocaleDefaults()` (`SettingsRepository.ts`), which calls
+  // `expo-localization`'s `getCalendars()`; that native module isn't
+  // available in this jest environment and throws, unrelated to anything
+  // this suite is testing.
+  await setSetting(db, 'healthConnect.lastSyncedAt', null);
   SyncCoordinator.__resetSyncCoordinatorForTests();
 });
 
@@ -75,6 +82,16 @@ describe('processNextDueJob — create/update success (§9.5.1)', () => {
     const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
     expect(mapping).not.toBeNull();
     expect(mapping?.externalRecordId).toBeNull();
+  });
+
+  it('records healthConnect.lastSyncedAt (Settings "Last synced", §18/§10.4) on a successful upsert', async () => {
+    await recordDueActivity();
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).toBeNull();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).not.toBeNull();
   });
 
   it('keeps the job (released, not deleted) for resend when the Activity is edited mid-flight — planForEdit leaves an in-flight job\'s revision untouched (§9.3), so finalize must detect this via syncVersion instead, per §9.5.1\'s race table ("create送信中に編集→ジョブは残り、大きいsync_versionで送り直す")', async () => {
@@ -213,6 +230,25 @@ describe('processNextDueJob — delete (§9.7)', () => {
     expect(mockDeleteActivityRecord).toHaveBeenCalledWith(activity.id);
     const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
     expect(job).toBeNull();
+  });
+
+  it('records healthConnect.lastSyncedAt (Settings "Last synced", §18/§10.4) on a successful delete', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+    await processNextDueJob(db, 'health_connect'); // land the create first so a mapping exists
+    await ActivityService.deleteActivity(db, activity.id);
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE activity_id = ?', [
+      '2000-01-01T00:00:00Z',
+      activity.id,
+    ]);
+    mockDeleteActivityRecord.mockResolvedValue({ ok: true, externalRecordId: null });
+    const lastSyncedAfterCreate = await getSetting(db, 'healthConnect.lastSyncedAt');
+    expect(lastSyncedAfterCreate).not.toBeNull();
+    await setSetting(db, 'healthConnect.lastSyncedAt', null); // isolate this test's own assertion from the create step above
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).not.toBeNull();
   });
 
   it('does not treat a rejected delete as an internal-inconsistency Activity-existence check — deletes never re-check Activity existence (it is already gone by definition)', async () => {

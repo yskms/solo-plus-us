@@ -108,6 +108,7 @@ function AppShell() {
         <Stack.Screen name="settings/app-lock" options={{ title: 'App Lock' }} />
         <Stack.Screen name="settings/hide-app-preview" options={{ title: 'Hide App Preview' }} />
         <Stack.Screen name="settings/block-screenshots" options={{ title: 'Block Screenshots' }} />
+        <Stack.Screen name="settings/health-connect" options={{ title: 'Health Connect' }} />
         <Stack.Screen name="settings/data" options={{ title: 'Data' }} />
         <Stack.Screen name="settings/appearance" options={{ title: 'Appearance' }} />
       </Stack>

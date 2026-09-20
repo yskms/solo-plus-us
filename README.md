@@ -20,8 +20,9 @@ Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI 
 ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。**Phase 4**（Health Connect 同期）
 に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
 `HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
-AppState 配線（`contexts/SyncWorkerLoop.tsx`、実機確認は未実施）まで完了、
-Settings UI はこれから。
+AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
+（`app/settings/health-connect.tsx`）まで実装完了、**いずれも実機確認は未実施**。
+残るのは §9.11 のリリースビルド分離と Android 9〜13 実機検証（D-20）。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -2477,10 +2478,57 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
 
 いずれも設計判断記録 D-51 に訂正の経緯を追記済み。
 
-### Known gaps（次のステップ）
+### ステップ6: Settings 画面の Health Connect UI（実装完了。実機確認は未実施）
 
-- Settings 画面の Health Connect UI（ON/OFF・未同期の変更・手動再試行/破棄）は
-  未実装
+基本設計 §9.6（再試行/破棄の operation 別文言）・§10.4（未同期の変更の可視化）・
+§10.5（切断時の警告）・§9.12（切断は `SyncCoordinator.runExclusive` 経由）、
+UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付きフローは対象外の
+まま（`app/settings/data.tsx`/`index.tsx` で既に明示、切断時の警告が見るのは
+「未処理の delete job」の件数だけ）。
+
+- `app/settings/health-connect.tsx`（新規）：接続ステータス（Connected/Not
+  connected/未インストール）、単一の "Sync to Health Connect" トグル、
+  About synchronization、Last synced、未同期の変更一覧（`describeJobAction`
+  による operation 別の文言・確認ダイアログ、claim 中は「Syncing…」で
+  操作を無効化）
+- `services/healthSyncJobPresentation.ts`（新規）：§9.6 の破棄文言テーブルを
+  そのままコード化した純粋関数 `describeJobAction`。優先順位は
+  内部不整合（`lastErrorCode === 'LOCAL_ACTIVITY_NOT_FOUND'`）→ `delete` →
+  それ以外（create/update/recreate）
+- **UI/UX §18 モックからの2つの意図的な逸脱**（`health-connect.tsx` の
+  doc comment に明記）：
+  1. モックは Partnered/Solo 別々のトグルを描くが、データモデルは
+     `healthConnect.enabled` という単一 boolean のみ（Phase 1 から既存）。
+     単一トグルにした
+  2. 未同期の変更一覧はモック上は日付＋Solo/Partnered バッジ付きだが、
+     `delete` ジョブ（および内部不整合で Activity が消えている行）は
+     構造的にそれができない——`health_sync_jobs` に `activities` への FK が
+     無く、delete ジョブは定義上 Activity が既に無いから存在する。
+     そうした行は `created_at`（ジョブが積まれた日時）を代わりに表示し、
+     バッジは出さない
+- **`healthConnect.lastSyncedAt` の配線漏れを解消**：`types/Settings.ts` に
+  型・既定値・Export除外リストまで用意されていたが、どこからも書き込まれて
+  いなかった。`services/SyncWorker.ts` の `finalizeUpsertSuccess`/
+  `finalizeDeleteSuccess`（外部呼び出し成功の確定処理）で書くようにした
+  ——`upsertMapping` と同じトランザクション内（D-32 と同じ理由：外部呼び出し
+  が成功した事実は、ジョブ行を消せるかとは無関係に記録する）
+- 切断（トグル OFF）は必ず `SyncCoordinator.runExclusive` 経由——CLAUDE.md/
+  §9.12 で名指しされている注意点。渡すコールバックは `setSetting` 一発のみで、
+  内側から drain 相当の処理を呼ばない（runExclusive のネスト禁止に抵触しない）
+- 手動再試行/破棄の成功後は `useDataRevision().bump()` を呼ぶだけ——新しい
+  drain トリガは追加していない（`SyncWorkerLoop.tsx` 側の既存の直列化
+  経路にそのまま乗る、CLAUDE.md 参照）。画面がマウントされている間は
+  読み取り専用の5秒 polling でジョブ一覧を再取得し、バックグラウンドの
+  周期 drain（10秒間隔、DataRevision を bump しない）で claim が外れた
+  行が古びて見えるのを防ぐ——`drainDueJobs` は一切呼ばないため、これも
+  「新しい drain トリガ」には当たらない
+- テスト：`services/__tests__/healthSyncJobPresentation.test.ts`（新規、
+  operation × lastErrorCode の全分岐）、`test/__tests__/syncWorker.
+  integration.test.ts` に `healthConnect.lastSyncedAt` 更新の検証を追加。
+  全27スイート・368件パス
+
+#### Known gaps（次のステップ）
+
 - **§9.11 のリリースビルド分離（`without-health-connect` /
   `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
   含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
@@ -2492,9 +2540,14 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
   実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
   存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
   検証する（D-51 により `uncertain` 経由でこの経路が通常運用でも発生
-  するようになったため優先度が上がっている）。`SyncCoordinator`・
-  AppState 配線とも実装済みだが、Settings UI（HC を ON にする手段）が
-  無いため、まだ実機で意味のある検証ができる状態ではない
-- **AppState 配線自体の実機/エミュレータ確認が未実施**（ステップ4参照）。
-  次に Android 実機/エミュレータへ接続した際、アプリ起動・バックグラウンド/
-  フォアグラウンド遷移でクラッシュや無限ループが無いことを確認すること
+  するようになったため優先度が上がっている）。`SyncCoordinator`・AppState
+  配線・Settings UI（HC を ON にする手段）はすべて実装済みで、これが
+  この検証に着手できる最初の機会になる
+- **AppState 配線・Settings UI とも実機/エミュレータでの確認が未実施**
+  （ステップ4・6参照）。次に Android 実機/エミュレータへ接続した際に
+  まとめて確認すること：アプリ起動・バックグラウンド/フォアグラウンド
+  遷移でクラッシュや無限ループが無いこと、HC ON→権限ダイアログ→
+  Connected 表示、Activity 記録→HC への反映、Retry now/破棄ボタンの
+  文言・確認ダイアログ、claim 中の行の無効化、delete job が残っている
+  状態での OFF 切断時の警告と再接続後の再開、Last synced の実際の更新、
+  HC 未インストール環境での ON 操作時の表示
