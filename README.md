@@ -2602,6 +2602,55 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
   こと、上記のバックグラウンド停止で N+1 の常時コストは解消したことから、
   見送った（指摘としては妥当、現状のスコープでは実害が無いと判断）
 
+#### レビュー2巡目で見つかり、修正したもの
+
+1巡目の修正（`hasWritePermission()` 新設・4値ステータス化）自体が新たな
+不備を持ち込んでいたのを、再レビューで指摘・修正。
+
+- **🟠 `hasWritePermission()` を `ensureInitialized()` 無しで呼んでいた**：
+  ネイティブ側の `getGrantedPermissions` は `throwUnlessClientIsAvailable`
+  を通り、`initialize()` 未実行だと `ClientNotInitialized` で reject する
+  （`HealthConnectManager.kt`）。`initialize()` を呼ぶ経路は
+  `drainDueJobs`（`enabled` が true のときだけ）と `handleEnable` の2つ
+  しか無いため、`enabled=false` のままこの画面を開くと毎回 reject して
+  `logError` が5秒ごとに積み上がり、`enabled=true` でもアプリ起動直後
+  （`SyncWorkerLoop` の最初の drain が `ensureInitialized()` に到達する前）
+  は一時的に reject しうる。さらに深刻なのは catch の倒し方——
+  `isAvailable()` が true を返した直後でも権限チェックの失敗だけで
+  `available` まで巻き込んで `false` にしていたため、実際には利用可能
+  なのに「Health Connect isn't installed」と誤表示していた（4値化した
+  狙いと逆方向）。`refreshConnectionHealth`（新設、
+  `services/healthSyncJobPresentation.ts` ではなく画面側に置く——DB/
+  ネイティブ両方に触れるため純粋関数にできない）で、可用性チェックの
+  失敗と権限チェックの失敗を別の `try/catch` にし、権限チェック失敗時は
+  `hasPermission` だけ倒して `available` は変更しないようにした。権限
+  チェックの前に `ensureInitialized()` を呼ぶ（`drainDueJobs` 自身も毎回
+  呼んでいる操作なので、繰り返し呼ぶこと自体はこのコードベースで
+  既に許容されているパターン）
+- **🟡 「HC 未インストール時の Retry now 無効化」が `enabled` しか見ていな
+  かった**：`UnsyncedRow` に渡していたのは `enabled` のみで、
+  `unavailable`/`permission-revoked` の状態（`enabled=true` だが未
+  インストール、または権限取り消し）では Retry now が押せてしまい、
+  `drainDueJobs` が空振りする（未インストールは即 return、権限取り消しは
+  `PERMISSION_DENIED` でバックオフを消費するだけ）押しても無反応な状態が
+  残っていた。`connectionStatus(...) === 'connected'` を `canRetry` として
+  渡すよう変更し、`connected` 以外は理由付きの caption
+  （`RETRY_BLOCKED_CAPTION`）とともに無効化するようにした
+- **🟢 `mountedRef` の初期化位置**：`useRef(true)` の初期値と cleanup での
+  `false` 代入だけだと、React StrictMode の dev-only
+  mount→unmount→remount で永久に `false` に固定されうる（このアプリは
+  StrictMode 未使用のため現状実害は無い）。effect 本体で
+  `mountedRef.current = true` を明示するよう修正
+- **🟢 doc comment の陳腐化（続き）**：`services/ActivityService.ts` の
+  「`SyncWorker`/`HealthConnectService` は Phase 4 で未実装」
+  「`healthConnect.enabled` は常に `false`（UI が無い）」——1巡目の修正で
+  見落としていた。修正した
+- `connectionStatus`/`CONNECTION_STATUS_LABEL`/`RETRY_BLOCKED_CAPTION` は
+  `describeJobAction` と同じ理由（DB/RN 非依存の純粋関数として網羅的に
+  テストする）で `services/healthSyncJobPresentation.ts` に集約——当初は
+  `health-connect.tsx` 内のローカル関数だった
+- 全27スイート・376件パス
+
 #### Known gaps（次のステップ）
 
 - **§9.11 のリリースビルド分離（`without-health-connect` /

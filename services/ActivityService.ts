@@ -10,10 +10,10 @@
  * (`repositories/ActivityRepository`).
  *
  * `services/SyncWorker` / `services/HealthConnectService` — the code that
- * actually sends a queued job to a provider — are Phase 4 and don't exist
- * yet. In Phase 1, `healthConnect.enabled` is always `false` (no UI sets
- * it yet), so in practice no job rows are created; the queueing logic
- * below is still real and tested so Phase 4 only has to add the sender.
+ * actually sends a queued job to a provider — are implemented (Phase 4).
+ * `healthConnect.enabled` is settable from `app/settings/health-connect.tsx`;
+ * the queueing logic below was written and tested ahead of both, back when
+ * neither existed yet, so Phase 4 only had to add the sender and the toggle.
  */
 import { buildOccurredAtFields, getDeviceTimeZoneId, addSecondsIso, nowUtcIso } from '../lib/datetime';
 import * as ActivityRepository from '../repositories/ActivityRepository';

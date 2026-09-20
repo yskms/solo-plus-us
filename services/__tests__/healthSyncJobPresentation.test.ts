@@ -1,4 +1,4 @@
-import { describeJobAction } from '../healthSyncJobPresentation';
+import { describeJobAction, connectionStatus } from '../healthSyncJobPresentation';
 import type { JobOperation, SyncErrorCode } from '../../types/HealthSync';
 
 describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
@@ -50,5 +50,25 @@ describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
   it('retryLabel は内部不整合以外のどのケースでも共通', () => {
     expect(describeJobAction({ operation: 'delete', lastErrorCode: null }).retryLabel).toBe('Retry now');
     expect(describeJobAction({ operation: 'create', lastErrorCode: null }).retryLabel).toBe('Retry now');
+  });
+});
+
+describe('connectionStatus（Settings ヘッダーの接続ステータス、§18）', () => {
+  it('enabled=false を最優先する（available/hasPermission の値によらず not-connected）', () => {
+    expect(connectionStatus(false, false, false)).toBe('not-connected');
+    expect(connectionStatus(false, true, true)).toBe('not-connected');
+  });
+
+  it('enabled=true・available=false は unavailable（hasPermission の値によらない）', () => {
+    expect(connectionStatus(true, false, false)).toBe('unavailable');
+    expect(connectionStatus(true, false, true)).toBe('unavailable');
+  });
+
+  it('enabled=true・available=true・hasPermission=false は permission-revoked（§9.5.4：OS側で権限が取り消された場合）', () => {
+    expect(connectionStatus(true, true, false)).toBe('permission-revoked');
+  });
+
+  it('enabled=true・available=true・hasPermission=true のときだけ connected', () => {
+    expect(connectionStatus(true, true, true)).toBe('connected');
   });
 });

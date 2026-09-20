@@ -71,3 +71,39 @@ export function describeJobAction(job: Pick<HealthSyncJobRow, 'operation' | 'las
     },
   };
 }
+
+export type ConnectionStatus = 'connected' | 'not-connected' | 'unavailable' | 'permission-revoked';
+
+/**
+ * Settings > Health Connect のヘッダーに出す接続ステータス（§18）。
+ * `enabled` を最優先で見る（OFF なら他の軸を見るまでもない）。
+ * `available`/`hasPermission` は §9.5.4 が言う「OS側の権限取消は claim 後の
+ * 失敗として現れる」を、ヘッダー表示でも早めに拾うためのもの——どちらも
+ * 「Connected と誤表示しない」ための追加チェックで、ジョブの実際の成否は
+ * 依然として SyncWorker の finalize が正。
+ */
+export function connectionStatus(enabled: boolean, available: boolean, hasPermission: boolean): ConnectionStatus {
+  if (!enabled) return 'not-connected';
+  if (!available) return 'unavailable';
+  if (!hasPermission) return 'permission-revoked';
+  return 'connected';
+}
+
+export const CONNECTION_STATUS_LABEL: Record<ConnectionStatus, string> = {
+  connected: 'Connected',
+  'not-connected': 'Not connected',
+  unavailable: "Health Connect isn't installed",
+  'permission-revoked': 'Permission needed',
+};
+
+/**
+ * §10.4 の Unsynced changes 見出し下に出す、Retry now が無効な理由
+ * （`connected` では表示しない——呼び出し側は `status !== 'connected'` の
+ * ときだけ参照する）。
+ */
+export const RETRY_BLOCKED_CAPTION: Record<ConnectionStatus, string> = {
+  connected: '',
+  'not-connected': 'Turn on Sync to Health Connect to retry these.',
+  unavailable: "Health Connect isn't installed. Install it to retry these.",
+  'permission-revoked': 'Health Connect permission is needed to retry these.',
+};

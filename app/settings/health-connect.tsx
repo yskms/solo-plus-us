@@ -46,7 +46,13 @@ import * as SyncCoordinator from '../../services/SyncCoordinator';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as HealthSyncManualActions from '../../services/HealthSyncManualActions';
-import { describeJobAction, type JobActionCopy } from '../../services/healthSyncJobPresentation';
+import {
+  describeJobAction,
+  connectionStatus,
+  CONNECTION_STATUS_LABEL,
+  RETRY_BLOCKED_CAPTION,
+  type JobActionCopy,
+} from '../../services/healthSyncJobPresentation';
 import { ActivityBadge } from '../../components/ActivityBadge';
 import { formatMonthDay } from '../../lib/relativeDate';
 import { formatCalendarDateTime } from '../../lib/timeFormat';
@@ -76,29 +82,6 @@ function formatLastSyncedAt(utcIso: string, timeFormat: TimeFormat): string {
   return formatCalendarDateTime(year, month - 1, day, localTime, timeFormat);
 }
 
-type ConnectionStatus = 'connected' | 'not-connected' | 'unavailable' | 'permission-revoked';
-
-/**
- * enabled を最優先で見る（OFF なら他の軸を見るまでもない）。available/
- * hasPermission は §9.5.4 が言う「OS側の権限取消は claim 後の失敗として
- * 現れる」を、Settings のヘッダー表示でも早めに拾うためのもの——どちらも
- * 「Connected と誤表示しない」ための追加チェックで、ジョブの実際の成否は
- * 依然として SyncWorker の finalize が正。
- */
-function connectionStatus(enabled: boolean, available: boolean, hasPermission: boolean): ConnectionStatus {
-  if (!enabled) return 'not-connected';
-  if (!available) return 'unavailable';
-  if (!hasPermission) return 'permission-revoked';
-  return 'connected';
-}
-
-const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connected: 'Connected',
-  'not-connected': 'Not connected',
-  unavailable: "Health Connect isn't installed",
-  'permission-revoked': 'Permission needed',
-};
-
 interface UnsyncedRowData {
   job: HealthSyncJobRow;
   dateLabel: string;
@@ -119,14 +102,20 @@ async function buildRow(db: SqlExecutor, job: HealthSyncJobRow): Promise<Unsynce
 
 function UnsyncedRow({
   row,
-  enabled,
+  canRetry,
   busy,
   onRetry,
   onDiscard,
 }: {
   row: UnsyncedRowData;
-  /** healthConnect.enabled — OFF の間は Retry now を押しても drainDueJobs が provider-disabled で即 return するだけなので、押せないようにする（§9.6 step0、レビュー指摘）。 */
-  enabled: boolean;
+  /**
+   * `connectionStatus(...) === 'connected'` — `drainDueJobs` の §9.5 step0は
+   * provider が無効/未初期化なら即 return するだけ、権限が無い状態でも
+   * 呼べば PERMISSION_DENIED を消費するだけの失敗が確定しているため、
+   * `connected` 以外は Retry now を押せないようにする（レビュー指摘：
+   * `enabled` だけでは unavailable/permission-revoked を見逃していた）。
+   */
+  canRetry: boolean;
   busy: boolean;
   onRetry: () => void;
   onDiscard: (copy: JobActionCopy) => void;
@@ -135,7 +124,7 @@ function UnsyncedRow({
   const copy = describeJobAction(row.job);
   const claimed = row.job.claimedAt !== null;
   const discardDisabled = claimed || busy;
-  const retryDisabled = discardDisabled || !enabled;
+  const retryDisabled = discardDisabled || !canRetry;
 
   return (
     <View style={styles.jobRow}>
@@ -186,12 +175,19 @@ export default function HealthConnectSettingsScreen() {
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // `true` is set here, in the effect body, not just via `useRef(true)`'s
+    // initial value — if this component were ever remounted with the same
+    // ref surviving (e.g. React StrictMode's dev-only mount→unmount→remount
+    // double-invoke), the cleanup below would have already set it `false`
+    // with nothing to set it back `true` again, permanently wedging every
+    // subsequent `if (mountedRef.current)` guard closed (レビュー指摘 — this
+    // app doesn't enable StrictMode today, but the fix is free).
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   // healthConnect.enabled は、この画面自身の handleEnable/disconnect
   // 以外のどこからも書き換えられない（DB の唯一のライターがこの画面）ため、
@@ -210,6 +206,57 @@ export default function HealthConnectSettingsScreen() {
       }
     })();
   }, [db]);
+
+  /**
+   * 可用性チェックと権限チェックを別の失敗ドメインとして扱う（両方とも
+   * `available`/`hasPermission` を一括で倒すと壊れる、レビューで再指摘）。
+   *
+   * `hasWritePermission()`（`getGrantedPermissions`）はネイティブ側で
+   * `initialize()` 未実行だと `ClientNotInitialized` で reject する
+   * （`HealthConnectManager.kt` の `throwUnlessClientIsAvailable`）。
+   * `initialize()` を呼ぶ経路は `drainDueJobs`（`healthConnect.enabled`
+   * が true のときだけ）と `handleEnable` の2つしか無いため、`enabled`
+   * が false のままこの画面を開くと毎回 reject して `logError` が
+   * ポーリングのたびに積み上がり、`enabled` が true でもアプリ起動直後
+   * （`SyncWorkerLoop` の最初の drain がまだ `ensureInitialized()` に
+   * 到達する前）にこの画面を開くと一時的に reject しうる。ここで自前に
+   * `ensureInitialized()` を呼んでから権限チェックする——`drainDueJobs`
+   * 自身も毎回（周期実行のたびに）呼んでいる同じ操作なので、繰り返し
+   * 呼ぶこと自体はこのコードベースで既に許容されているパターン。
+   *
+   * それでも権限チェックだけが失敗した場合（Binder 切断等の一時的な
+   * 失敗を含む）、`available` は「isAvailable() 自体は成功した」という
+   * 直前の結果のまま変えない——ここを一緒に倒すと、せっかく4値にした
+   * ステータスが「権限チェックがたまたま失敗しただけ」で
+   * unavailable（未インストール）という誤った表示に倒れる
+   * （レビューで実際に再現指摘）。
+   */
+  const refreshConnectionHealth = useCallback(async () => {
+    let isAvailable = false;
+    try {
+      isAvailable = await HealthConnectService.isAvailable();
+      if (mountedRef.current) setAvailable(isAvailable);
+    } catch (error) {
+      logError('Checking Health Connect availability failed', error);
+      if (mountedRef.current) {
+        setAvailable(false);
+        setHasPermission(false);
+      }
+      return;
+    }
+    if (!isAvailable) {
+      if (mountedRef.current) setHasPermission(false);
+      return;
+    }
+    try {
+      await HealthConnectService.ensureInitialized();
+      const permitted = await HealthConnectService.hasWritePermission();
+      if (mountedRef.current) setHasPermission(permitted);
+    } catch (error) {
+      logError('Checking Health Connect permission failed', error);
+      if (mountedRef.current) setHasPermission(false); // `available` はここでは変更しない（上記コメント参照）
+    }
+  }, []);
 
   const loadingRef = useRef(false);
   const rerunRequestedRef = useRef(false);
@@ -249,18 +296,7 @@ export default function HealthConnectSettingsScreen() {
         logError('Loading Health Connect settings (DB) failed', error);
       }
 
-      try {
-        const isAvailable = await HealthConnectService.isAvailable();
-        if (mountedRef.current) setAvailable(isAvailable);
-        const permitted = isAvailable && (await HealthConnectService.hasWritePermission());
-        if (mountedRef.current) setHasPermission(permitted);
-      } catch (error) {
-        logError('Checking Health Connect availability failed', error);
-        if (mountedRef.current) {
-          setAvailable(false);
-          setHasPermission(false);
-        }
-      }
+      await refreshConnectionHealth();
     } finally {
       loadingRef.current = false;
       if (mountedRef.current) setLoaded(true);
@@ -269,7 +305,7 @@ export default function HealthConnectSettingsScreen() {
         load();
       }
     }
-  }, [db]);
+  }, [db, refreshConnectionHealth]);
 
   useEffect(() => {
     load();
@@ -436,13 +472,18 @@ export default function HealthConnectSettingsScreen() {
 
   const status = connectionStatus(enabled, available, hasPermission);
   const statusDotColor = status === 'connected' ? colors.solo : status === 'permission-revoked' ? colors.destructive : colors.textTertiary;
+  // §9.6 step0: drainDueJobs は provider が無効/未初期化なら即 return するだけ
+  // なので、その3状態（not-connected/unavailable/permission-revoked）では
+  // Retry now を押しても何も起きない（レビュー指摘：!enabled だけでは
+  // unavailable/permission-revoked を見逃していた）。
+  const canRetry = status === 'connected';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
-          <Text style={[styles.statusText, { color: colors.textPrimary }]}>{STATUS_LABEL[status]}</Text>
+          <Text style={[styles.statusText, { color: colors.textPrimary }]}>{CONNECTION_STATUS_LABEL[status]}</Text>
         </View>
 
         <View style={styles.section}>
@@ -490,10 +531,8 @@ export default function HealthConnectSettingsScreen() {
             <Text style={[styles.caption, { color: colors.textTertiary }]}>Everything is synced.</Text>
           ) : (
             <>
-              {!enabled && (
-                <Text style={[styles.caption, { color: colors.textTertiary }]}>
-                  Turn on Sync to Health Connect to retry these.
-                </Text>
+              {!canRetry && (
+                <Text style={[styles.caption, { color: colors.textTertiary }]}>{RETRY_BLOCKED_CAPTION[status]}</Text>
               )}
               <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 {jobs.map((row, index) => (
@@ -503,7 +542,7 @@ export default function HealthConnectSettingsScreen() {
                   >
                     <UnsyncedRow
                       row={row}
-                      enabled={enabled}
+                      canRetry={canRetry}
                       busy={pendingJobId === row.job.id}
                       onRetry={() => handleRetry(row.job.id)}
                       onDiscard={(copy) => handleDiscard(row.job, copy)}
