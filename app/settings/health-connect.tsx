@@ -317,17 +317,23 @@ export default function HealthConnectSettingsScreen() {
         // 起きていた——1つの effect（この `load()`）に統合したことで
         // どちらも解消する。
         if (enabledRef.current === null) {
-          // この読み取り自体が失敗しても `enabled` を `null`（＝画面が
-          // 永久に "Loading…" のまま固まる）に留めない——既定値 `false`
-          // で確定させ、他の DB 読み取り（ジョブ一覧等）は続行する。
-          let value = false;
           try {
-            value = await getSetting(db, 'healthConnect.enabled');
+            const value = await getSetting(db, 'healthConnect.enabled');
+            enabledRef.current = value;
+            if (mountedRef.current) setEnabled(value);
           } catch (error) {
+            // この読み取り自体が失敗しても、画面を永久に "Loading…" の
+            // まま固めない——この回の描画だけ `false`（安全側）を見せるが、
+            // `enabledRef.current` は `null` のまま残す。ここで `false` に
+            // 確定させてしまうと、一過性の DB エラーでもこの画面を開いて
+            // いる間ずっと "Not connected" にラッチする（実際の
+            // healthConnect.enabled が true でも）——次の load()（5秒
+            // ポーリングまたは revision 起因）がまた `null` を見て読み直す
+            // ので、数回分の無駄な再試行と引き換えに自己回復する
+            // （レビュー指摘）。
             logError('Loading healthConnect.enabled failed', error);
+            if (mountedRef.current) setEnabled(false);
           }
-          enabledRef.current = value;
-          if (mountedRef.current) setEnabled(value);
         }
         const [lastSyncedValue, timeFormatValue, jobRows] = await Promise.all([
           getSetting(db, 'healthConnect.lastSyncedAt'),

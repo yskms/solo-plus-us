@@ -2744,6 +2744,15 @@ Retry now の実際の再試行、claim 中の無効化表示、delete job が�
 状態での OFF 切断警告、`permission-revoked` の実機確認は今回未実施
 （下記 Known gaps に残す）。
 
+**🟢 レビューで認識共有された残り1点（修正済み）**：`healthConnect.enabled`
+の読み取りが失敗した場合、`enabledRef.current` を `false` で確定させて
+いたため、一過性の DB エラーでもこの画面を開いている間ずっと
+"Not connected" にラッチする（裏では `SyncWorkerLoop` が正しく同期を
+続けているにもかかわらず）。失敗時は今回の描画だけ `false` を見せつつ
+`enabledRef.current` は `null` のまま残すよう修正——次の `load()`（5秒
+ポーリングまたは revision 起因）が改めて読み直すため、数回分の無駄な
+再試行と引き換えに自己回復する。
+
 #### Known gaps（次のステップ）
 
 - **§9.11 のリリースビルド分離（`without-health-connect` /
