@@ -24,6 +24,27 @@
 止めず、まず Android 側で検証し、iOS は上記の制約を明示したうえで
 保留にする。
 
+### schema.ts を変更した後の実機テストは、既存アプリを一度アンインストールすること
+
+v1 は未リリースのため D-11「ALTER TABLE のみ」はまだ適用されず、
+`database/schema.ts` を直接編集する方針（README 各所に記載）。これは
+「新規インストール前提」の設計であり、**過去に一度でもインストールした
+実機/エミュレータの DB ファイルは、`schema.ts` に後から追加された列を
+自動では持たない**（`adb install -r` はアプリデータを保持したまま
+アップグレードするため、DB ファイルは古いスキーマのまま残る）。
+
+実際に、D-51（`health_sync.sync_state` 列追加）より前からテストに使って
+いた Pixel 11 に最新ビルドを `-r` で上書きインストールしたところ、
+`table health_sync has no column named sync_state` という SQLite
+エラーが `SyncWorker` の finalize で発生し続けた（Settings 画面の
+接続ステータスが不安定に見えるなど、無関係に見える副作用も伴った——
+Health Connect Settings UI 実装時に実際に踏んだ）。
+
+**`schema.ts` を変更した回のブランチ/コミットを実機でテストする際は、
+`adb uninstall <applicationId>` してから `adb install` し直すこと。**
+`-r`（保持アップグレード）で踏むと、コードのバグと勘違いして無駄に
+調査することになる。
+
 ### スクリーンショットに関する方針
 
 スクリーンショットおよび画面録画は、デフォルトでは禁止しないこと。

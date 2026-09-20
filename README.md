@@ -21,8 +21,11 @@ Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI 
 に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
 `HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
 AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
-（`app/settings/health-connect.tsx`）まで実装完了、**いずれも実機確認は未実施**。
-残るのは §9.11 のリリースビルド分離と Android 9〜13 実機検証（D-20）。
+（`app/settings/health-connect.tsx`）まで実装完了。**Pixel 11 実機で ON→権限→
+Connected・記録/削除の自動同期は確認済み**（下記「Phase 4 実装状況」の
+「実機確認（Pixel 11、初回）」参照、実機テストでのみ再現するタイミング依存
+バグを1件発見・修正済み）、Retry/破棄・切断警告等の残りの確認・
+Android 9〜13 実機検証（D-20）・§9.11 のリリースビルド分離は未着手。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -2672,6 +2675,45 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
   `openHealthConnectSettings()` への導線）は UI/UX §18 に明文が無いため
   v1 では実装しない（上記 Known gaps に記録）
 
+#### 実機確認（Pixel 11、初回）
+
+`adb install -r` で上書きインストールした際に `table health_sync has no
+column named sync_state`（D-51 より前の古い DB スキーマが端末に残って
+いたため——CLAUDE.md「schema.ts を変更した後の実機テストは、既存アプリを
+一度アンインストールすること」参照）を踏んだが、これはコードの不具合では
+なく実機側のデータが古かっただけ。アンインストール→再インストールで解消し、
+以下をクリーンな状態で確認できた：
+
+- HC ON → OS 権限ダイアログ（要求されるのは「性行為」のみ、「月経周期の
+  管理」等は要求されていないことを実際の OS ダイアログで確認——D-12/D-20
+  「READ 権限を要求しない・WRITE_SEXUAL_ACTIVITY のみ」の実装が実機でも
+  そのとおりであることの確認になった）→ 許可 →「Connected」表示
+- Activity 記録 → 数秒後に自動同期 → Last synced が実際の時刻に更新
+  （`finalizeUpsertSuccess` の `lastSyncedAt` 書き込みを実機で確認）
+- Activity 削除 → delete job → 自動同期 → Last synced が再び更新
+  （`finalizeDeleteSuccess` 側も確認）、Unsynced changes は両方とも
+  「Everything is synced」に戻る
+
+**🟠 実機で新たに発見・修正した不具合**：`healthConnect.enabled` の
+起動時読み込みが非同期のため、この画面をマウントした直後（Settings から
+毎回ナビゲートするたびに新規マウントになる）に `refreshConnectionHealth`
+が走ると、`enabledRef.current` がまだ `useState(false)` の初期値のまま
+（本当に false と確定したわけではなく、単に「まだ読めていない」だけ）で
+早期 return し、`available`/`hasPermission` を false に固定してしまう
+——enabled=true かつ実際に同期成功済みでも "Health Connect isn't
+installed" と表示され、次の5秒ポーリングまで放置される、という形で実機で
+再現した。「読み込み中でまだ分からない」と「確定して false だった」を
+`enabledKnownRef` で区別し、確定した直後に `refreshConnectionHealth()` を
+明示的に呼び直すよう修正——3巡目レビューで追加した `enabledRef` 早期
+returnガード自体が生んだ回帰で、ユニットテストでは検出できない類の
+タイミング依存バグ（画面のマウント〜複数 effect の実行順序に依存）
+だった。修正後、force-stop→再起動直後や Settings 画面への連続的な
+出入りでもステータスが即座に安定することを確認済み
+
+Retry now/破棄の確認ダイアログ、claim 中の無効化表示、delete job が
+残っている状態での OFF 切断警告、`permission-revoked` の実機確認は
+今回未実施（下記 Known gaps に残す）。
+
 #### Known gaps（次のステップ）
 
 - **§9.11 のリリースビルド分離（`without-health-connect` /
@@ -2688,14 +2730,14 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
   するようになったため優先度が上がっている）。`SyncCoordinator`・AppState
   配線・Settings UI（HC を ON にする手段）はすべて実装済みで、これが
   この検証に着手できる最初の機会になる
-- **AppState 配線・Settings UI とも実機/エミュレータでの確認が未実施**
-  （ステップ4・6参照）。次に Android 実機/エミュレータへ接続した際に
-  まとめて確認すること：アプリ起動・バックグラウンド/フォアグラウンド
-  遷移でクラッシュや無限ループが無いこと、HC ON→権限ダイアログ→
-  Connected 表示、Activity 記録→HC への反映、Retry now/破棄ボタンの
-  文言・確認ダイアログ、claim 中の行の無効化、delete job が残っている
-  状態での OFF 切断時の警告と再接続後の再開、Last synced の実際の更新、
-  HC 未インストール環境での ON 操作時の表示
+- **Settings UI の実機確認は一部完了**（上記「実機確認（Pixel 11、初回）」
+  参照）：HC ON→権限ダイアログ→Connected 表示、Activity 記録/削除→HC
+  への反映、Last synced の実際の更新は確認済み。**残り**：Retry now/
+  破棄ボタンの文言・確認ダイアログ、claim 中の行の無効化、delete job が
+  残っている状態での OFF 切断時の警告と再接続後の再開、
+  `permission-revoked` の表示、HC 未インストール環境での ON 操作時の表示、
+  バックグラウンド/フォアグラウンド遷移でのクラッシュや無限ループの有無
+  （AppState 配線自体、ステップ4参照）
 - **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
   無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
   OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、
