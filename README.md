@@ -2246,7 +2246,8 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   まだ存在しない）
 - **Android 9〜13（非プラットフォーム統合パス）での実機検証（D-20）は
   意図的に未実施のまま**——「今は着手しない」とすでに決定済み（本README
-  51行目付近の確認結果を参照）。`HealthConnectService`/`SyncWorker` を
+  「ステータス」節の Phase 4 前提条件の確認結果を参照）。
+  `HealthConnectService`/`SyncWorker` を
   実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
   存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
   検証する。それまでは Settings UI も SyncCoordinator も無く実機で
