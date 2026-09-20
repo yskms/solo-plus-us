@@ -162,54 +162,51 @@ async function finalizeFailure(db: Transactor, job: HealthSyncJobRow, errorCode:
  * → 外部呼び出し → 確定。呼び出し前に provider が有効かは呼び出し側
  * （`drainDueJobs`）が確認済みという前提（§9.5 step0）。
  *
- * §9.12: 破壊的操作の `suspend()` と2箇所で協調する——(1) claim 前の確認は
- * 単なる最適化（無駄な claim を避けるだけ）、(2) 外部呼び出し直前の確認が
- * 実際に競合を防いでいる本体。(1)と(2)の間には await を挟まない
- * （Activity 存在確認は挟むが、それは DB 読み取りであり Coordinator が
- * 気にする「外部呼び出し」ではない）ので、(2)の直後に同期的に
- * `SyncCoordinator.trackExternalCall` へ入るところまでは、途中で
- * `suspend()` が割り込む余地が無い——JS の実行モデル上、await を挟まない
- * 区間は割り込まれない。
+ * §9.12: `isSuspended()` の確認と、claim から確定までの全体を
+ * `SyncCoordinator.trackExternalCall` で包むところまでの間に await を
+ * 挟まない——JS の実行モデル上、await を挟まない区間の途中に他の非同期
+ * 処理（`suspend`/`runExclusive`）が割り込む余地は無いため、ここが
+ * 唯一の「本当に安全に isSuspended() を確認できる場所」になる。
+ *
+ * **claim（`claimNextDueJob`）自体も `trackExternalCall` の内側に
+ * 含める。** 以前は外部呼び出し以降だけを包んでいたが、それだと
+ * 「`isSuspended()` の確認（1回目）→ claim の awaited UPDATE → 2回目の
+ * 確認」という区間が無防備になり、その間に破壊的操作が
+ * `db.transaction`（BEGIN）を開始すると、claim の UPDATE がその
+ * トランザクションに巻き込まれ、破壊的操作が ROLLBACK した場合に
+ * claim だけが取り消されずに残ってしまう（2回目のレビューで指摘・
+ * 実際に再現するシナリオとして確認）。claim から確定までを1つの
+ * 追跡対象にすることで、「一度 claim したジョブは必ず確定まで進む」
+ * という単純な性質になり、対称的な「suspended なら claim を差し戻す」
+ * 経路（旧 `releaseClaimForResend` 呼び出し）自体が不要になった——
+ * 破壊的操作の `suspend`/`runExclusive` 側がこの1サイクル全体の完了を
+ * 待てば十分（`trackExternalCall` のコメント参照）。
  */
 export async function processNextDueJob(db: Transactor, provider: Provider): Promise<ProcessJobResult> {
-  if (SyncCoordinator.isSuspended()) return { status: 'suspended' }; // (1) 無駄な claim を避ける最適化
+  if (SyncCoordinator.isSuspended()) return { status: 'suspended' };
 
-  const claimResult = await HealthSyncJobRepository.claimNextDueJob(db, provider);
-  if (claimResult === HealthSyncJobRepository.LOST_CLAIM_RACE) return { status: 'lost-claim-race' };
-  if (!claimResult) return { status: 'no-due-job' };
-  const job = claimResult;
+  return SyncCoordinator.trackExternalCall(async (): Promise<ProcessJobResult> => {
+    const claimResult = await HealthSyncJobRepository.claimNextDueJob(db, provider);
+    if (claimResult === HealthSyncJobRepository.LOST_CLAIM_RACE) return { status: 'lost-claim-race' };
+    if (!claimResult) return { status: 'no-due-job' };
+    const job = claimResult;
 
-  let activity: Activity | null = null;
-  if (job.operation !== 'delete') {
-    activity = await ActivityRepository.findActivityById(db, job.activityId);
-    if (!activity) {
-      // §9.5.3: 一時エラーではなく内部不整合。claim解除だけだと同じジョブを拾い続けるため
-      // not_before を NULL にする。ループ全体は止めない理由は finalizeUpsertSuccess の
-      // §9.5.4 分岐のコメント参照——この分岐に実際に入ることは「テスト失敗」として検出する。
-      await HealthSyncJobRepository.markJobInternalInconsistency(db, job.id, job.revision);
-      logError('SyncWorker: create/update/recreate job has no Activity (internal inconsistency, §9.5.3)', {
-        jobId: job.id,
-        operation: job.operation,
-      });
-      return { status: 'processed', jobId: job.id };
+    let activity: Activity | null = null;
+    if (job.operation !== 'delete') {
+      activity = await ActivityRepository.findActivityById(db, job.activityId);
+      if (!activity) {
+        // §9.5.3: 一時エラーではなく内部不整合。claim解除だけだと同じジョブを拾い続けるため
+        // not_before を NULL にする。ループ全体は止めない理由は finalizeUpsertSuccess の
+        // §9.5.4 分岐のコメント参照——この分岐に実際に入ることは「テスト失敗」として検出する。
+        await HealthSyncJobRepository.markJobInternalInconsistency(db, job.id, job.revision);
+        logError('SyncWorker: create/update/recreate job has no Activity (internal inconsistency, §9.5.3)', {
+          jobId: job.id,
+          operation: job.operation,
+        });
+        return { status: 'processed', jobId: job.id };
+      }
     }
-  }
 
-  if (SyncCoordinator.isSuspended()) {
-    // (2) 実際に競合を防ぐ本体。ここで claim を持ったまま外部呼び出しへ
-    // 進むと、直後に破壊的操作が実行されて §9.12 が防ぎたい競合が起きる。
-    // 「失敗」ではないので markJobFailed ではなく releaseClaimForResend
-    // （attempts はそのまま——外部へは一度も到達していない）。
-    await HealthSyncJobRepository.releaseClaimForResend(db, job.id, job.revision, nowUtcIso());
-    return { status: 'suspended' };
-  }
-
-  // §9.12: trackExternalCall はネイティブ呼び出しだけでなく finalize まで
-  // 包む。suspend() が「外部呼び出しの完了」だけを待って finalize の DB
-  // 書き込みを待たないと、finalize の db.transaction と破壊的操作の
-  // db.transaction が同じ接続上でほぼ同時に始まりうる——テストで実際に
-  // 「cannot start a transaction within a transaction」として顕在化した。
-  await SyncCoordinator.trackExternalCall(async () => {
     const result = await callProvider(provider, job, activity);
     if (result.ok) {
       if (job.operation === 'delete') {
@@ -221,13 +218,24 @@ export async function processNextDueJob(db: Transactor, provider: Provider): Pro
     } else {
       await finalizeFailure(db, job, result.errorCode);
     }
-  });
 
-  return { status: 'processed', jobId: job.id };
+    return { status: 'processed', jobId: job.id };
+  });
 }
+
+/**
+ * なぜ止まったか。呼び出し側（今後の AppState 配線）が「resume 後に
+ * 再 drain すべきか」を判断できるよう区別する（2回目のレビューで指摘）。
+ * - `drained`: due なジョブを処理し尽くした（正常終了）
+ * - `suspended`: 破壊的操作の実行中/開始直後だった。resume 後に再 drain する価値がある
+ * - `provider-disabled` / `provider-unavailable`: §9.5 step0。設定/SDK側の問題で、resume とは無関係
+ * - `lost-race-limit`: 安全弁で打ち切った。すぐ再 drain しても大抵は解消している
+ */
+export type DrainStoppedReason = 'drained' | 'suspended' | 'provider-disabled' | 'provider-unavailable' | 'lost-race-limit';
 
 export interface DrainResult {
   processedCount: number;
+  stoppedReason: DrainStoppedReason;
 }
 
 /**
@@ -240,7 +248,7 @@ export interface DrainResult {
 export async function drainDueJobs(db: Transactor, provider: Provider): Promise<DrainResult> {
   const activeProviders = await getActiveProviders(db);
   if (!activeProviders.includes(provider)) {
-    return { processedCount: 0 };
+    return { processedCount: 0, stoppedReason: 'provider-disabled' };
   }
 
   if (provider === 'health_connect') {
@@ -255,7 +263,7 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
       ready = false;
     }
     if (!ready) {
-      return { processedCount: 0 };
+      return { processedCount: 0, stoppedReason: 'provider-unavailable' };
     }
   }
 
@@ -263,7 +271,8 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
   let consecutiveLostRaces = 0;
   for (;;) {
     const result = await processNextDueJob(db, provider);
-    if (result.status === 'no-due-job' || result.status === 'suspended') break;
+    if (result.status === 'no-due-job') return { processedCount, stoppedReason: 'drained' };
+    if (result.status === 'suspended') return { processedCount, stoppedReason: 'suspended' };
 
     if (result.status === 'lost-claim-race') {
       // このプロセス内では今のところ起こらないはずだが（v1はフォアグラウンド
@@ -273,12 +282,11 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
       // ではなく、単に「これ以上粘っても意味が薄くなる」ための安全弁
       // （次の drainDueJobs 呼び出しで続きを処理すればよい）。
       consecutiveLostRaces++;
-      if (consecutiveLostRaces >= 5) break;
+      if (consecutiveLostRaces >= 5) return { processedCount, stoppedReason: 'lost-race-limit' };
       continue;
     }
     consecutiveLostRaces = 0;
 
     if (result.status === 'processed') processedCount++;
   }
-  return { processedCount };
 }

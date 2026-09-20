@@ -266,7 +266,7 @@ describe('drainDueJobs', () => {
 
     const result = await drainDueJobs(db, 'health_connect');
 
-    expect(result.processedCount).toBe(2);
+    expect(result).toEqual({ processedCount: 2, stoppedReason: 'drained' });
     expect(await HealthSyncJobRepository.findJob(db, a.id, 'health_connect')).toBeNull();
     expect(await HealthSyncJobRepository.findJob(db, b.id, 'health_connect')).toBeNull();
   });
@@ -277,7 +277,7 @@ describe('drainDueJobs', () => {
 
     const result = await drainDueJobs(db, 'health_connect');
 
-    expect(result.processedCount).toBe(0);
+    expect(result).toEqual({ processedCount: 0, stoppedReason: 'provider-disabled' });
     expect(mockUpsertActivity).not.toHaveBeenCalled();
   });
 
@@ -287,7 +287,7 @@ describe('drainDueJobs', () => {
 
     const result = await drainDueJobs(db, 'health_connect');
 
-    expect(result.processedCount).toBe(0);
+    expect(result).toEqual({ processedCount: 0, stoppedReason: 'provider-unavailable' });
     expect(mockUpsertActivity).not.toHaveBeenCalled();
   });
 
@@ -295,7 +295,10 @@ describe('drainDueJobs', () => {
     await recordDueActivity();
     mockEnsureInitialized.mockRejectedValue(new Error('not installed'));
 
-    await expect(drainDueJobs(db, 'health_connect')).resolves.toEqual({ processedCount: 0 });
+    await expect(drainDueJobs(db, 'health_connect')).resolves.toEqual({
+      processedCount: 0,
+      stoppedReason: 'provider-unavailable',
+    });
     expect(mockUpsertActivity).not.toHaveBeenCalled();
   });
 
@@ -313,6 +316,7 @@ describe('drainDueJobs', () => {
 
     // Only 2 Activities were actually due; the lost-race call doesn't count as "processed".
     expect(result.processedCount).toBe(2);
+    expect(result.stoppedReason).toBe('drained');
     expect(await HealthSyncJobRepository.findJob(db, a.id, 'health_connect')).toBeNull();
     expect(await HealthSyncJobRepository.findJob(db, b.id, 'health_connect')).toBeNull();
 
@@ -337,7 +341,7 @@ describe('processNextDueJob — lost claim race', () => {
 describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
   it('does not claim at all while suspended (checked before claimNextDueJob)', async () => {
     const activity = await recordDueActivity();
-    await SyncCoordinator.suspend();
+    await SyncCoordinator.__testHooks.suspend();
 
     const result = await processNextDueJob(db, 'health_connect');
 
@@ -347,31 +351,47 @@ describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
     const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
     expect(job?.attempts).toBe(0);
     expect(job?.claimedAt).toBeNull();
+
+    SyncCoordinator.__testHooks.resume();
   });
 
-  it('releases an already-claimed job (without marking it failed) if suspension starts after claim but before the external call', async () => {
+  it("protects the claim itself, not just the external call — a suspend() that starts while claimNextDueJob is still awaited waits for the whole cycle (2回目のレビューで指摘、finding 1)", async () => {
     const activity = await recordDueActivity();
-    // Simulate suspend() landing in the window between claim (§9.5 step1-2)
-    // and the external call — the second isSuspended() check in
-    // processNextDueJob exists specifically for this.
-    const isSuspendedSpy = jest.spyOn(SyncCoordinator, 'isSuspended');
-    isSuspendedSpy.mockReturnValueOnce(false); // (1) the pre-claim optimization check
-    isSuspendedSpy.mockReturnValueOnce(true); // (2) the correctness-critical check, right before the external call
 
-    const result = await processNextDueJob(db, 'health_connect');
+    let resolveClaimSelect!: () => void;
+    const originalClaimNextDueJob = HealthSyncJobRepository.claimNextDueJob.bind(HealthSyncJobRepository);
+    const claimSpy = jest.spyOn(HealthSyncJobRepository, 'claimNextDueJob').mockImplementation(async (...args) => {
+      await new Promise<void>((resolve) => {
+        resolveClaimSelect = resolve;
+      });
+      return originalClaimNextDueJob(...args);
+    });
 
-    expect(result).toEqual({ status: 'suspended' });
-    expect(mockUpsertActivity).not.toHaveBeenCalled();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const processing = processNextDueJob(db, 'health_connect');
+    await Promise.resolve(); // let processNextDueJob reach claimNextDueJob and register with trackExternalCall
+
+    let suspendResolved = false;
+    const suspending = SyncCoordinator.__testHooks.suspend().then(() => {
+      suspendResolved = true;
+    });
+    await Promise.resolve();
+    expect(suspendResolved).toBe(false); // claim hasn't even happened yet — must still wait
+
+    resolveClaimSelect(); // let the claim (and the rest of the cycle) proceed
+    await processing;
+    await suspending;
+    expect(suspendResolved).toBe(true);
+
     const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
-    expect(job).not.toBeNull();
-    expect(job?.claimedAt).toBeNull(); // released, claimable again
-    expect(job?.lastErrorCode).toBeNull(); // not a failure — releaseClaimForResend, not markJobFailed
-    expect(job?.attempts).toBe(1); // claim already incremented this; not "refunded" (documented as a minor, harmless imprecision)
+    expect(job).toBeNull(); // the job completed normally — claim was never left dangling mid-transaction
 
-    isSuspendedSpy.mockRestore();
+    claimSpy.mockRestore();
+    SyncCoordinator.__testHooks.resume();
   });
 
-  it('registers the external call with SyncCoordinator.trackExternalCall so a concurrent suspend() actually waits for it (I12/I13/I20)', async () => {
+  it('registers the whole claim-to-finalize cycle with SyncCoordinator.trackExternalCall so a concurrent suspend() waits for it (I12/I13/I20)', async () => {
     await recordDueActivity();
     let resolveUpsert!: (value: { ok: true; externalRecordId: null }) => void;
     let reachedExternalCall!: () => void;
@@ -392,7 +412,7 @@ describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
     await reachedExternalCallPromise;
 
     let suspendResolved = false;
-    const suspending = SyncCoordinator.suspend().then(() => {
+    const suspending = SyncCoordinator.__testHooks.suspend().then(() => {
       suspendResolved = true;
     });
     await Promise.resolve();
@@ -403,6 +423,6 @@ describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
     await suspending;
     expect(suspendResolved).toBe(true);
 
-    SyncCoordinator.resume();
+    SyncCoordinator.__testHooks.resume();
   });
 });

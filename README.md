@@ -2232,52 +2232,79 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
 ### ステップ3: SyncCoordinator（完了。AppState 配線は次のステップへ持ち越し）
 
 - [services/SyncCoordinator.ts](services/SyncCoordinator.ts)：§9.12 の
-  mutex。`isSuspended()`・`suspend()`/`resume()`・`trackExternalCall()`・
-  `runExclusive()` を、クラスではなくこのプロジェクトの他モジュールと
-  同じ「関数 + モジュール状態」のスタイルで実装（v1 はフォアグラウンド
-  単一 runtime、§6.2/D-36、なのでモジュールレベルの状態で十分）
-- **cancel 不可（D-41 確認済み）を前提に、`suspend()` はタイムアウトで
-  打ち切れない単純な await として実装**。§9.12 が定義する「タイムアウトは
-  UI の待機を打ち切るためだけに使う／外部 Promise が未 settle の間は
-  呼び出し側が諦めても裏で待ち続け、実際に settle してから通常状態へ戻す」
-  という挙動は、現時点でこの `suspend()` を呼ぶどの呼び出し元にも
+  mutex。`isSuspended()`・`trackExternalCall()`・`runExclusive()` を、
+  クラスではなくこのプロジェクトの他モジュールと同じ「関数 + モジュール
+  状態」のスタイルで実装。**`suspend`/`resume` は export しない**——
+  破壊的操作は必ず `runExclusive` 経由（呼び忘れ・例外パスでの
+  すり抜けを構造的に防ぐ。2回目のレビュー指摘、テストからは
+  `__testHooks` 経由でのみアクセス）
+- **cancel 不可（D-41 確認済み）を前提に、`runExclusive`/`trackExternalCall`
+  はタイムアウトで打ち切れない単純な await として実装**。§9.12 が定義する
+  「タイムアウトは UI の待機を打ち切るためだけに使う／外部 Promise が未
+  settle の間は呼び出し側が諦めても裏で待ち続け、実際に settle してから
+  通常状態へ戻す」という挙動は、現時点でこれを呼ぶどの呼び出し元にも
   「実行中に待機を打ち切れる」UI が無い（`app/settings/data.tsx` の
   busy 状態にキャンセルボタンが無いことを確認済み）ため未実装——意図的な
   Known gap として `SyncCoordinator.ts` に明記した
-- `services/SyncWorker.ts` を Coordinator と協調するよう修正：claim 前の
-  確認（無駄な claim を避ける最適化）と、claim 直後・外部呼び出し直前の
-  確認（実際に競合を防ぐ本体、await を挟まないため割り込まれない）の
-  2箇所で `isSuspended()` を確認。後者で suspended と判明した場合は
-  `markJobFailed` ではなく新設の `releaseClaimForResend` でクレームだけ
-  解放する（外部へは到達していないので「失敗」ではない）
-- **`SyncCoordinator.trackExternalCall` はネイティブ呼び出しだけでなく
-  finalize の DB 書き込みまで含めて包む**よう実装した。外部呼び出しの
-  完了だけを追跡対象にすると、finalize の `db.transaction` と破壊的操作の
-  `db.transaction` が同じ接続上でほぼ同時に始まりうる——最初はネイティブ
-  呼び出しだけを包んでいたが、integration test で実際に
-  「cannot start a transaction within a transaction」として顕在化し、
-  修正した
+- `runExclusive` は内部の FIFO キューで直列化する（2回目のレビュー指摘・
+  下記参照）。**このキューは同一呼び出しスタック内でのネストには対応
+  できない**（デッドロックする）ため、ネストしないことは呼び出し側の
+  責務——`ImportService.performReplaceImport` が Coordinator を一切
+  意識しないのはこのため（後述）
+- `services/SyncWorker.ts` の `processNextDueJob` を、`isSuspended()` の
+  確認から `SyncCoordinator.trackExternalCall` へ同期的に入るところまでの
+  間に await を挟まない形に整理。**claim（`claimNextDueJob`）自体も
+  `trackExternalCall` の内側に含める**——外部呼び出し以降だけを追跡対象に
+  すると、claim の awaited UPDATE が破壊的操作のトランザクションに巻き
+  込まれ、破壊的操作が ROLLBACK した場合に claim だけが取り消されずに
+  永久に残ってしまう（2回目のレビュー指摘。stale claim を消すのは起動時の
+  `clearAllClaims` だけなので、次回起動まで残り続けるバグになりえた）。
+  「一度 claim したジョブは必ず確定まで進む」という単純な性質になり、
+  対称的な「suspended なら claim を差し戻す」経路（当初あった
+  `releaseClaimForResend` によるロールバック的な分岐）自体が不要になった
+- **`SyncCoordinator.trackExternalCall` はネイティブ呼び出し・finalize の
+  DB 書き込み・claim のすべてを含めて包む**よう実装した。最初はネイティブ
+  呼び出しだけを包んでいたが、finalize の `db.transaction` と破壊的操作の
+  `db.transaction` が同じ接続上でほぼ同時に始まりうることが integration
+  test で「cannot start a transaction within a transaction」として顕在化
+  し、範囲を広げて修正した
+- `inFlightExternalCall` は単一スロットではなく `Set` で保持し、`suspend`
+  は現在 in-flight の**すべて**の完了を待つ（2回目のレビュー指摘。今は
+  単一ループなので同時に1つしか無いが、次の AppState 配線で複数トリガに
+  なると現実的に到達する）
 - 連続 `lost-claim-race`（前ステップで新設）に上限（5回）を設け、
   `drainDueJobs` が無進捗のまま回り続けることを防いだ
-- `services/ImportService.performReplaceImport`（§13.3 置換復元）を
-  `SyncCoordinator.runExclusive` 経由に変更——§9.12 の対象操作のうち、
-  **通常のアプリ操作中（DB 接続が生きている状態）に実行され、実際に
-  SyncWorker と競合しうる唯一の既存呼び出し元**。DB Migration
-  （`database/migrations/index.ts`）と Recovery（`services/
-  RecoveryService.ts` の `restoreFromBackup`/`resetAndStartOver`、
-  `components/RecoveryScreen.tsx` からしか呼ばれない）は、いずれも
-  「生きた DB 接続」が存在する前に／存在しない状態でのみ実行される
-  ——SyncWorker が動きようがない区間なので、意図的に `runExclusive` で
-  包んでいない（包んでも常に no-op な上、`database/` 層が `services/`
-  に依存する layering 違反になる）。この前提の詳細は
-  `SyncCoordinator.ts` のコメント参照
+- `DrainResult` に `stoppedReason`（`'drained' | 'suspended' |
+  'provider-disabled' | 'provider-unavailable' | 'lost-race-limit'`）を
+  追加——AppState 配線側が「resume 後に再 drain すべきか」を判断できる
+  ようにした（2回目のレビュー指摘）
+- `services/ImportService.performReplaceImport`（§13.3 置換復元）は
+  **Coordinator を一切意識しない**（純粋な DB 操作。`performAppendImport`
+  と同じ扱いに戻した）。`SyncCoordinator.runExclusive` で包むのは
+  **呼び出し側**——`app/settings/data.tsx` の `handleConfirmReplace`
+  （アプリ本体の生きた DB に対して呼ぶ、§9.12 の対象操作のうち実際に
+  SyncWorker と競合しうる唯一の既存呼び出し元）。当初は
+  `performReplaceImport` 自身に `runExclusive` を仕込んでいたが、
+  `services/RecoveryService.restoreFromBackup`（§8.8）が同じ関数を
+  **一時 DB**（`tempDb`、アプリ本体の接続とは別物）に対して呼んでおり、
+  Coordinator はプロセス全体のグローバル状態のため、無関係な一時 DB への
+  操作がグローバルな mutex 状態を動かしてしまっていた（2回目のレビュー
+  指摘。直列化キューの追加と組み合わさると自己デッドロックの経路にも
+  なりえた）。DB Migration（`database/migrations/index.ts`）と Recovery
+  は、いずれも「生きた DB 接続」が存在する前に／存在しない状態でのみ
+  実行される——SyncWorker が動きようがない区間なので、意図的に
+  `runExclusive` で包んでいない。この前提の詳細は `SyncCoordinator.ts`
+  のコメント参照
 - テスト：`services/__tests__/SyncCoordinator.test.ts`（DB 非依存の
-  mutex 単体テスト、§17.3 I12/I13/I20 を明示的に参照）、
+  mutex 単体テスト。直列化・複数 in-flight 呼び出しの追跡を含め、
+  §17.3 I12/I13/I20 を明示的に参照）、
   `test/__tests__/syncCoordinator.integration.test.ts`（実 SQLite +
-  実際の `performReplaceImport` + モック化した `HealthConnectService` で
-  end-to-end 検証。上記のネストしたトランザクションのバグはこのテストで
-  発見・修正した）、`test/__tests__/syncWorker.integration.test.ts` に
-  Coordinator 統合テストを追加。全22スイート・300件パス
+  実際の `performReplaceImport`（呼び出し側で `runExclusive` に包む形）+
+  モック化した `HealthConnectService` で end-to-end 検証。上記のネストした
+  トランザクションのバグはこのテストで発見・修正した）、
+  `test/__tests__/syncWorker.integration.test.ts` に claim 自体が保護
+  されていることの検証を含む Coordinator 統合テストを追加。全22スイート・
+  305件パス
 
 ### Known gaps（次のステップ）
 
