@@ -2364,13 +2364,42 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   の内側）で呼び出す。表示は無い（副作用のみの hook）
 - テスト：`contexts/__tests__/SyncWorkerLoop.test.tsx`
   （`lib/__tests__/screenMask.test.ts` と同じ react-test-renderer による
-  検証。マウント時の drain・AppState 遷移・revision bump・周期実行・
-  unmount 時のクリーンアップ・reject 時のログ出力を検証）。全23スイート・
-  320件パス
+  検証）、`test/__tests__/syncWorkerLoop.concurrency.integration.test.ts`
+  （実 SQLite での多重 drain 再現）。全24スイート・324件パス
 - **実機/エミュレータでの動作確認は未実施**——この時点で接続された
   Android 実機/エミュレータが無かったため。ネイティブファイルは変更して
   いないためビルド自体は不要だが、起動・バックグラウンド/フォアグラウンド
   遷移でクラッシュや無限ループが無いことは実機側の確認が必要
+
+#### レビューで見つかり、修正したもの
+
+- **🔴 drain の多重実行ガードが無く、`db.transaction` が衝突する**：
+  `drain()` はトリガ4つ（マウント時・AppState→foreground復帰・周期実行・
+  DataRevision bump）に対して fire-and-forget だった。ネイティブ呼び出しが
+  周期間隔（10秒）を超えて続くと（低速端末・コールドスタート・D-41の
+  「cancel もタイムアウトも無い」性質から現実的にありうる）、次の周期
+  tick が2本目の `drainDueJobs` を起動し、2本がそれぞれ別のジョブを
+  claim して両方が finalize の `db.transaction` に到達し「cannot start a
+  transaction within a transaction」で衝突することを、レビュー側が実機
+  相当の再現で確認・報告。`drainingRef`/`rerunRef` で「実行中なら、完了後に
+  もう一度だけ実行する」形に直列化し、取りこぼしも防いだ。さらに
+  `services/SyncWorker.ts` の `processNextDueJob` に1サイクル単位の
+  try/catch を追加——多重実行ガードを入れても finalize が何らかの理由で
+  例外を投げれば claim が残る性質自体は残るため、失敗時は
+  `markJobFailed` 相当（§9.6 の通常のバックオフ経路）でジョブを解放し、
+  drain ループ全体を道連れにしないようにした（Rule 2）。実際に
+  「cannot start a transaction within a transaction」を発生させた上で
+  ジョブが正しく回復することを確認する統合テストを追加した
+  （`test/__tests__/syncWorkerLoop.concurrency.integration.test.ts`）
+- **🟠 `AppState.currentState` が `'active'` とは限らない**：React Native
+  自身、マウント直後の `currentState` の初期値が信頼できない既知の癖が
+  ある（`null`/`'unknown'` になりうる）。`=== 'active'` で判定していると、
+  その場合に「継続してよいか」が false のまま固定され、セッション中一度も
+  バックグラウンドへ移行しなければ同期が一度も走らずに終わる。
+  `'background'`/`'inactive'` **以外**はフォアグラウンド扱いにする形へ
+  反転し（不明な状態は安全側＝動かす方に倒す）、`AppState.currentState`
+  が `null` の状態でもマウント時に drain されることを検証するテストを
+  追加した
 
 ### Known gaps（次のステップ）
 

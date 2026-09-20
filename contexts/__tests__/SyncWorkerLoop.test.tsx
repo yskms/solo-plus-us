@@ -28,7 +28,7 @@ import { useSyncWorkerLoop, shouldTriggerDrainOnAppStateChange } from '../SyncWo
 
 const FAKE_DB = { fake: 'db' };
 
-function setAppState(status: AppStateStatus) {
+function setAppState(status: AppStateStatus | null) {
   Object.defineProperty(AppState, 'currentState', { value: status, configurable: true });
 }
 
@@ -75,6 +75,20 @@ describe('useSyncWorkerLoop', () => {
 
     expect(mockDrainDueJobs).toHaveBeenCalledTimes(1);
     expect(mockDrainDueJobs).toHaveBeenCalledWith(FAKE_DB, 'health_connect', { shouldContinue: expect.any(Function) });
+
+    act(() => {
+      renderer.unmount();
+    });
+  });
+
+  it('drains on mount even when AppState.currentState is null/unknown (3回目のレビューで指摘: RN\'s own currentState can be unreliable at early mount — an unknown status must not be treated as "never run this session")', () => {
+    setAppState(null);
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(React.createElement(TestHost));
+    });
+
+    expect(mockDrainDueJobs).toHaveBeenCalledTimes(1);
 
     act(() => {
       renderer.unmount();
@@ -172,7 +186,7 @@ describe('useSyncWorkerLoop', () => {
     addSpy.mockRestore();
   });
 
-  it('drains again on a DataRevision bump (e.g. after recording/editing/deleting an Activity)', () => {
+  it('drains again on a DataRevision bump (e.g. after recording/editing/deleting an Activity)', async () => {
     setAppState('active');
     const addSpy = jest
       .spyOn(AppState, 'addEventListener')
@@ -183,6 +197,17 @@ describe('useSyncWorkerLoop', () => {
       renderer = create(React.createElement(TestHost, { tick: 0 }));
     });
     expect(mockDrainDueJobs).toHaveBeenCalledTimes(1); // initial mount drain
+
+    // Let the first drain's promise chain (including the in-flight guard's
+    // .finally()) fully settle before triggering the next one — otherwise
+    // the coalescing guard correctly folds it into a pending rerun instead
+    // of calling drainDueJobs immediately (that's the point of the guard;
+    // see the "does not start a second drainDueJobs while one is already
+    // in flight" test below for that behavior specifically).
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     mockUseDataRevision.mockReturnValue({ revision: 1, bump: jest.fn() });
     act(() => {
@@ -196,7 +221,7 @@ describe('useSyncWorkerLoop', () => {
     addSpy.mockRestore();
   });
 
-  it('drains periodically while mounted, and stops once unmounted', () => {
+  it('drains periodically while mounted, and stops once unmounted', async () => {
     setAppState('active');
     const addSpy = jest
       .spyOn(AppState, 'addEventListener')
@@ -207,6 +232,11 @@ describe('useSyncWorkerLoop', () => {
       renderer = create(React.createElement(TestHost));
     });
     expect(mockDrainDueJobs).toHaveBeenCalledTimes(1); // initial mount drain
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     act(() => {
       jest.advanceTimersByTime(10_000);
@@ -246,5 +276,93 @@ describe('useSyncWorkerLoop', () => {
       renderer.unmount();
     });
     addSpy.mockRestore();
+  });
+
+  describe('in-flight coalescing (3回目のレビューで指摘・実機相当の再現あり)', () => {
+    it('does not start a second drainDueJobs call while one is still in flight', async () => {
+      setAppState('active');
+      const addSpy = jest
+        .spyOn(AppState, 'addEventListener')
+        .mockReturnValue({ remove: jest.fn() } as ReturnType<typeof AppState.addEventListener>);
+      let resolveFirst!: (value: { processedCount: number; stoppedReason: string }) => void;
+      mockDrainDueJobs.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      );
+
+      let renderer: ReturnType<typeof create>;
+      act(() => {
+        renderer = create(React.createElement(TestHost));
+      });
+      expect(mockDrainDueJobs).toHaveBeenCalledTimes(1); // the mount-time call, still pending
+
+      // A second trigger (periodic tick) while the first is still unsettled
+      // must NOT start a concurrent drainDueJobs — that's exactly what let
+      // two overlapping calls each reach finalize's db.transaction and
+      // collide ("cannot start a transaction within a transaction").
+      act(() => {
+        jest.advanceTimersByTime(10_000);
+      });
+      expect(mockDrainDueJobs).toHaveBeenCalledTimes(1);
+
+      mockDrainDueJobs.mockResolvedValue({ processedCount: 0, stoppedReason: 'drained' });
+      await act(async () => {
+        resolveFirst({ processedCount: 0, stoppedReason: 'drained' });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      // The coalesced request runs exactly once more after the first finishes.
+      expect(mockDrainDueJobs).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        renderer.unmount();
+      });
+      addSpy.mockRestore();
+    });
+
+    it('coalesces multiple triggers that arrive during the same in-flight call into a single rerun, not one per trigger', async () => {
+      setAppState('active');
+      let resolveFirst!: (value: { processedCount: number; stoppedReason: string }) => void;
+      mockDrainDueJobs.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      );
+      const addSpy = jest
+        .spyOn(AppState, 'addEventListener')
+        .mockReturnValue({ remove: jest.fn() } as ReturnType<typeof AppState.addEventListener>);
+
+      let renderer: ReturnType<typeof create>;
+      act(() => {
+        renderer = create(React.createElement(TestHost, { tick: 0 }));
+      });
+      expect(mockDrainDueJobs).toHaveBeenCalledTimes(1);
+
+      // Two more triggers while still in flight: a periodic tick and a revision bump.
+      act(() => {
+        jest.advanceTimersByTime(10_000);
+      });
+      mockUseDataRevision.mockReturnValue({ revision: 1, bump: jest.fn() });
+      act(() => {
+        renderer.update(React.createElement(TestHost, { tick: 1 }));
+      });
+      expect(mockDrainDueJobs).toHaveBeenCalledTimes(1); // still just the original in-flight call
+
+      mockDrainDueJobs.mockResolvedValue({ processedCount: 0, stoppedReason: 'drained' });
+      await act(async () => {
+        resolveFirst({ processedCount: 0, stoppedReason: 'drained' });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockDrainDueJobs).toHaveBeenCalledTimes(2); // one rerun, not two
+
+      act(() => {
+        renderer.unmount();
+      });
+      addSpy.mockRestore();
+    });
   });
 });

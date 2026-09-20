@@ -12,12 +12,22 @@
  * | `inactive`/`background` | 新しい claim を停止する。実行中の外部呼び出しは確定処理まで進める |
  * | 次の `active` | due なジョブから再開する |
  *
- * `mountedActiveRef` が「継続してよいか」（`drainDueJobs` の
+ * `mountedForegroundRef` が「継続してよいか」（`drainDueJobs` の
  * `shouldContinue`）を表す唯一の状態。**すでに claim して trackSyncCycle
  * に入ったジョブは、これが false になっても強制中断しない**——
  * `drainDueJobs`/`SyncCoordinator` 側の設計通り、次の `processNextDueJob`
  * 呼び出しの前にしか確認しない（ネイティブ呼び出しを取り消す手段が無いのは
  * SyncCoordinator と同じ理由、D-41）。
+ *
+ * **`'active'` との一致ではなく「`'background'`/`'inactive'` でない」で
+ * 判定する（3回目のレビューで指摘）。** `AppState.currentState` はマウント
+ * 直後の時点では `null`/`'unknown'` になりうる（React Native 自身の実装に
+ * 初期値が信頼できない旨のコメントがある既知の癖）。`=== 'active'` で
+ * 判定していると、その場合に「継続してよいか」が false のまま固定され、
+ * セッション中一度もバックグラウンドに移行しなければ `change` イベントも
+ * 発火せず、同期が一度も走らないまま終わる。不明な状態は「フォアグラウンド
+ * 扱い」に倒す方が安全——バックグラウンドで余分に1サイクル走っても
+ * 「実行中の呼び出しは確定処理まで進める」の許容範囲内（§9.5.4）。
  *
  * ## 周期的な再チェック
  * §9.5.4 は「フォアグラウンド中に `not_before` が経過したジョブをいつ
@@ -26,13 +36,21 @@
  * 直後を大きく待たせないよう、10秒間隔の周期実行で補う——正確な間隔を
  * 要求する仕様上の根拠は無く、調整可能な値として扱ってよい。
  *
- * ## SyncCoordinator との関係
- * このファイルは `SyncCoordinator.runExclusive` を**呼ばない**——
- * `drainDueJobs` が内部で `isSuspended()` を確認するだけで十分（新しい
- * claim が自然に止まる）。将来 Settings UI の「Health Connect を切断」
- * ハンドラ等から、このファイルの `drain` 相当の処理を `runExclusive` の
- * **内側**から呼ばないこと——`SyncCoordinator.ts` の「直列化」節の通り、
- * 同一呼び出しスタック内でのネストはデッドロックする。
+ * ## 多重実行防止（3回目のレビューで指摘・実機相当の再現あり）
+ * トリガは4つ（マウント時・AppState→foreground復帰・周期実行・
+ * DataRevision bump）あり、`drain()` 自体は元々 fire-and-forget だった。
+ * ネイティブ呼び出しが周期間隔（10秒）を超えて続くと（低速端末・
+ * コールドスタート・D-41 の「cancel もタイムアウトも無い」性質から
+ * 現実的にありうる）、次の周期 tick が2本目の `drainDueJobs` を起動し、
+ * 2本がそれぞれ別のジョブを claim して両方が finalize の
+ * `db.transaction` に到達し「cannot start a transaction within a
+ * transaction」で衝突することを、integration test で実際に再現した
+ * （`test/__tests__/syncWorkerLoop.concurrency.integration.test.ts`）。
+ * この設計全体は「プロセス内は単一ワーカー」を前提にしている
+ * （§6.2/D-36、`services/SyncWorker.ts` の lost-claim-race コメント参照）
+ * ため、配線側でこの前提を壊してはならない——`drainingRef`/`rerunRef` で
+ * 「実行中なら、完了後にもう一度だけ実行する」形に直列化し、取りこぼしも
+ * 起こさない。
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
@@ -43,11 +61,18 @@ import { logError } from '../lib/log';
 
 const PERIODIC_DRAIN_INTERVAL_MS = 10_000;
 
+/** `'background'`/`'inactive'` 以外はフォアグラウンド扱い（上記コメント参照。`null`/`'unknown'` を安全側に倒す）。 */
+function isForegroundStatus(status: AppStateStatus | null): boolean {
+  return status !== 'background' && status !== 'inactive';
+}
+
 /**
  * `active` への遷移（かつ直前は `active` ではなかった）でだけ true。
  * `lib/screenMask.ts`の `handleAppStateChangeForReapply` と同じく、
  * `useSyncWorkerLoop` の effect ライフサイクル全体を駆動せずに単体で
- * テストできるよう切り出している。
+ * テストできるよう切り出している。`isForegroundStatus` とは別の判定
+ * ——こちらは「追加で1回 drain する価値がある、はっきりした復帰」を
+ * 検出するためのもので、`inactive` のような一時的な状態は含めない。
  */
 export function shouldTriggerDrainOnAppStateChange(previous: AppStateStatus, next: AppStateStatus): boolean {
   return next === 'active' && previous !== 'active';
@@ -56,26 +81,39 @@ export function shouldTriggerDrainOnAppStateChange(previous: AppStateStatus, nex
 export function useSyncWorkerLoop(): void {
   const db = useDatabase();
   const { revision } = useDataRevision();
-  const mountedActiveRef = useRef(AppState.currentState === 'active');
+  const mountedForegroundRef = useRef(isForegroundStatus(AppState.currentState));
+  const drainingRef = useRef(false);
+  const rerunRequestedRef = useRef(false);
 
   const drain = useCallback(() => {
-    if (!mountedActiveRef.current) return;
-    drainDueJobs(db, 'health_connect', { shouldContinue: () => mountedActiveRef.current }).catch((error) =>
-      logError('useSyncWorkerLoop: drainDueJobs failed', error),
-    );
+    if (!mountedForegroundRef.current) return;
+    if (drainingRef.current) {
+      rerunRequestedRef.current = true; // 実行中——完了後にもう一度だけ、取りこぼさず実行する
+      return;
+    }
+    drainingRef.current = true;
+    drainDueJobs(db, 'health_connect', { shouldContinue: () => mountedForegroundRef.current })
+      .catch((error) => logError('useSyncWorkerLoop: drainDueJobs failed', error))
+      .finally(() => {
+        drainingRef.current = false;
+        if (rerunRequestedRef.current) {
+          rerunRequestedRef.current = false;
+          drain();
+        }
+      });
   }, [db]);
 
   useEffect(() => {
-    mountedActiveRef.current = AppState.currentState === 'active';
+    mountedForegroundRef.current = isForegroundStatus(AppState.currentState);
     let previousStatus = AppState.currentState;
-    drain(); // §9.5.4「次の active で再開する」— マウント時点で active ならここが最初の「再開」
+    drain(); // §9.5.4「次の active で再開する」— マウント時点で foreground ならここが最初の「再開」
 
     const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
       const previous = previousStatus;
       previousStatus = next;
-      mountedActiveRef.current = next === 'active';
+      mountedForegroundRef.current = isForegroundStatus(next);
       if (shouldTriggerDrainOnAppStateChange(previous, next)) drain();
-      // inactive/background: mountedActiveRef を false にするだけ。新規
+      // inactive/background: mountedForegroundRef を false にするだけ。新規
       // claim は shouldContinue で止まり、実行中の呼び出しは確定処理まで
       // 進む（§9.5.4、ファイル冒頭コメント参照）。
     });
@@ -83,7 +121,7 @@ export function useSyncWorkerLoop(): void {
     const interval = setInterval(drain, PERIODIC_DRAIN_INTERVAL_MS);
 
     return () => {
-      mountedActiveRef.current = false;
+      mountedForegroundRef.current = false;
       subscription.remove();
       clearInterval(interval);
     };

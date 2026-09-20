@@ -207,16 +207,32 @@ export async function processNextDueJob(db: Transactor, provider: Provider): Pro
       }
     }
 
-    const result = await callProvider(provider, job, activity);
-    if (result.ok) {
-      if (job.operation === 'delete') {
-        await finalizeDeleteSuccess(db, job);
+    try {
+      const result = await callProvider(provider, job, activity);
+      if (result.ok) {
+        if (job.operation === 'delete') {
+          await finalizeDeleteSuccess(db, job);
+        } else {
+          // activity は非null（delete以外はstep3で存在確認済み）— 実際に送信したsyncVersionのスナップショット。
+          await finalizeUpsertSuccess(db, provider, job, activity!.syncVersion, result.externalRecordId);
+        }
       } else {
-        // activity は非null（delete以外はstep3で存在確認済み）— 実際に送信したsyncVersionのスナップショット。
-        await finalizeUpsertSuccess(db, provider, job, activity!.syncVersion, result.externalRecordId);
+        await finalizeFailure(db, job, result.errorCode);
       }
-    } else {
-      await finalizeFailure(db, job, result.errorCode);
+    } catch (error) {
+      // 予期しない例外（例：finalize の db.transaction が何らかの理由で
+      // 失敗した）で claim が解放されないまま残ることを防ぐ——起動時の
+      // clearAllClaims（§6.2）まで永久に claim されたままになるのを避け、
+      // かつこの1件の失敗で drainDueJobs のループ全体を道連れにしない
+      // （Rule 2、3回目のレビューで指摘）。§9.6 の通常の失敗と同じ経路
+      // （バックオフ）に乗せる——外部呼び出しが実際には成功していた
+      // 可能性もあるため、削除ではなく通常の再試行に委ねる。
+      logError('SyncWorker: unexpected error while processing a claimed job — releasing via normal failure backoff', error);
+      try {
+        await finalizeFailure(db, job, 'UNKNOWN');
+      } catch (finalizeError) {
+        logError('SyncWorker: failure-backoff write also failed; job may remain claimed until restart (§6.2)', finalizeError);
+      }
     }
 
     return { status: 'processed', jobId: job.id };
@@ -301,8 +317,10 @@ export async function drainDueJobs(db: Transactor, provider: Provider, options?:
     if (result.status === 'suspended') return { processedCount, stoppedReason: 'suspended' };
 
     if (result.status === 'lost-claim-race') {
-      // このプロセス内では今のところ起こらないはずだが（v1はフォアグラウンド
-      // 単一runtime、§6.2/D-36）、起きても諦めずに次の due なジョブへ進む
+      // v1はフォアグラウンド単一runtime（§6.2/D-36）——この前提は
+      // `contexts/SyncWorkerLoop.tsx` 側の多重実行防止（drainingRef/
+      // rerunRef による直列化）が守っている。このプロセス内では今のところ
+      // 起こらないはずだが、起きても諦めずに次の due なジョブへ進む
       // ——ただし無進捗のまま回り続けるビジーループは避ける。上限は
       // 「同時に何本のトリガから drainDueJobs が呼ばれうるか」の見積もり
       // ではなく、単に「これ以上粘っても意味が薄くなる」ための安全弁
