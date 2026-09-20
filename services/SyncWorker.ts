@@ -224,18 +224,40 @@ export async function processNextDueJob(db: Transactor, provider: Provider): Pro
 }
 
 /**
- * なぜ止まったか。呼び出し側（今後の AppState 配線）が「resume 後に
- * 再 drain すべきか」を判断できるよう区別する（2回目のレビューで指摘）。
+ * なぜ止まったか。呼び出し側（AppState 配線、`contexts/SyncWorkerLoop.tsx`）
+ * が「resume/active 後に再 drain すべきか」を判断できるよう区別する
+ * （2回目のレビューで指摘）。
  * - `drained`: due なジョブを処理し尽くした（正常終了）
  * - `suspended`: 破壊的操作の実行中/開始直後だった。resume 後に再 drain する価値がある
+ * - `backgrounded`: `shouldContinue` が false を返した（§9.5.4、下記）。次の active で再 drain する価値がある
  * - `provider-disabled` / `provider-unavailable`: §9.5 step0。設定/SDK側の問題で、resume とは無関係
  * - `lost-race-limit`: 安全弁で打ち切った。すぐ再 drain しても大抵は解消している
  */
-export type DrainStoppedReason = 'drained' | 'suspended' | 'provider-disabled' | 'provider-unavailable' | 'lost-race-limit';
+export type DrainStoppedReason =
+  | 'drained'
+  | 'suspended'
+  | 'backgrounded'
+  | 'provider-disabled'
+  | 'provider-unavailable'
+  | 'lost-race-limit';
 
 export interface DrainResult {
   processedCount: number;
   stoppedReason: DrainStoppedReason;
+}
+
+export interface DrainDueJobsOptions {
+  /**
+   * §9.5.4 の AppState 表（`active`→開始・再開、`inactive`/`background`→
+   * 新規 claim 停止・実行中の呼び出しは確定処理まで進める）を実装するための
+   * フック。このファイルは「いつ呼ぶか」自体は知らない（ファイル冒頭コメント
+   * 参照）ため、「継続してよいか」を呼び出し側から注入する形にしている。
+   * 各 `processNextDueJob` 呼び出しの**前**にだけ確認する——すでに claim
+   * して trackSyncCycle に入ったジョブは、バックグラウンド化しても
+   * 強制中断しない（ネイティブ呼び出しを取り消す手段が無いのは
+   * SyncCoordinator と同じ理由、D-41）。省略時は常に継続する。
+   */
+  shouldContinue?: () => boolean;
 }
 
 /**
@@ -245,7 +267,9 @@ export interface DrainResult {
  * 初期化できなければ（未インストール等）、個々のジョブを failure に
  * 追い込んでバックオフを消費させるより先に諦める。
  */
-export async function drainDueJobs(db: Transactor, provider: Provider): Promise<DrainResult> {
+export async function drainDueJobs(db: Transactor, provider: Provider, options?: DrainDueJobsOptions): Promise<DrainResult> {
+  const shouldContinue = options?.shouldContinue ?? (() => true);
+
   const activeProviders = await getActiveProviders(db);
   if (!activeProviders.includes(provider)) {
     return { processedCount: 0, stoppedReason: 'provider-disabled' };
@@ -270,6 +294,8 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
   let processedCount = 0;
   let consecutiveLostRaces = 0;
   for (;;) {
+    if (!shouldContinue()) return { processedCount, stoppedReason: 'backgrounded' };
+
     const result = await processNextDueJob(db, provider);
     if (result.status === 'no-due-job') return { processedCount, stoppedReason: 'drained' };
     if (result.status === 'suspended') return { processedCount, stoppedReason: 'suspended' };

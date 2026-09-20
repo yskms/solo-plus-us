@@ -322,6 +322,62 @@ describe('drainDueJobs', () => {
 
     claimSpy.mockRestore();
   });
+
+  describe('shouldContinue (§9.5.4 AppState gate)', () => {
+    it('stops before claiming a new job once shouldContinue returns false, reporting "backgrounded"', async () => {
+      const a = await recordDueActivity();
+      const b = await recordDueActivity();
+      mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+      let allow = true;
+      const result = await drainDueJobs(db, 'health_connect', {
+        shouldContinue: () => {
+          const wasAllowed = allow;
+          allow = false; // flip off after the first check, so only one job gets processed
+          return wasAllowed;
+        },
+      });
+
+      expect(result.stoppedReason).toBe('backgrounded');
+      expect(result.processedCount).toBe(1);
+      // One of the two is still due, untouched.
+      const remaining = [
+        await HealthSyncJobRepository.findJob(db, a.id, 'health_connect'),
+        await HealthSyncJobRepository.findJob(db, b.id, 'health_connect'),
+      ].filter((j) => j !== null);
+      expect(remaining).toHaveLength(1);
+    });
+
+    it('does not abort a job already past the shouldContinue check, even if it flips false mid-flight (an in-flight cycle always runs to completion)', async () => {
+      const activity = await recordDueActivity();
+      let reachedExternalCall!: () => void;
+      const reachedExternalCallPromise = new Promise<void>((resolve) => {
+        reachedExternalCall = resolve;
+      });
+      let allow = true;
+      mockUpsertActivity.mockImplementation(async () => {
+        allow = false; // background the app while this job's external call is in flight
+        reachedExternalCall();
+        return { ok: true, externalRecordId: null };
+      });
+
+      const draining = drainDueJobs(db, 'health_connect', { shouldContinue: () => allow });
+      await reachedExternalCallPromise;
+
+      const result = await draining;
+      expect(result.processedCount).toBe(1); // the in-flight job still completed
+      expect(result.stoppedReason).toBe('backgrounded'); // but no further job would be claimed after it
+      expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+    });
+
+    it('defaults to always continuing when no shouldContinue is given', async () => {
+      await recordDueActivity();
+      mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+      const result = await drainDueJobs(db, 'health_connect');
+      expect(result.stoppedReason).toBe('drained');
+    });
+  });
 });
 
 describe('processNextDueJob — lost claim race', () => {

@@ -19,8 +19,9 @@ Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI 
 確認済み・iOS は未確認**（`expo run:ios` が Xcode 26.3 のコンパイラ不具合で実行できない
 ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。**Phase 4**（Health Connect 同期）
 に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
-`HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）まで
-完了、AppState 配線と Settings UI はこれから。
+`HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
+AppState 配線（`contexts/SyncWorkerLoop.tsx`、実機確認は未実施）まで完了、
+Settings UI はこれから。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -2335,15 +2336,44 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   判断した。§10.6 全Activity削除等、新しい破壊的操作を追加する際にこの
   判断が今も妥当か再検討すること
 
+### ステップ4: AppState 配線（実装完了。実機確認は未実施）
+
+- [contexts/SyncWorkerLoop.tsx](contexts/SyncWorkerLoop.tsx)：「いつ
+  `drainDueJobs` を呼ぶか」（§9.5.4 の AppState 表：`active`→開始・
+  再開、`inactive`/`background`→新規 claim 停止・実行中の呼び出しは
+  確定処理まで進める、次の`active`→再開）を配線する `useSyncWorkerLoop`
+  hook。`lib/screenMask.ts` の `useScreenMask`（純粋な遷移判定関数 +
+  AppState 配線の分離）と同じ構造で、純粋関数
+  `shouldTriggerDrainOnAppStateChange` を切り出した
+- `services/SyncWorker.ts` の `drainDueJobs` に `shouldContinue` オプションを
+  追加し、`DrainStoppedReason` に `'backgrounded'` を追加——このファイルは
+  「いつ呼ぶか」を知らないという既存の設計方針は変えず、「継続してよいか」を
+  呼び出し側から注入する形にした
+- 周期的な再チェック（10秒間隔）を実装した。§9.5.4 はフォアグラウンド中に
+  `not_before` が経過したジョブ（5秒の Undo 遅延等）をいつ拾うかを規定して
+  いない——仕様上の根拠は無いので調整可能な値として扱っている
+- `DataRevision`（記録・編集・削除のたびに bump される既存の仕組み）の
+  変化でも drain を試みる。マウント時の重複呼び出しを避けるため、
+  revision 監視の effect は初回マウント時だけスキップする
+- **`SyncCoordinator.runExclusive` は呼ばない**——`drainDueJobs` が内部で
+  `isSuspended()` を確認するだけで新規 claim は自然に止まる。将来
+  Settings UI から同様の drain 処理を `runExclusive` の内側から呼ぶと
+  デッドロックしうる（§9.12「直列化」節）ため、その旨をファイル冒頭に
+  明記した
+- `app/_layout.tsx` の `AppShell`（`DatabaseProvider`/`DataRevisionProvider`
+  の内側）で呼び出す。表示は無い（副作用のみの hook）
+- テスト：`contexts/__tests__/SyncWorkerLoop.test.tsx`
+  （`lib/__tests__/screenMask.test.ts` と同じ react-test-renderer による
+  検証。マウント時の drain・AppState 遷移・revision bump・周期実行・
+  unmount 時のクリーンアップ・reject 時のログ出力を検証）。全23スイート・
+  320件パス
+- **実機/エミュレータでの動作確認は未実施**——この時点で接続された
+  Android 実機/エミュレータが無かったため。ネイティブファイルは変更して
+  いないためビルド自体は不要だが、起動・バックグラウンド/フォアグラウンド
+  遷移でクラッシュや無限ループが無いことは実機側の確認が必要
+
 ### Known gaps（次のステップ）
 
-- **AppState 配線が未実装**：「いつ `drainDueJobs` を呼ぶか」（§9.5.4の
-  AppState 表：`active`→開始・再開、`inactive`/`background`→新規 claim
-  停止・実行中の呼び出しは確定処理まで進める、次の`active`→再開）を
-  React 側（`lib/screenMask.ts`/`contexts/ScreenshotBlock.tsx` と同様の
-  Provider + hook）で配線する必要がある。また、フォアグラウンド中に
-  `not_before` が経過したジョブ（例：5秒の Undo 遅延）を拾うための
-  周期的な再チェックの要否・頻度もここで決める
 - Settings 画面の Health Connect UI（ON/OFF・未同期の変更・手動再試行/破棄）は
   未実装
 - **「同期しないことを選んだ」永続状態が未設計**：`services/syncJobPlanner.ts`
@@ -2361,6 +2391,9 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   `HealthConnectService`/`SyncWorker` を
   実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
   存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
-  検証する。`SyncCoordinator` 自体はステップ3で実装済みだが、AppState
-  配線と Settings UI が無いため、まだ実機で意味のある検証ができる状態
-  ではない——次のステップ（AppState 配線）着手の可否とは無関係
+  検証する。`SyncCoordinator`・AppState 配線とも実装済みだが、Settings UI
+  （HC を ON にする手段）が無いため、まだ実機で意味のある検証ができる
+  状態ではない
+- **AppState 配線自体の実機/エミュレータ確認が未実施**（上記ステップ4参照）。
+  次に Android 実機/エミュレータへ接続した際、アプリ起動・バックグラウンド/
+  フォアグラウンド遷移でクラッシュや無限ループが無いことを確認すること

@@ -13,6 +13,7 @@ import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
 import { AppLockProvider } from '../contexts/AppLock';
 import { ScreenshotBlockProvider } from '../contexts/ScreenshotBlock';
 import { AppearanceProvider } from '../contexts/Appearance';
+import { useSyncWorkerLoop } from '../contexts/SyncWorkerLoop';
 import { UndoSnackbar } from '../components/UndoSnackbar';
 import { MigrationRestoredBanner } from '../components/MigrationRestoredBanner';
 import { useScreenMask } from '../lib/screenMask';
@@ -43,6 +44,9 @@ function OnboardingRedirect() {
  */
 function AppShell() {
   const { colors, scheme } = useTheme();
+  // §9.5.4: starts/stops SyncWorker draining on AppState transitions and
+  // DataRevision bumps. No JSX/visible output — see contexts/SyncWorkerLoop.tsx.
+  useSyncWorkerLoop();
 
   // `Appearance.setColorScheme()` (contexts/Appearance.tsx) calls
   // `AppCompatDelegate.setDefaultNightMode()`, which *should* make
