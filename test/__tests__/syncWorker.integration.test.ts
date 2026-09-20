@@ -370,7 +370,7 @@ describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
     mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
 
     const processing = processNextDueJob(db, 'health_connect');
-    await Promise.resolve(); // let processNextDueJob reach claimNextDueJob and register with trackExternalCall
+    await Promise.resolve(); // let processNextDueJob reach claimNextDueJob and register with trackSyncCycle
 
     let suspendResolved = false;
     const suspending = SyncCoordinator.__testHooks.suspend().then(() => {
@@ -391,7 +391,7 @@ describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
     SyncCoordinator.__testHooks.resume();
   });
 
-  it('registers the whole claim-to-finalize cycle with SyncCoordinator.trackExternalCall so a concurrent suspend() waits for it (I12/I13/I20)', async () => {
+  it('registers the whole claim-to-finalize cycle with SyncCoordinator.trackSyncCycle so a concurrent suspend() waits for it (I12/I13/I20)', async () => {
     await recordDueActivity();
     let resolveUpsert!: (value: { ok: true; externalRecordId: null }) => void;
     let reachedExternalCall!: () => void;

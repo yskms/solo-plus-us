@@ -163,12 +163,12 @@ async function finalizeFailure(db: Transactor, job: HealthSyncJobRow, errorCode:
  * （`drainDueJobs`）が確認済みという前提（§9.5 step0）。
  *
  * §9.12: `isSuspended()` の確認と、claim から確定までの全体を
- * `SyncCoordinator.trackExternalCall` で包むところまでの間に await を
+ * `SyncCoordinator.trackSyncCycle` で包むところまでの間に await を
  * 挟まない——JS の実行モデル上、await を挟まない区間の途中に他の非同期
  * 処理（`suspend`/`runExclusive`）が割り込む余地は無いため、ここが
  * 唯一の「本当に安全に isSuspended() を確認できる場所」になる。
  *
- * **claim（`claimNextDueJob`）自体も `trackExternalCall` の内側に
+ * **claim（`claimNextDueJob`）自体も `trackSyncCycle` の内側に
  * 含める。** 以前は外部呼び出し以降だけを包んでいたが、それだと
  * 「`isSuspended()` の確認（1回目）→ claim の awaited UPDATE → 2回目の
  * 確認」という区間が無防備になり、その間に破壊的操作が
@@ -180,12 +180,12 @@ async function finalizeFailure(db: Transactor, job: HealthSyncJobRow, errorCode:
  * という単純な性質になり、対称的な「suspended なら claim を差し戻す」
  * 経路（旧 `releaseClaimForResend` 呼び出し）自体が不要になった——
  * 破壊的操作の `suspend`/`runExclusive` 側がこの1サイクル全体の完了を
- * 待てば十分（`trackExternalCall` のコメント参照）。
+ * 待てば十分（`trackSyncCycle` のコメント参照）。
  */
 export async function processNextDueJob(db: Transactor, provider: Provider): Promise<ProcessJobResult> {
   if (SyncCoordinator.isSuspended()) return { status: 'suspended' };
 
-  return SyncCoordinator.trackExternalCall(async (): Promise<ProcessJobResult> => {
+  return SyncCoordinator.trackSyncCycle(async (): Promise<ProcessJobResult> => {
     const claimResult = await HealthSyncJobRepository.claimNextDueJob(db, provider);
     if (claimResult === HealthSyncJobRepository.LOST_CLAIM_RACE) return { status: 'lost-claim-race' };
     if (!claimResult) return { status: 'no-due-job' };

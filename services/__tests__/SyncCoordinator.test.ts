@@ -7,7 +7,7 @@
  * （`runExclusive` 経由のみ、§9.12/SyncCoordinator.ts のコメント参照）。
  * ここでの単体テストは `__testHooks` 経由でこの2つの性質を個別に検証する。
  */
-import { isSuspended, trackExternalCall, runExclusive, __resetSyncCoordinatorForTests, __testHooks } from '../SyncCoordinator';
+import { isSuspended, trackSyncCycle, runExclusive, __resetSyncCoordinatorForTests, __testHooks } from '../SyncCoordinator';
 
 beforeEach(() => {
   __resetSyncCoordinatorForTests();
@@ -36,7 +36,7 @@ describe('suspend() waiting for in-flight external calls (§17.3 I12/I13/I20)', 
     const callPromise = new Promise<void>((resolve) => {
       resolveCall = resolve;
     });
-    const tracked = trackExternalCall(() => callPromise);
+    const tracked = trackSyncCycle(() => callPromise);
 
     let suspendResolved = false;
     const suspendPromise = __testHooks.suspend().then(() => {
@@ -57,7 +57,7 @@ describe('suspend() waiting for in-flight external calls (§17.3 I12/I13/I20)', 
     const callPromise = new Promise<void>((_resolve, reject) => {
       rejectCall = reject;
     });
-    const tracked = trackExternalCall(() => callPromise).catch(() => {});
+    const tracked = trackSyncCycle(() => callPromise).catch(() => {});
 
     let suspendResolved = false;
     const suspendPromise = __testHooks.suspend().then(() => {
@@ -74,22 +74,22 @@ describe('suspend() waiting for in-flight external calls (§17.3 I12/I13/I20)', 
   });
 
   it('isSuspended() is already true the instant suspend() is called, before it resolves (I14: no new claim in the gap)', () => {
-    const tracked = trackExternalCall(() => new Promise(() => {})); // never settles
+    const tracked = trackSyncCycle(() => new Promise(() => {})); // never settles
     void __testHooks.suspend(); // deliberately not awaited
     expect(isSuspended()).toBe(true);
     void tracked; // keep referenced; this call is intentionally left hanging for the test
   });
 
-  it('waits for ALL currently in-flight calls, not just the first one registered (multiple concurrent trackExternalCall)', async () => {
+  it('waits for ALL currently in-flight calls, not just the first one registered (multiple concurrent trackSyncCycle)', async () => {
     let resolveFirst!: () => void;
     let resolveSecond!: () => void;
-    const first = trackExternalCall(
+    const first = trackSyncCycle(
       () =>
         new Promise<void>((resolve) => {
           resolveFirst = resolve;
         }),
     );
-    const second = trackExternalCall(
+    const second = trackSyncCycle(
       () =>
         new Promise<void>((resolve) => {
           resolveSecond = resolve;
@@ -117,7 +117,7 @@ describe('suspend() waiting for in-flight external calls (§17.3 I12/I13/I20)', 
     const first = new Promise<void>((resolve) => {
       resolveFirst = resolve;
     });
-    const trackedFirst = trackExternalCall(() => first);
+    const trackedFirst = trackSyncCycle(() => first);
 
     const suspendPromise = __testHooks.suspend();
     resolveFirst();
@@ -128,6 +128,44 @@ describe('suspend() waiting for in-flight external calls (§17.3 I12/I13/I20)', 
 });
 
 describe('runExclusive', () => {
+  it('sets isSuspended() to true SYNCHRONOUSLY the instant it is called — no microtask gap (3回目のレビューで指摘、production 経路での I14)', () => {
+    // Deliberately no `await` anywhere before this assertion: the whole
+    // point is to catch isSuspended() still being false for one or more
+    // microtask ticks after runExclusive() was invoked, which would let a
+    // SyncWorker claim slip through in that window. The bug this guards
+    // against previously slipped past the __testHooks-based tests above
+    // because those call __testHooks.suspend() directly, not the actual
+    // production entry point.
+    const operationPromise = runExclusive(async () => 'ok');
+    expect(isSuspended()).toBe(true);
+    void operationPromise; // let it settle in the background; not the point of this test
+  });
+
+  it('keeps isSuspended() true continuously across queued calls — no gap between an earlier resume and a later queued suspend (3回目のレビューで指摘)', async () => {
+    let resolveA!: () => void;
+    let aStarted!: () => void;
+    const aStartedPromise = new Promise<void>((resolve) => {
+      aStarted = resolve;
+    });
+    const a = runExclusive(() => {
+      aStarted();
+      return new Promise<void>((resolve) => {
+        resolveA = resolve;
+      });
+    });
+    const b = runExclusive(async () => undefined);
+
+    await aStartedPromise;
+    resolveA();
+    await a;
+    // Between A finishing and B's operation actually starting, isSuspended()
+    // must never read false — B was already queued (and thus already
+    // counted) before A resolved.
+    expect(isSuspended()).toBe(true);
+    await b;
+    expect(isSuspended()).toBe(false);
+  });
+
   it('suspends, runs the operation, then resumes — in that order', async () => {
     const order: string[] = [];
     const result = await runExclusive(async () => {
@@ -155,7 +193,7 @@ describe('runExclusive', () => {
     const callPromise = new Promise<void>((resolve) => {
       resolveCall = resolve;
     });
-    const tracked = trackExternalCall(() => callPromise);
+    const tracked = trackSyncCycle(() => callPromise);
 
     let operationRan = false;
     const exclusive = runExclusive(async () => {

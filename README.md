@@ -2304,7 +2304,36 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   トランザクションのバグはこのテストで発見・修正した）、
   `test/__tests__/syncWorker.integration.test.ts` に claim 自体が保護
   されていることの検証を含む Coordinator 統合テストを追加。全22スイート・
-  305件パス
+  307件パス
+
+#### レビューで見つかり、修正したもの（3回目）
+
+- **🟠 `runExclusive` が `isSuspended()` を同期的に立てていなかった**：
+  直列化キュー（2回目のレビューで追加）は `exclusiveQueue.then(...)` の
+  中で `suspended = true` を設定していたため、`runExclusive()` を呼んだ
+  直後の数 microtask は `isSuspended()` が false のままになる窓があった。
+  `__testHooks.suspend()` を直接呼ぶ単体テストはこの性質を守っている
+  ように見えていたが、**production の唯一の入口である `runExclusive`
+  自身はこの性質を持っていなかった**——テストが緑でも不変条件が
+  守られていない状態だった。`suspendingCount`（カウンタ）を
+  `runExclusive` の**先頭で同期的に**加算し `finally` で同期的に減算する
+  形に変更し、`isSuspended()` が「呼ばれてから完全に終わるまで」一貫して
+  true になるよう修正した。修正の効果を実際に検証するテスト
+  （`runExclusive()` を呼んだ直後、await を一切挟まずに `isSuspended()`
+  を確認する）を追加した
+- **🟡 タイムアウト未実装との相互作用**：直列化キューの追加により、
+  ネイティブ呼び出しが永久に settle しない場合の影響範囲が「その破壊的
+  操作1件がハング」から「以降のすべての `runExclusive` 呼び出しが実行
+  不能」に広がっていた。`SyncCoordinator.ts` の「実装していないもの」
+  節にこの影響範囲の変化を明記した
+- **🟢 命名の見直し**：`trackExternalCall`/`waitForInFlightExternalCalls`
+  は実態（claim〜finalize の1サイクル全体）と合わなくなっていたため
+  `trackSyncCycle`/`waitForInFlightSyncCycles` に改名した
+- （検討したが見送ったもの）`performReplaceImport` を生きた DB 用/一時 DB
+  用の2関数に型レベルで分割する案：現状は呼び出し元が1箇所ずつしかなく、
+  doc コメントで明示済みのため、API 表面を増やすコストに見合わないと
+  判断した。§10.6 全Activity削除等、新しい破壊的操作を追加する際にこの
+  判断が今も妥当か再検討すること
 
 ### Known gaps（次のステップ）
 
