@@ -26,12 +26,28 @@ export type SyncErrorCode =
   | 'LOCAL_ACTIVITY_NOT_FOUND' // §9.5.3: internal inconsistency, not a retryable error
   | 'UNKNOWN';
 
+/**
+ * D-51 — what a `health_sync` row itself claims about this (activity,
+ * provider):
+ *  - `synced`: a `SyncWorker` finalize actually recorded success (§9.5.1).
+ *  - `uncertain`: a create/update/recreate job with `attempts > 0` was
+ *    discarded (Settings "discard") — may have reached the provider.
+ *  - `declined`: a create/update/recreate job with `attempts === 0` was
+ *    discarded — definitely never reached the provider; the person chose
+ *    not to sync this record at all (D-35).
+ * See `services/syncJobPlanner.ts`'s `MappingState` (`'none' | SyncState`)
+ * for how the *absence* of a row is folded in alongside these three.
+ */
+export type SyncState = 'synced' | 'uncertain' | 'declined';
+
 export interface HealthSyncRow {
   activityId: string;
   provider: Provider;
-  /** health_connect: optional, addressed by clientRecordId instead (§5.4). healthkit: required. */
+  /** health_connect: optional, addressed by clientRecordId instead (§5.4). healthkit: required for `synced`. */
   externalRecordId: string | null;
-  lastSyncedAt: string;
+  syncState: SyncState;
+  /** null when `syncState !== 'synced'` and this (activity, provider) has never actually synced (D-51). */
+  lastSyncedAt: string | null;
 }
 
 export interface HealthSyncJobRow {

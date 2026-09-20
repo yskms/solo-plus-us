@@ -2401,15 +2401,53 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   が `null` の状態でもマウント時に drain されることを検証するテストを
   追加した
 
+### ステップ5: 「同期しないことを選んだ」永続状態の設計判断（完了。UI は次のステップ）
+
+設計判断記録 [D-51](docs/Solo%20+%20Us_設計判断記録%20v0.11.md) 参照。
+`services/syncJobPlanner.ts`/`repositories/HealthSyncJobRepository.ts` の
+両方が「Phase 4 の設計判断として保留」としていた欠落——discard 後の
+delete が防御的cleanupを落とす、declinedとuncertainを区別できない——を解消。
+
+- `health_sync` に `sync_state`（`'synced'|'uncertain'|'declined'`）を追加、
+  `last_synced_at` を nullable に変更（`database/schema.ts` を直接編集
+  ——v1 は未リリースのため D-11 の「ALTER TABLE のみ」はまだ適用されない）
+- `services/syncJobPlanner.ts`：`planForEdit`/`planForDelete` の第2引数を
+  `mappingExists: boolean` から `MappingState`（`'none'|'synced'|
+  'uncertain'|'declined'`）に変更。`uncertain` は `synced` と同じ側
+  （編集で再同期を試みる、削除で防御的cleanupを積む）、`declined` は
+  `none` と同じ側（何もしない）に倒す
+- `repositories/HealthSyncRepository.ts`：`upsertMapping`（`SyncWorker`
+  finalize成功時）は常に `sync_state='synced'` を明示的に書く——
+  `ON CONFLICT DO UPDATE SET` に含め忘れると、`uncertain` だった記録が
+  実際に同期成功しても `uncertain` のまま残ってしまう不具合を実装前の
+  レビューで指摘され、修正した。新設の `upsertDeclinedOrUncertainMapping`
+  は `external_record_id`/`last_synced_at` を上書きしない（将来の防御的
+  削除・履歴として保持する価値の方が高いと判断）
+- `services/HealthSyncManualActions.ts`（新設）：Settings「破棄」の実体
+  `discardSyncJob`。ジョブ削除と `health_sync` への `uncertain`/`declined`
+  記録を1トランザクションで束ねる（`ActivityService.deleteActivity` と
+  同じ構造）。D-39 のガードにより、ここでの判定は `attempts > 0` だけで
+  よい（`claimedAt` は常に null）
+- discard の確認文（D-35）は変更不要——`uncertain`/`declined` どちらも
+  同じ文言で正しく、後続の delete が取る挙動だけが内部で変わる
+- テスト：`services/__tests__/syncJobPlanner.test.ts`（4値の全分岐）、
+  `test/__tests__/healthSyncRepository.integration.test.ts`、
+  `test/__tests__/healthSyncManualActions.integration.test.ts`
+  （discard→delete で防御的cleanupが積まれること、discard→edit→resyncで
+  `synced` に戻ることを含む end-to-end 検証）。全26スイート・349件パス
+- **副次的な影響**：`uncertain` からの delete は `external_record_id=NULL`
+  のまま HC へ delete を投げるため、「存在しない clientRecordId への
+  delete」が通常運用で発生する経路になった。README「ステータス」節の
+  Phase 4 前提条件にある Android 9〜13（D-20）実機検証の優先度が
+  上がったことを D-51 に記録済み
+- **受け入れた制約**：`health_sync` は Export に含まれない（D-42）ため、
+  置換復元（D-10）を実行すると `uncertain`/`declined` は失われ `none` に
+  戻る——D-10 の既存設計と整合的なので意識して受け入れる
+
 ### Known gaps（次のステップ）
 
 - Settings 画面の Health Connect UI（ON/OFF・未同期の変更・手動再試行/破棄）は
   未実装
-- **「同期しないことを選んだ」永続状態が未設計**：`services/syncJobPlanner.ts`
-  の `planForEdit` doc comment 参照。D-35 の「この記録を Health Connect へ
-  同期しない」を選んだ record と、単に一度も同期対象になったことがない
-  record を区別する永続状態が今のところ無い。手動解決 UI（§9.6）実装前に
-  設計判断が必要
 - **§9.11 のリリースビルド分離（`without-health-connect` /
   `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
   含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
@@ -2420,9 +2458,10 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   `HealthConnectService`/`SyncWorker` を
   実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
   存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
-  検証する。`SyncCoordinator`・AppState 配線とも実装済みだが、Settings UI
-  （HC を ON にする手段）が無いため、まだ実機で意味のある検証ができる
-  状態ではない
-- **AppState 配線自体の実機/エミュレータ確認が未実施**（上記ステップ4参照）。
+  検証する（D-51 により `uncertain` 経由でこの経路が通常運用でも発生
+  するようになったため優先度が上がっている）。`SyncCoordinator`・
+  AppState 配線とも実装済みだが、Settings UI（HC を ON にする手段）が
+  無いため、まだ実機で意味のある検証ができる状態ではない
+- **AppState 配線自体の実機/エミュレータ確認が未実施**（ステップ4参照）。
   次に Android 実機/エミュレータへ接続した際、アプリ起動・バックグラウンド/
   フォアグラウンド遷移でクラッシュや無限ループが無いことを確認すること

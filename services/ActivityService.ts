@@ -21,7 +21,7 @@ import * as HealthSyncRepository from '../repositories/HealthSyncRepository';
 import * as HealthSyncJobRepository from '../repositories/HealthSyncJobRepository';
 import type { SqlExecutor, Transactor } from '../database/SqlExecutor';
 import { getSetting } from './SettingsRepository';
-import { planForDelete, planForEdit, planForRecord, toCurrentJobState } from './syncJobPlanner';
+import { planForDelete, planForEdit, planForRecord, toCurrentJobState, toMappingState } from './syncJobPlanner';
 import type { Activity, ActivityUpdateInput } from '../types/Activity';
 import type { Provider } from '../types/HealthSync';
 
@@ -104,7 +104,7 @@ export async function updateActivity(db: Transactor, id: string, patch: Activity
         HealthSyncJobRepository.findJob(tx, id, provider),
         HealthSyncRepository.findMapping(tx, id, provider),
       ]);
-      const plan = planForEdit(toCurrentJobState(job), mapping !== null);
+      const plan = planForEdit(toCurrentJobState(job), toMappingState(mapping));
       if (plan.action === 'insert') {
         await HealthSyncJobRepository.insertJob(tx, {
           activityId: id,
@@ -139,7 +139,7 @@ export async function deleteActivity(db: Transactor, id: string): Promise<void> 
         HealthSyncRepository.findMapping(tx, id, provider),
       ]);
       const mappingExists = mapping !== null;
-      const plan = planForDelete(toCurrentJobState(job), mappingExists);
+      const plan = planForDelete(toCurrentJobState(job), toMappingState(mapping));
 
       switch (plan.action) {
         case 'delete-job':

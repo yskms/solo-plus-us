@@ -63,6 +63,13 @@ export async function findJob(
   return row ? rowToJob(row) : null;
 }
 
+/** Settings > Health Connect's "unsynced changes" list (§10.4) only has job ids to act on — this is how `services/HealthSyncManualActions` looks one back up before deciding what discarding it means (D-51). */
+export async function findJobById(executor: SqlExecutor, jobId: string): Promise<HealthSyncJobRow | null> {
+  const result = await executor.execute('SELECT * FROM health_sync_jobs WHERE id = ?', [jobId]);
+  const row = result.rows?.[0] as unknown as HealthSyncJobDbRow | undefined;
+  return row ? rowToJob(row) : null;
+}
+
 /** Precondition: no job currently exists for (activityId, provider) — the `uq_health_sync_jobs` index enforces this; call `replaceJob` instead if one does. */
 export async function insertJob(
   executor: SqlExecutor,
@@ -308,26 +315,20 @@ export async function requestManualRetry(executor: SqlExecutor, jobId: string): 
 
 /**
  * Settings "discard" (D-35/§9.6) — D-39: refuses if the job is currently
- * claimed.
+ * claimed. Deletes the job row only — this is the raw primitive.
  *
- * Deferred design gap (same nature as `planForEdit`'s, see
- * `services/syncJobPlanner.ts`): discarding a `create` job with
- * `attempts > 0` deletes the row outright, leaving neither a job nor a
- * `health_sync` mapping — even though "may have reached the provider" is
- * exactly what `attempts > 0` means. If the Activity is deleted afterward,
- * `planForDelete(null, false)` sees nothing to do (§10.1 順6) and skips
- * cleanup entirely, even though a copy may genuinely exist on the
- * provider's side. The discard confirmation copy already warns that
- * *this record* may not match Health Connect (D-35); it does not warn
- * that a *later delete* of the same record will also silently skip
- * cleanup — a compounding consequence the person discarding didn't
- * necessarily sign up for.
- *
- * Fixing this for real needs the same "declined/uncertain sync state"
- * concept `planForEdit` is missing — e.g. leaving behind a `health_sync`
- * row with an "unknown" status instead of deleting cleanly, so a later
- * delete still queues a defensive delete job. Left as a Phase 4 design
- * decision rather than guessed at here.
+ * **Does not by itself record `uncertain`/`declined` into `health_sync`
+ * (D-51).** The gap this used to describe (discarding a `create` job with
+ * `attempts > 0` losing all record that "may have reached the provider",
+ * so a later delete silently skips defensive cleanup — §10.1 順6) is
+ * resolved, but not here: `services/HealthSyncManualActions.discardSyncJob`
+ * is the actual entry point Settings calls, and it wraps this primitive
+ * together with `HealthSyncRepository.upsertDeclinedOrUncertainMapping` in
+ * one transaction (this project's convention — Repository functions take a
+ * bare `SqlExecutor`, the caller owns the transaction, same shape as
+ * `ActivityService.deleteActivity`). Call this function directly only for
+ * `delete`/internal-inconsistency jobs, where the Activity is already gone
+ * and no `health_sync` row could exist for it anyway (FK RESTRICT).
  */
 export async function discardJob(executor: SqlExecutor, jobId: string): Promise<boolean> {
   const result = await executor.execute('DELETE FROM health_sync_jobs WHERE id = ? AND claimed_at IS NULL', [jobId]);

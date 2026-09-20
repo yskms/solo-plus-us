@@ -1808,6 +1808,127 @@ Add Activity（`app/record.tsx`）と同じネイティブ date/time picker が�
 
 ---
 
+## D-51 `health_sync` に `sync_state`（synced/uncertain/declined）を追加し、discard 後の追跡漏れを解消する
+
+（Phase 4 の Settings UI（手動再試行/破棄）実装に着手する前に、`services/
+syncJobPlanner.ts` の `planForEdit` と `repositories/HealthSyncJobRepository.ts` の
+`discardJob` の両方が「Phase 4 の設計判断として保留」としていた同じ欠落を解消する）
+
+**背景**
+
+§9.3/§10.1 の判定表は「mapping の有無」を2値（あり/なし）として扱っていたが、
+実際には「あり」に見える状態が2種類の異なる過去を持ちうる：
+
+- 本当に確定同期した（`SyncWorker` の finalize が成功した、§9.5.1）
+- `attempts > 0` のジョブを利用者が「破棄」した——外部に届いたかもしれないが確認できない
+
+同様に「なし」に見える状態にも2種類ある：
+
+- この provider に一度も同期対象になったことがない
+- `attempts = 0` のジョブを利用者が「破棄」した——D-35 の明示的な「同期しない」選択
+
+この4状態を2値に潰していたため、次の2つの追跡漏れが起きていた。
+
+1. `attempts > 0` の create/update/recreate ジョブを破棄すると mapping も無いまま
+   になり、後で Activity を削除しても `planForDelete(null, false)` が「何もしない」
+   （§10.1 順6）と判定し、外部に残っているかもしれないレコードの防御的削除が
+   行われない。
+2. D-35 で明示的に「同期しない」を選んだ record と、単にこの provider に一度も
+   同期対象になったことがない record を区別できず、`planForEdit` は両方を
+   「no backfill-on-edit」として扱うほかなかった。
+
+**決定**
+
+`health_sync` に `sync_state TEXT NOT NULL DEFAULT 'synced' CHECK (sync_state IN
+('synced','uncertain','declined'))` を追加する（v1 はまだ未リリースのため、D-11
+の「一度リリースしたら ALTER TABLE のみ」はまだ適用されず、`SCHEMA_V1_STATEMENTS`
+を直接編集した）。あわせて `last_synced_at` を nullable にする——`uncertain`/
+`declined` の行は「確認できた同期時刻」を持たない。
+
+`services/syncJobPlanner.ts` の判定は、mapping の有無（boolean）ではなく
+`MappingState = 'none' | 'synced' | 'uncertain' | 'declined'`（`'none'` は
+行が無い状態）を受け取るように変更する。
+
+| mappingState | `planForEdit`（no job） | `planForDelete`（no job、§10.1 順5/6） | create ジョブの§10.1 順1/2 |
+|---|---|---|---|
+| `synced` | insert update | insert delete | 順2（touch possible 側） |
+| `uncertain` | insert update | insert delete | 順2（touch possible 側） |
+| `declined` | noop | noop | 順1 相当（touch not possible 側） |
+| `none` | noop | noop | 順1 相当（touch not possible 側） |
+
+`uncertain` は `synced` と同じ側（外部に届いた可能性がある）に、`declined` は
+`none` と同じ側（届いていないと確定している）に倒す。`uncertain` を `synced`
+と別扱いにしない理由：discard は「もう待たない」という利用者の意思表示であって
+「二度と同期しない」という意思表示ではない——D-35 が明示的な opt-out として
+確定的な文言を出すのは `attempts = 0`（= `declined`）のときだけで、`uncertain`
+の確認文（D-35 の表、create/update/recreate 共通）は「今の内容が一致しなくなる
+可能性がある」としか言っていない。したがって次の編集は再同期を試みてよく、
+実際に成功すれば `sync_state` は `synced` に戻る。
+
+**この判定を書き込む2箇所**
+
+1. `HealthSyncRepository.upsertMapping`（`SyncWorker` の finalize 成功時）は
+   常に `sync_state = 'synced'` を明示的に書く——`ON CONFLICT ... DO UPDATE SET`
+   に含め忘れると、`uncertain` だった行が実際に同期成功しても `uncertain` の
+   まま残ってしまう（実装前のレビューで指摘され、修正した）。
+2. `services/HealthSyncManualActions.discardSyncJob`（新設、Settings「破棄」の
+   実体）は、`HealthSyncJobRepository.discardJob`（ジョブ削除のみ）と
+   `HealthSyncRepository.upsertDeclinedOrUncertainMapping`（新設）を1トランザ
+   クションで束ね、破棄したジョブの `attempts` から `uncertain`/`declined` を
+   決める。D-39 のガード（`discardJob` は claim 済みジョブを拒否する）により、
+   この時点で `claimed_at` は必ず `NULL` なので、`planForDelete` の一般形
+   `externalTouchPossible = attempts > 0 || claimedAt !== null || ...` のうち
+   `claimedAt` 項は常に false——ここでは `attempts > 0` だけで判定してよい。
+   `delete`/内部不整合（§9.5.3）ジョブの破棄は Activity が既に存在しないため
+   （FK RESTRICT）、`health_sync` には触れない。
+
+**`upsertDeclinedOrUncertainMapping` は `external_record_id`/`last_synced_at`
+を上書きしない**——`sync_state` だけを変更する。既に `synced` だった mapping が
+`uncertain` に落ちても、`external_record_id`（HealthKit では将来の防御的削除に
+必要になりうる、§5.4）と `last_synced_at`（「最後に確認できた同期時刻」という
+事実）は失わない。新規行（今まで一度も mapping が無かった場合）は両方 `NULL`
+のまま——保存すべき値がまだ無い。
+
+**理由**
+
+- discard 確認文（D-35）を変更せずに済む——`uncertain`/`declined` どちらも
+  「今の内容が一致しなくなる可能性がある」という同じ文言で正しく、後続の
+  delete が取る挙動（防御的削除の有無）だけが内部で変わる。
+- `services/syncJobPlanner.ts`/`HealthSyncJobRepository.discardJob` の両方が
+  同じ欠落を「Phase 4 の設計判断として保留」としていた——doc comment を
+  実装のたびに書き直さず、ここで一度に解消する。
+
+**却下した案**
+
+- discard 時に `health_sync_jobs` へ `not_before = NULL` のまま残す案（ジョブを
+  消さない）——D-35 の「破棄」の意味（もう自動再試行しない）と矛盾する上、
+  Settings の「未同期の変更」一覧に消えないジョブとして残り続け、D-35 が避けた
+  かった「解決済みに見えるが実は違う」状態の逆（未解決に見えるが実は解決済み）
+  を作ってしまう。
+- `uncertain` を `declined` と同じ側（`planForEdit` で noop）にする案——discard
+  は「もう待てない」というワーカーへの意思表示であり、record 自体の同期を
+  止める意思表示ではない。同じ側にすると、`uncertain` を `declined` と分けた
+  意義が `planForDelete` 側にしか残らず、`sync_state` を分けた意味が半減する。
+
+**受け入れる制約**
+
+`health_sync` は Export に含まれない（D-42、Export の対象は `activities` と
+allowlist された settings のみ）。したがって置換復元（D-10/§13.3）を実行すると
+`uncertain`/`declined` は失われ、復元後は「一度も同期対象になっていない」
+（`none`）に戻る——D-10 の既存の設計（mapping は置換復元で作り直さない）と
+整合的なので、意識して受け入れる。
+
+**副次的に確認された事項**
+
+`uncertain` の discard→delete 経路は、`external_record_id = NULL` のまま
+Health Connect へ delete を投げる（health_connect は clientRecordId でアドレ
+ッシングするため、§5.4）——「存在しない clientRecordId に対する delete」が
+通常運用で発生する経路になる。これは D-20 の Android 9〜13 実機検証項目
+（README「Phase 4」Known gaps）がカバーすべき対象そのものであり、実機検証の
+優先度が上がったことを記録しておく。
+
+---
+
 ## 実装着手の前提条件
 
 以下が確定するまで DB を触るコードを書かない。すべて DB ファイル形式かドライバ選定を決めるため。

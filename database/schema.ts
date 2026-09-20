@@ -10,6 +10,12 @@
  * ISO-8601 parsing and UUID v4 validation happen in the Repository layer
  * (`lib/datetime.ts`, `lib/id.ts`), which is the only path allowed to write
  * here (§17 "Repository を DB への唯一の入口とする").
+ *
+ * `health_sync.sync_state`（D-51）: 未リリースの v1 スキーマへの直接編集
+ * （D-11 の「一度リリースしたら ALTER TABLE のみ」はまだ効かない）。
+ * `'synced'` 以外の状態は「まだ一度も外部へ届いていない」（この行自体が
+ * 無い状態、`sync_state` 列とは別）と区別するためのもので、詳細は
+ * 設計判断記録 D-51 参照。
  */
 
 export const SCHEMA_VERSION = 1;
@@ -61,7 +67,9 @@ export const SCHEMA_V1_STATEMENTS: readonly string[] = [
       provider           TEXT NOT NULL
                            CHECK (provider IN ('health_connect','healthkit')),
       external_record_id TEXT,
-      last_synced_at      TEXT NOT NULL CHECK (length(last_synced_at) = 20),
+      sync_state         TEXT NOT NULL DEFAULT 'synced'
+                           CHECK (sync_state IN ('synced','uncertain','declined')),
+      last_synced_at      TEXT CHECK (last_synced_at IS NULL OR length(last_synced_at) = 20),
 
       PRIMARY KEY (activity_id, provider),
       FOREIGN KEY (activity_id)
