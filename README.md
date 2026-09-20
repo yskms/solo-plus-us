@@ -18,8 +18,9 @@ Export していなければ実際には使えないため）のうち Insights�
 Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI は Android 実機（Pixel 11）で
 確認済み・iOS は未確認**（`expo run:ios` が Xcode 26.3 のコンパイラ不具合で実行できない
 ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。**Phase 4**（Health Connect 同期）
-に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・ビルド確認まで
-完了、`services/HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator` はこれから。
+に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
+`HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）まで
+完了、AppState 配線と Settings UI はこれから。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -2228,11 +2229,65 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
 `test/__tests__/syncWorker.integration.test.ts` に追加。全20スイート・
 284件パス、`assembleDebug` でビルド成功も再確認済み
 
+### ステップ3: SyncCoordinator（完了。AppState 配線は次のステップへ持ち越し）
+
+- [services/SyncCoordinator.ts](services/SyncCoordinator.ts)：§9.12 の
+  mutex。`isSuspended()`・`suspend()`/`resume()`・`trackExternalCall()`・
+  `runExclusive()` を、クラスではなくこのプロジェクトの他モジュールと
+  同じ「関数 + モジュール状態」のスタイルで実装（v1 はフォアグラウンド
+  単一 runtime、§6.2/D-36、なのでモジュールレベルの状態で十分）
+- **cancel 不可（D-41 確認済み）を前提に、`suspend()` はタイムアウトで
+  打ち切れない単純な await として実装**。§9.12 が定義する「タイムアウトは
+  UI の待機を打ち切るためだけに使う／外部 Promise が未 settle の間は
+  呼び出し側が諦めても裏で待ち続け、実際に settle してから通常状態へ戻す」
+  という挙動は、現時点でこの `suspend()` を呼ぶどの呼び出し元にも
+  「実行中に待機を打ち切れる」UI が無い（`app/settings/data.tsx` の
+  busy 状態にキャンセルボタンが無いことを確認済み）ため未実装——意図的な
+  Known gap として `SyncCoordinator.ts` に明記した
+- `services/SyncWorker.ts` を Coordinator と協調するよう修正：claim 前の
+  確認（無駄な claim を避ける最適化）と、claim 直後・外部呼び出し直前の
+  確認（実際に競合を防ぐ本体、await を挟まないため割り込まれない）の
+  2箇所で `isSuspended()` を確認。後者で suspended と判明した場合は
+  `markJobFailed` ではなく新設の `releaseClaimForResend` でクレームだけ
+  解放する（外部へは到達していないので「失敗」ではない）
+- **`SyncCoordinator.trackExternalCall` はネイティブ呼び出しだけでなく
+  finalize の DB 書き込みまで含めて包む**よう実装した。外部呼び出しの
+  完了だけを追跡対象にすると、finalize の `db.transaction` と破壊的操作の
+  `db.transaction` が同じ接続上でほぼ同時に始まりうる——最初はネイティブ
+  呼び出しだけを包んでいたが、integration test で実際に
+  「cannot start a transaction within a transaction」として顕在化し、
+  修正した
+- 連続 `lost-claim-race`（前ステップで新設）に上限（5回）を設け、
+  `drainDueJobs` が無進捗のまま回り続けることを防いだ
+- `services/ImportService.performReplaceImport`（§13.3 置換復元）を
+  `SyncCoordinator.runExclusive` 経由に変更——§9.12 の対象操作のうち、
+  **通常のアプリ操作中（DB 接続が生きている状態）に実行され、実際に
+  SyncWorker と競合しうる唯一の既存呼び出し元**。DB Migration
+  （`database/migrations/index.ts`）と Recovery（`services/
+  RecoveryService.ts` の `restoreFromBackup`/`resetAndStartOver`、
+  `components/RecoveryScreen.tsx` からしか呼ばれない）は、いずれも
+  「生きた DB 接続」が存在する前に／存在しない状態でのみ実行される
+  ——SyncWorker が動きようがない区間なので、意図的に `runExclusive` で
+  包んでいない（包んでも常に no-op な上、`database/` 層が `services/`
+  に依存する layering 違反になる）。この前提の詳細は
+  `SyncCoordinator.ts` のコメント参照
+- テスト：`services/__tests__/SyncCoordinator.test.ts`（DB 非依存の
+  mutex 単体テスト、§17.3 I12/I13/I20 を明示的に参照）、
+  `test/__tests__/syncCoordinator.integration.test.ts`（実 SQLite +
+  実際の `performReplaceImport` + モック化した `HealthConnectService` で
+  end-to-end 検証。上記のネストしたトランザクションのバグはこのテストで
+  発見・修正した）、`test/__tests__/syncWorker.integration.test.ts` に
+  Coordinator 統合テストを追加。全22スイート・300件パス
+
 ### Known gaps（次のステップ）
 
-- `SyncCoordinator`（§9.12、破壊的操作との排他制御。`drainDueJobs` を
-  いつ・どのくらいの頻度で呼ぶか、AppState 配線、破壊的操作とのmutexを
-  ここで実装する）は未実装
+- **AppState 配線が未実装**：「いつ `drainDueJobs` を呼ぶか」（§9.5.4の
+  AppState 表：`active`→開始・再開、`inactive`/`background`→新規 claim
+  停止・実行中の呼び出しは確定処理まで進める、次の`active`→再開）を
+  React 側（`lib/screenMask.ts`/`contexts/ScreenshotBlock.tsx` と同様の
+  Provider + hook）で配線する必要がある。また、フォアグラウンド中に
+  `not_before` が経過したジョブ（例：5秒の Undo 遅延）を拾うための
+  周期的な再チェックの要否・頻度もここで決める
 - Settings 画面の Health Connect UI（ON/OFF・未同期の変更・手動再試行/破棄）は
   未実装
 - **「同期しないことを選んだ」永続状態が未設計**：`services/syncJobPlanner.ts`
@@ -2250,6 +2305,6 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   `HealthConnectService`/`SyncWorker` を
   実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
   存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
-  検証する。それまでは Settings UI も SyncCoordinator も無く実機で
-  意味のある検証ができないため、SyncCoordinator（ステップ3）着手の
-  可否とは無関係——ステップ3を止める理由にはならない
+  検証する。`SyncCoordinator` 自体はステップ3で実装済みだが、AppState
+  配線と Settings UI が無いため、まだ実機で意味のある検証ができる状態
+  ではない——次のステップ（AppState 配線）着手の可否とは無関係

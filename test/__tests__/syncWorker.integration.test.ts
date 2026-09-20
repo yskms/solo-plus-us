@@ -24,6 +24,7 @@ import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import { setSetting } from '../../services/SettingsRepository';
 import { processNextDueJob, drainDueJobs } from '../../services/SyncWorker';
+import * as SyncCoordinator from '../../services/SyncCoordinator';
 
 let db: TestDb;
 
@@ -32,6 +33,7 @@ beforeEach(async () => {
   jest.resetAllMocks();
   mockEnsureInitialized.mockResolvedValue(true);
   await setSetting(db, 'healthConnect.enabled', true);
+  SyncCoordinator.__resetSyncCoordinatorForTests();
 });
 
 afterEach(() => {
@@ -329,5 +331,78 @@ describe('processNextDueJob — lost claim race', () => {
     expect(mockUpsertActivity).not.toHaveBeenCalled();
 
     claimSpy.mockRestore();
+  });
+});
+
+describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
+  it('does not claim at all while suspended (checked before claimNextDueJob)', async () => {
+    const activity = await recordDueActivity();
+    await SyncCoordinator.suspend();
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result).toEqual({ status: 'suspended' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+    // Untouched — never claimed, so attempts/claimedAt are exactly as recordDueActivity left them.
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.attempts).toBe(0);
+    expect(job?.claimedAt).toBeNull();
+  });
+
+  it('releases an already-claimed job (without marking it failed) if suspension starts after claim but before the external call', async () => {
+    const activity = await recordDueActivity();
+    // Simulate suspend() landing in the window between claim (§9.5 step1-2)
+    // and the external call — the second isSuspended() check in
+    // processNextDueJob exists specifically for this.
+    const isSuspendedSpy = jest.spyOn(SyncCoordinator, 'isSuspended');
+    isSuspendedSpy.mockReturnValueOnce(false); // (1) the pre-claim optimization check
+    isSuspendedSpy.mockReturnValueOnce(true); // (2) the correctness-critical check, right before the external call
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result).toEqual({ status: 'suspended' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).not.toBeNull();
+    expect(job?.claimedAt).toBeNull(); // released, claimable again
+    expect(job?.lastErrorCode).toBeNull(); // not a failure — releaseClaimForResend, not markJobFailed
+    expect(job?.attempts).toBe(1); // claim already incremented this; not "refunded" (documented as a minor, harmless imprecision)
+
+    isSuspendedSpy.mockRestore();
+  });
+
+  it('registers the external call with SyncCoordinator.trackExternalCall so a concurrent suspend() actually waits for it (I12/I13/I20)', async () => {
+    await recordDueActivity();
+    let resolveUpsert!: (value: { ok: true; externalRecordId: null }) => void;
+    let reachedExternalCall!: () => void;
+    const reachedExternalCallPromise = new Promise<void>((resolve) => {
+      reachedExternalCall = resolve;
+    });
+    mockUpsertActivity.mockImplementation(() => {
+      reachedExternalCall();
+      return new Promise((resolve) => {
+        resolveUpsert = resolve;
+      });
+    });
+
+    const processing = processNextDueJob(db, 'health_connect');
+    // Real DB awaits (claim, Activity existence check) happen before the
+    // external call — wait for an actual signal that it was reached rather
+    // than guessing a microtask-tick count.
+    await reachedExternalCallPromise;
+
+    let suspendResolved = false;
+    const suspending = SyncCoordinator.suspend().then(() => {
+      suspendResolved = true;
+    });
+    await Promise.resolve();
+    expect(suspendResolved).toBe(false); // must not resolve while the claimed job's external call is still pending
+
+    resolveUpsert({ ok: true, externalRecordId: null });
+    await processing;
+    await suspending;
+    expect(suspendResolved).toBe(true);
+
+    SyncCoordinator.resume();
   });
 });

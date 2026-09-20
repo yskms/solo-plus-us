@@ -4,12 +4,11 @@
  * `repositories/HealthSyncJobRepository` / `HealthSyncRepository` として
  * 実装済み。ここではそれらを §9.5 の手続きの順序で組み立てる。
  *
- * **このファイルは「いつ呼ぶか」を知らない。** `drainDueJobs` は呼ばれた
- * 時点で due なジョブを処理し尽くすだけの関数で、AppState 監視・定期実行・
- * 破壊的操作との排他（§9.12 SyncCoordinator）は含まない——それらは
- * 別モジュール（今後実装）が `drainDueJobs` を「いつ・どのくらいの頻度で」
- * 呼ぶかを決める形で積む。`lib/screenMask.ts` が純粋関数とAppState配線を
- * 分離しているのと同じ構造。
+ * `services/SyncCoordinator`（§9.12）とは協調する——新しい claim の抑制と
+ * 外部呼び出しの追跡はこのファイルの責務だが、「いつ `drainDueJobs` を
+ * 呼ぶか」（AppState 監視・定期実行）自体は知らない。`lib/screenMask.ts`
+ * が純粋関数と AppState 配線を分離しているのと同じ構造で、その配線は
+ * 別モジュール（今後実装）が担う。
  *
  * provider は引数で受け取るが、実際に呼べる external call は
  * `health_connect` のみ（`healthkit` は未実装）。
@@ -20,6 +19,7 @@ import * as ActivityRepository from '../repositories/ActivityRepository';
 import * as HealthSyncJobRepository from '../repositories/HealthSyncJobRepository';
 import * as HealthSyncRepository from '../repositories/HealthSyncRepository';
 import * as HealthConnectService from './HealthConnectService';
+import * as SyncCoordinator from './SyncCoordinator';
 import { getActiveProviders } from './ActivityService';
 import type { Transactor } from '../database/SqlExecutor';
 import type { HealthConnectResult } from './HealthConnectService';
@@ -39,6 +39,7 @@ function backoffSeconds(attempts: number): number {
 export type ProcessJobResult =
   | { status: 'no-due-job' }
   | { status: 'lost-claim-race' }
+  | { status: 'suspended' } // §9.12: a destructive operation is running/starting
   | { status: 'processed'; jobId: string };
 
 /** §9.4/§9.9 で外部へ送る値のみを渡す — Activity 全体を提供先に渡さない。 */
@@ -160,8 +161,19 @@ async function finalizeFailure(db: Transactor, job: HealthSyncJobRow, errorCode:
  * §9.5 の1サイクル：claim → (create/update/recreateのみ) Activity 存在確認
  * → 外部呼び出し → 確定。呼び出し前に provider が有効かは呼び出し側
  * （`drainDueJobs`）が確認済みという前提（§9.5 step0）。
+ *
+ * §9.12: 破壊的操作の `suspend()` と2箇所で協調する——(1) claim 前の確認は
+ * 単なる最適化（無駄な claim を避けるだけ）、(2) 外部呼び出し直前の確認が
+ * 実際に競合を防いでいる本体。(1)と(2)の間には await を挟まない
+ * （Activity 存在確認は挟むが、それは DB 読み取りであり Coordinator が
+ * 気にする「外部呼び出し」ではない）ので、(2)の直後に同期的に
+ * `SyncCoordinator.trackExternalCall` へ入るところまでは、途中で
+ * `suspend()` が割り込む余地が無い——JS の実行モデル上、await を挟まない
+ * 区間は割り込まれない。
  */
 export async function processNextDueJob(db: Transactor, provider: Provider): Promise<ProcessJobResult> {
+  if (SyncCoordinator.isSuspended()) return { status: 'suspended' }; // (1) 無駄な claim を避ける最適化
+
   const claimResult = await HealthSyncJobRepository.claimNextDueJob(db, provider);
   if (claimResult === HealthSyncJobRepository.LOST_CLAIM_RACE) return { status: 'lost-claim-race' };
   if (!claimResult) return { status: 'no-due-job' };
@@ -183,18 +195,33 @@ export async function processNextDueJob(db: Transactor, provider: Provider): Pro
     }
   }
 
-  const result = await callProvider(provider, job, activity);
-
-  if (result.ok) {
-    if (job.operation === 'delete') {
-      await finalizeDeleteSuccess(db, job);
-    } else {
-      // activity は非null（delete以外はstep3で存在確認済み）— 実際に送信したsyncVersionのスナップショット。
-      await finalizeUpsertSuccess(db, provider, job, activity!.syncVersion, result.externalRecordId);
-    }
-  } else {
-    await finalizeFailure(db, job, result.errorCode);
+  if (SyncCoordinator.isSuspended()) {
+    // (2) 実際に競合を防ぐ本体。ここで claim を持ったまま外部呼び出しへ
+    // 進むと、直後に破壊的操作が実行されて §9.12 が防ぎたい競合が起きる。
+    // 「失敗」ではないので markJobFailed ではなく releaseClaimForResend
+    // （attempts はそのまま——外部へは一度も到達していない）。
+    await HealthSyncJobRepository.releaseClaimForResend(db, job.id, job.revision, nowUtcIso());
+    return { status: 'suspended' };
   }
+
+  // §9.12: trackExternalCall はネイティブ呼び出しだけでなく finalize まで
+  // 包む。suspend() が「外部呼び出しの完了」だけを待って finalize の DB
+  // 書き込みを待たないと、finalize の db.transaction と破壊的操作の
+  // db.transaction が同じ接続上でほぼ同時に始まりうる——テストで実際に
+  // 「cannot start a transaction within a transaction」として顕在化した。
+  await SyncCoordinator.trackExternalCall(async () => {
+    const result = await callProvider(provider, job, activity);
+    if (result.ok) {
+      if (job.operation === 'delete') {
+        await finalizeDeleteSuccess(db, job);
+      } else {
+        // activity は非null（delete以外はstep3で存在確認済み）— 実際に送信したsyncVersionのスナップショット。
+        await finalizeUpsertSuccess(db, provider, job, activity!.syncVersion, result.externalRecordId);
+      }
+    } else {
+      await finalizeFailure(db, job, result.errorCode);
+    }
+  });
 
   return { status: 'processed', jobId: job.id };
 }
@@ -233,19 +260,25 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
   }
 
   let processedCount = 0;
+  let consecutiveLostRaces = 0;
   for (;;) {
     const result = await processNextDueJob(db, provider);
-    if (result.status === 'no-due-job') break;
+    if (result.status === 'no-due-job' || result.status === 'suspended') break;
+
+    if (result.status === 'lost-claim-race') {
+      // このプロセス内では今のところ起こらないはずだが（v1はフォアグラウンド
+      // 単一runtime、§6.2/D-36）、起きても諦めずに次の due なジョブへ進む
+      // ——ただし無進捗のまま回り続けるビジーループは避ける。上限は
+      // 「同時に何本のトリガから drainDueJobs が呼ばれうるか」の見積もり
+      // ではなく、単に「これ以上粘っても意味が薄くなる」ための安全弁
+      // （次の drainDueJobs 呼び出しで続きを処理すればよい）。
+      consecutiveLostRaces++;
+      if (consecutiveLostRaces >= 5) break;
+      continue;
+    }
+    consecutiveLostRaces = 0;
+
     if (result.status === 'processed') processedCount++;
-    // 'lost-claim-race': このプロセス内では今のところ起こらないはずだが
-    // （v1はフォアグラウンド単一runtime、§6.2/D-36）、起きても諦めずに次の
-    // due なジョブへ進む。
-    //
-    // TODO(SyncCoordinator, §9.12 実装時): 連続 lost-claim-race に上限を
-    // 設けないと、複数トリガから同時に drain される状況ではビジーループに
-    // なりうる（レビュー指摘）。今は単一呼び出し元しかいないため実害なし
-    // だが、Coordinator が「いつ・どのくらいの頻度で drainDueJobs を呼ぶか」
-    // を決める際に、この境界も一緒に設計すること。
   }
   return { processedCount };
 }

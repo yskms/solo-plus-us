@@ -17,6 +17,7 @@ import { deleteAllActivities, findActivityById, restoreActivityRow } from '../re
 import { deleteAllMappings } from '../repositories/HealthSyncRepository';
 import { deleteAllJobs } from '../repositories/HealthSyncJobRepository';
 import { setSetting } from './SettingsRepository';
+import * as SyncCoordinator from './SyncCoordinator';
 import type { ExportFileV1 } from '../types/Export';
 import { SYNC_DERIVED_SETTING_KEYS } from '../types/Settings';
 import type { Activity } from '../types/Activity';
@@ -38,27 +39,35 @@ function toActivity(entry: ExportFileV1['activities'][number]): Activity {
  * a stale "Last synced" would recreate exactly the misleading state the
  * allowlist exists to avoid. Device-owned settings (App Lock, HC enabled)
  * are simply never touched here.
+ *
+ * §9.12: this is one of the operations that must run exclusively of
+ * `SyncWorker` — wiping `health_sync_jobs`/`health_sync` while a job is
+ * mid-flight to Health Connect is exactly the race D-32/§9.12 exist to
+ * prevent. Routed through `SyncCoordinator.runExclusive`, never called
+ * directly against the DB from a UI handler.
  */
 export async function performReplaceImport(db: Transactor, file: ExportFileV1): Promise<ReplaceImportResult> {
-  await db.transaction(async (tx) => {
-    await deleteAllJobs(tx);
-    await deleteAllMappings(tx);
-    await deleteAllActivities(tx);
+  await SyncCoordinator.runExclusive(() =>
+    db.transaction(async (tx) => {
+      await deleteAllJobs(tx);
+      await deleteAllMappings(tx);
+      await deleteAllActivities(tx);
 
-    for (const entry of file.activities) {
-      await restoreActivityRow(tx, toActivity(entry));
-    }
+      for (const entry of file.activities) {
+        await restoreActivityRow(tx, toActivity(entry));
+      }
 
-    for (const [key, value] of Object.entries(file.settings)) {
-      // `file.settings` was already narrowed to EXPORTABLE_SETTING_KEYS by
-      // the validator; this cast just restates that to TypeScript.
-      await setSetting(tx, key as keyof typeof file.settings, value as never);
-    }
+      for (const [key, value] of Object.entries(file.settings)) {
+        // `file.settings` was already narrowed to EXPORTABLE_SETTING_KEYS by
+        // the validator; this cast just restates that to TypeScript.
+        await setSetting(tx, key as keyof typeof file.settings, value as never);
+      }
 
-    for (const key of SYNC_DERIVED_SETTING_KEYS) {
-      await setSetting(tx, key, null);
-    }
-  });
+      for (const key of SYNC_DERIVED_SETTING_KEYS) {
+        await setSetting(tx, key, null);
+      }
+    }),
+  );
 
   return { importedCount: file.activities.length };
 }
