@@ -55,6 +55,29 @@ comment）。ネイティブ picker はタイムゾーンを意識できず、�
 再発させる。変更する際は必ず `resolveOccurredAtEdit`／`nowAsZonedDigits` の doc
 comment を先に読むこと。
 
+### Health Connect 同期の排他制御（`SyncWorker`/`SyncCoordinator`/`SyncWorkerLoop`）
+
+`services/SyncWorker.ts` は「v1 はプロセス内単一ワーカー」（§6.2/D-36）を
+前提に書かれているが、**この前提はコード自身では守られず、呼び出し側が
+守る責務**になっている。実際に一度、この前提が壊れて
+「cannot start a transaction within a transaction」（`db.transaction` の
+衝突）と「claim が解放されずに次回起動まで残る」の両方を実機相当の
+再現で踏んだ（`contexts/SyncWorkerLoop.tsx` のレビュー時）。
+
+- **drain のトリガを増やすときは、必ず `contexts/SyncWorkerLoop.tsx` の
+  `drainingRef`/`rerunRequestedRef` による直列化を経由すること。**
+  `drainDueJobs` を独自のタイマーやイベントから直接呼ぶコードを新設しない。
+- **破壊的操作（置換復元・全削除・HC切断等）は必ず
+  `SyncCoordinator.runExclusive` 経由で呼ぶこと。** そして
+  `runExclusive` に渡す関数の**内側**から `drainDueJobs`/`useSyncWorkerLoop`
+  相当の処理を呼ばないこと——`SyncCoordinator` の直列化キューは同一
+  呼び出しスタック内でのネストに対応できず、デッドロックする
+  （`services/SyncCoordinator.ts` の「直列化」節参照）。
+
+Settings UI（HC の ON/OFF・手動再試行/破棄）を実装する際は、新しい
+drain トリガや破壊的操作を追加することになるため、この2点を必ず踏まえる
+こと。詳細な経緯は README「Phase 4 実装状況」のレビュー履歴参照。
+
 ### Android のダーク/ライト切替まわりの落とし穴
 
 画面遷移中に一瞬見える帯や、テーマ切替の反映漏れは `contentStyle`（React Navigation
