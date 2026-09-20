@@ -2744,14 +2744,25 @@ Retry now の実際の再試行、claim 中の無効化表示、delete job が�
 状態での OFF 切断警告、`permission-revoked` の実機確認は今回未実施
 （下記 Known gaps に残す）。
 
-**🟢 レビューで認識共有された残り1点（修正済み）**：`healthConnect.enabled`
-の読み取りが失敗した場合、`enabledRef.current` を `false` で確定させて
-いたため、一過性の DB エラーでもこの画面を開いている間ずっと
-"Not connected" にラッチする（裏では `SyncWorkerLoop` が正しく同期を
-続けているにもかかわらず）。失敗時は今回の描画だけ `false` を見せつつ
-`enabledRef.current` は `null` のまま残すよう修正——次の `load()`（5秒
-ポーリングまたは revision 起因）が改めて読み直すため、数回分の無駄な
-再試行と引き換えに自己回復する。
+**🟢 レビューで認識共有された残り1点（修正・さらにレビューで再指摘）**：
+`healthConnect.enabled` の読み取りが失敗した場合、`enabledRef.current` を
+`false` で確定させていたため、一過性の DB エラーでもこの画面を開いている
+間ずっと "Not connected" にラッチする（裏では `SyncWorkerLoop` が正しく
+同期を続けているにもかかわらず）。失敗時は今回の描画だけ `false` を
+見せつつ `enabledRef.current` は `null` のまま残すよう最初に修正したが、
+**この修正自体が効いていなかった**：`enabledRef` には `enabled` state の
+変化を自動反映する mirror effect（`useEffect(() => { enabledRef.current =
+enabled }, [enabled])`）が既にあり、失敗パスの `setEnabled(false)` が
+`enabled` state を変えるため、直後にこの mirror effect が
+`enabledRef.current` を `false` で上書きしてしまい、「`null` のまま残す」
+という意図を無効化していた——実機では state 変更→effect の実行順序に
+依存するため踏まず、レビューで指摘された（検証するには `getSetting` を
+一時的に throw させる必要がある）。
+
+mirror effect 自体を廃止し、`enabledRef` を更新すべき3箇所（`load()` の
+初回読み込み成功時・`handleEnable`・`disconnect`）でそれぞれ明示的に
+更新する形にした——読み込み失敗パスだけ意図的に触らない、という
+非対称性は、自動追従をやめて書き手を管理する以外に保てない。
 
 #### Known gaps（次のステップ）
 

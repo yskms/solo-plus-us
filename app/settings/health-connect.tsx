@@ -197,14 +197,23 @@ export default function HealthConnectSettingsScreen() {
   // `refreshConnectionHealth`（後述）は `enabled` を判定に使うが、それ自体を
   // 依存配列に入れて再生成すると、トグルのたびに `load`/ポーリング用
   // interval が丸ごと作り直されてしまう（レビュー指摘の前は無かった問題
-  // だが、この ref は元々その再生成を避けるためのもの）。ref を経由して
-  // 最新値だけを読む——`enabled` state と同じ `boolean | null`（`null` =
-  // まだ読んでいない）なので、これ1本で「未確定」と「確定して false
-  // だった」を区別できる（以前は専用の `enabledKnownRef` と2本立てだった）。
+  // だが、この ref は元々その再生成を避けるためのもの）。`enabled` state
+  // と同じ `boolean | null`（`null` = まだ確定していない）。
+  //
+  // **`enabled` state から自動ミラーしない——書き手（`load()` の初回読み
+  // 込み成功時・`handleEnable`・`disconnect`）がそれぞれ明示的に更新する。**
+  // 以前は `useEffect(() => { enabledRef.current = enabled }, [enabled])`
+  // で自動同期していたが、これが `load()` の読み込み失敗パスの意図
+  // （`enabledRef.current` は `null` のまま残し、この回の描画だけ `false`
+  // を見せて次回リトライする、下記コメント参照）を壊していた——
+  // `setEnabled(false)` 自体が `enabled` state を変えるため、この mirror
+  // effect が直後に `enabledRef.current` を `false` で上書きしてしまい、
+  // 「失敗時は null のまま残す」が実質的に効かず、dd46833 以前と同じ
+  // ラッチが再発する（実機では state 変更→effect の順序に依存するため
+  // 踏まず、レビューで指摘された）。読み込み失敗パスだけ意図的に
+  // `enabledRef` を更新しない、という非対称性を保つには、更新箇所を
+  // 明示的に管理するしかない。
   const enabledRef = useRef<boolean | null>(null);
-  useEffect(() => {
-    enabledRef.current = enabled;
-  }, [enabled]);
 
   /**
    * 可用性チェックと権限チェックを別の失敗ドメインとして扱う（両方とも
@@ -473,6 +482,7 @@ export default function HealthConnectSettingsScreen() {
         return;
       }
       await setSetting(db, 'healthConnect.enabled', true);
+      enabledRef.current = true;
       if (mountedRef.current) {
         setEnabled(true);
         setAvailable(true);
@@ -494,6 +504,7 @@ export default function HealthConnectSettingsScreen() {
       // 渡すコールバックは setSetting 一発のみ——内側から drain 相当の
       // 処理を呼ばない（runExclusive のネスト禁止、CLAUDE.md 参照）。
       await SyncCoordinator.runExclusive(() => setSetting(db, 'healthConnect.enabled', false));
+      enabledRef.current = false;
       if (mountedRef.current) setEnabled(false); // §10.5: ジョブ自体は破棄しない——ここでは enabled のみ変更
     } catch (error) {
       logError('Disconnecting Health Connect failed', error);
