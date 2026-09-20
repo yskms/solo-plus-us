@@ -2244,6 +2244,11 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
   含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
   まだ存在しない）
-- Android 9〜13（非プラットフォーム統合パス）での実機検証（D-20）は未実施。
-  `HealthConnectService` 実装時に Pixel 3 で insert/delete と合わせて検証する
-  予定（README「ステータス」参照）
+- **Android 9〜13（非プラットフォーム統合パス）での実機検証（D-20）は
+  意図的に未実施のまま**——「今は着手しない」とすでに決定済み（本README
+  51行目付近の確認結果を参照）。`HealthConnectService`/`SyncWorker` を
+  実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
+  存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
+  検証する。それまでは Settings UI も SyncCoordinator も無く実機で
+  意味のある検証ができないため、SyncCoordinator（ステップ3）着手の
+  可否とは無関係——ステップ3を止める理由にはならない

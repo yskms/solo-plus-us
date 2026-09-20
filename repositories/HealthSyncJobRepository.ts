@@ -186,14 +186,6 @@ export async function claimNextDueJob(
 }
 
 /**
- * §9.5.1: deletes the job only if its revision still matches what the
- * caller captured at claim time. Returns `false` (and leaves the row
- * completely untouched) on mismatch — the caller is expected to have
- * already recorded the external success via `HealthSyncRepository.
- * upsertMapping` regardless of this result (§9.5.1: "外部呼び出しが成功した
- * 事実は... 独立に記録する").
- */
-/**
  * §9.5.1's create/update/recreate race: "create 送信中に編集 → mapping は
  * 作られる → ジョブは残り、大きい sync_version で送り直す". Unlike a
  * concurrent delete (which routes through `replaceJob` and bumps

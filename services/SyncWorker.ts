@@ -240,6 +240,12 @@ export async function drainDueJobs(db: Transactor, provider: Provider): Promise<
     // 'lost-claim-race': このプロセス内では今のところ起こらないはずだが
     // （v1はフォアグラウンド単一runtime、§6.2/D-36）、起きても諦めずに次の
     // due なジョブへ進む。
+    //
+    // TODO(SyncCoordinator, §9.12 実装時): 連続 lost-claim-race に上限を
+    // 設けないと、複数トリガから同時に drain される状況ではビジーループに
+    // なりうる（レビュー指摘）。今は単一呼び出し元しかいないため実害なし
+    // だが、Coordinator が「いつ・どのくらいの頻度で drainDueJobs を呼ぶか」
+    // を決める際に、この境界も一緒に設計すること。
   }
   return { processedCount };
 }
