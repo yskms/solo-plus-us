@@ -16,6 +16,7 @@
 import * as ActivityRepository from '../repositories/ActivityRepository';
 import * as HealthSyncJobRepository from '../repositories/HealthSyncJobRepository';
 import * as HealthSyncRepository from '../repositories/HealthSyncRepository';
+import { mappingImpliesExternalTouch, toMappingState } from './syncJobPlanner';
 import type { Transactor } from '../database/SqlExecutor';
 
 export type DiscardSyncJobResult = 'discarded' | 'not-found-or-claimed';
@@ -30,20 +31,30 @@ export type DiscardSyncJobResult = 'discarded' | 'not-found-or-claimed';
  *   作る理由もない。ジョブを削除するだけ。
  * - `create` / `update` / `recreate`：Activity がまだ存在すれば、
  *   `HealthSyncRepository.upsertDeclinedOrUncertainMapping` で
- *   `sync_state` を記録する（D-51）。`attempts > 0` なら `uncertain`
- *   （外部へ到達したかもしれない——将来の delete が防御的にジョブを
- *   積むための根拠になる、§10.1 順2/順5）、`attempts === 0` なら
- *   `declined`（D-35 の明示的な「同期しない」選択）。
+ *   `sync_state` を記録する（D-51）。
  *
- *   `attempts` だけで判定してよい理由：D-39 のガード
- *   （`HealthSyncJobRepository.discardJob` は `claimed_at IS NULL` の
- *   ジョブしか削除しない）により、この関数がジョブを実際に削除できた
- *   時点でそのジョブは unclaimed だったと確定している。§10.1 の一般形
- *   `externalTouchPossible`（`services/syncJobPlanner.ts`）は
- *   `attempts > 0 || claimedAt !== null || ...` だが、ここでは
- *   `claimedAt` 由来の項が常に false になるため書く意味が無い——
- *   一般形をここへそのまま複製すると、D-21 で避けたはずの「表の複製」
- *   （複製した側だけ更新漏れする）が再発する。
+ * **`declined`/`uncertain` の判定は、破棄するジョブ自身の `attempts` だけ
+ * では決められない（レビューで実際に指摘・再現された）。** `update`/
+ * `recreate` ジョブは `syncJobPlanner.ts` の `planForEdit` が
+ * `mappingState === 'synced'` のときにしか作らない——つまり `update`
+ * ジョブの存在自体が「この (activity, provider) には既に確認済みの
+ * mapping がある」ことを含意する。この `update` が一度も試行されない
+ * （`attempts === 0`）まま破棄されても、**それ以前の `create`/`recreate`
+ * が既に外部へ到達している可能性は消えない**——`attempts === 0` だけで
+ * `declined` にすると、確実に存在するかもしれない外部レコードが
+ * `planForDelete` から見えなくなる（§10.1 順6 に落ち、防御的 delete が
+ * 一切積まれない）。
+ *
+ * したがって判定は「このジョブの `attempts` **または** discard 前の
+ * mapping が `mappingImpliesExternalTouch`（`synced`/`uncertain`）で
+ * あったか」の OR で行う——`services/syncJobPlanner.ts`
+ * `planForDelete` が使うのと同じ述語をそのまま import して使う
+ * （表の複製を避ける、D-21）。
+ *
+ * `claimedAt` の項を省ける理由：D-39 のガード（`HealthSyncJobRepository.
+ * discardJob` は `claimed_at IS NULL` のジョブしか削除しない）により、
+ * この関数がジョブを実際に削除できた時点でそのジョブは unclaimed だったと
+ * 確定している。
  */
 export async function discardSyncJob(db: Transactor, jobId: string): Promise<DiscardSyncJobResult> {
   let result: DiscardSyncJobResult = 'not-found-or-claimed';
@@ -58,10 +69,13 @@ export async function discardSyncJob(db: Transactor, jobId: string): Promise<Dis
     if (job.operation !== 'delete') {
       const activity = await ActivityRepository.findActivityById(tx, job.activityId);
       if (activity) {
+        const existingMapping = await HealthSyncRepository.findMapping(tx, job.activityId, job.provider);
+        const externalTouchPossible =
+          job.attempts > 0 || mappingImpliesExternalTouch(toMappingState(existingMapping));
         await HealthSyncRepository.upsertDeclinedOrUncertainMapping(tx, {
           activityId: job.activityId,
           provider: job.provider,
-          syncState: job.attempts > 0 ? 'uncertain' : 'declined',
+          syncState: externalTouchPossible ? 'uncertain' : 'declined',
         });
       }
       // Activity が無い場合（§9.5.3 の内部不整合）は FK RESTRICT により

@@ -87,6 +87,32 @@ describe('discardSyncJob — create job', () => {
   });
 });
 
+describe('discardSyncJob — update job (regression: this job\'s own attempts is not enough, レビューで実際に再現・修正)', () => {
+  it('attempts=0, but a prior mapping was already synced → uncertain, NOT declined (the record may well already be on the provider from an earlier create)', async () => {
+    const { activity, job } = await recordActivityWithCreateJob();
+    // Land the original create for real, so a confirmed `synced` mapping with a real external id exists.
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE id = ?', ['2000-01-01T00:00:00Z', job.id]);
+    await processNextDueJob(db, 'health_connect');
+    expect((await HealthSyncRepository.findMapping(db, activity.id, 'health_connect'))?.syncState).toBe('synced');
+
+    // An unrelated edit queues an update job — never attempted yet.
+    await ActivityService.updateActivity(db, activity.id, { protectionUsed: true });
+    const updateJob = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(updateJob?.operation).toBe('update');
+    expect(updateJob?.attempts).toBe(0);
+
+    const result = await discardSyncJob(db, updateJob!.id);
+
+    expect(result).toBe('discarded');
+    const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    // This job's own attempts (0) alone would wrongly say "declined" (definitely never
+    // reached the provider) — but the PRIOR create really did reach it, so the record
+    // must stay flagged as at-least-uncertain, not silently become "definitely not there".
+    expect(mapping?.syncState).toBe('uncertain');
+  });
+});
+
 describe('discardSyncJob — delete job', () => {
   it('does not touch health_sync (the Activity is already gone by definition)', async () => {
     const { activity, job } = await recordActivityWithCreateJob();
@@ -145,24 +171,18 @@ describe('D-51 end-to-end: discard → delete produces defensive cleanup (the or
   });
 });
 
-describe('D-51 end-to-end: discard → edit → resync moves back to synced (the item-4 upsertMapping scenario)', () => {
-  it('editing an uncertain record queues an update job, and a successful send moves it back to synced', async () => {
+describe('D-51 end-to-end: edit never silently resumes syncing after either discard outcome (corrected in review — see syncJobPlanner.ts planForEdit doc comment)', () => {
+  it('editing an uncertain record does NOT queue any job — same D-35 confirmation text as declined, so the same "stays stopped" behavior applies', async () => {
     const { activity, job } = await recordActivityWithCreateJob();
     await db.execute('UPDATE health_sync_jobs SET attempts = 1, claimed_at = NULL WHERE id = ?', [job.id]);
     await discardSyncJob(db, job.id);
     expect((await HealthSyncRepository.findMapping(db, activity.id, 'health_connect'))?.syncState).toBe('uncertain');
 
     await ActivityService.updateActivity(db, activity.id, { protectionUsed: true });
-    const updateJob = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
-    expect(updateJob?.operation).toBe('update'); // planForEdit: uncertain behaves like synced, not like declined
 
-    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE id = ?', ['2000-01-01T00:00:00Z', updateJob!.id]);
-    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
-    await processNextDueJob(db, 'health_connect');
-
-    const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
-    expect(mapping?.syncState).toBe('synced'); // moved out of uncertain — this is exactly what upsertMapping's explicit sync_state='synced' guarantees
     expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+    // The mapping itself is untouched by the edit — still uncertain, not silently upgraded or downgraded.
+    expect((await HealthSyncRepository.findMapping(db, activity.id, 'health_connect'))?.syncState).toBe('uncertain');
   });
 
   it('editing a declined record does NOT queue any job — D-35\'s opt-out is not silently overridden', async () => {
@@ -174,5 +194,30 @@ describe('D-51 end-to-end: discard → edit → resync moves back to synced (the
 
     expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
     expect(await ActivityRepository.findActivityById(db, activity.id)).not.toBeNull(); // sanity: the edit itself still applied
+  });
+});
+
+describe('D-51 regression (found in review): confirmed sync → edit → immediate discard → local delete must still clean up', () => {
+  it('a record that was genuinely synced, then edited and the resulting update job discarded before ever being attempted, still gets a defensive delete job when the Activity is deleted', async () => {
+    const { activity, job } = await recordActivityWithCreateJob();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: 'HC-REAL-123' });
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE id = ?', ['2000-01-01T00:00:00Z', job.id]);
+    await processNextDueJob(db, 'health_connect');
+    const confirmedMapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    expect(confirmedMapping?.syncState).toBe('synced');
+
+    await ActivityService.updateActivity(db, activity.id, { protectionUsed: true });
+    const updateJob = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(updateJob?.attempts).toBe(0); // never even attempted
+
+    const discardResult = await discardSyncJob(db, updateJob!.id);
+    expect(discardResult).toBe('discarded');
+    // Not declined — a real, confirmed create already reached Health Connect.
+    expect((await HealthSyncRepository.findMapping(db, activity.id, 'health_connect'))?.syncState).toBe('uncertain');
+
+    await ActivityService.deleteActivity(db, activity.id);
+
+    const deleteJob = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(deleteJob?.operation).toBe('delete'); // the defensive cleanup this whole design exists for
   });
 });

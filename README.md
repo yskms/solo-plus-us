@@ -2413,9 +2413,10 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
   ——v1 は未リリースのため D-11 の「ALTER TABLE のみ」はまだ適用されない）
 - `services/syncJobPlanner.ts`：`planForEdit`/`planForDelete` の第2引数を
   `mappingExists: boolean` から `MappingState`（`'none'|'synced'|
-  'uncertain'|'declined'`）に変更。`uncertain` は `synced` と同じ側
-  （編集で再同期を試みる、削除で防御的cleanupを積む）、`declined` は
-  `none` と同じ側（何もしない）に倒す
+  'uncertain'|'declined'`）に変更。`planForDelete` では `uncertain` は
+  `synced` と同じ側（防御的cleanupを積む）、`declined` は `none` と
+  同じ側（何もしない）に倒す。両者で共有する述語
+  `mappingImpliesExternalTouch` を export（D-21「表の複製を避ける」）
 - `repositories/HealthSyncRepository.ts`：`upsertMapping`（`SyncWorker`
   finalize成功時）は常に `sync_state='synced'` を明示的に書く——
   `ON CONFLICT DO UPDATE SET` に含め忘れると、`uncertain` だった記録が
@@ -2426,15 +2427,14 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
 - `services/HealthSyncManualActions.ts`（新設）：Settings「破棄」の実体
   `discardSyncJob`。ジョブ削除と `health_sync` への `uncertain`/`declined`
   記録を1トランザクションで束ねる（`ActivityService.deleteActivity` と
-  同じ構造）。D-39 のガードにより、ここでの判定は `attempts > 0` だけで
-  よい（`claimedAt` は常に null）
+  同じ構造）
 - discard の確認文（D-35）は変更不要——`uncertain`/`declined` どちらも
   同じ文言で正しく、後続の delete が取る挙動だけが内部で変わる
 - テスト：`services/__tests__/syncJobPlanner.test.ts`（4値の全分岐）、
   `test/__tests__/healthSyncRepository.integration.test.ts`、
   `test/__tests__/healthSyncManualActions.integration.test.ts`
-  （discard→delete で防御的cleanupが積まれること、discard→edit→resyncで
-  `synced` に戻ることを含む end-to-end 検証）。全26スイート・349件パス
+  （discard→delete で防御的cleanupが積まれることを含む end-to-end 検証）。
+  全26スイート・352件パス
 - **副次的な影響**：`uncertain` からの delete は `external_record_id=NULL`
   のまま HC へ delete を投げるため、「存在しない clientRecordId への
   delete」が通常運用で発生する経路になった。README「ステータス」節の
@@ -2443,6 +2443,39 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
 - **受け入れた制約**：`health_sync` は Export に含まれない（D-42）ため、
   置換復元（D-10）を実行すると `uncertain`/`declined` は失われ `none` に
   戻る——D-10 の既存設計と整合的なので意識して受け入れる
+
+#### レビューで見つかり、修正したもの
+
+- **🔴 `discardSyncJob` の判定が、破棄するジョブ自身の `attempts` だけでは
+  不十分だった**：`update`/`recreate` ジョブは `planForEdit` が
+  `mappingState === 'synced'` のときにしか作られないため、`update` ジョブの
+  存在自体が「既に確認済みの mapping がある」ことを含意する。その
+  `update` が未試行（`attempts === 0`）のまま破棄されても、それ以前の
+  `create` が既に外部へ到達している可能性は消えない——`attempts === 0`
+  だけで `declined` と判定すると、確実に存在する `external_record_id`
+  を持ったまま `sync_state` だけ `declined` になり（`
+  upsertDeclinedOrUncertainMapping` は `external_record_id` を上書きしない
+  ため）、`planForDelete` から見えなくなる（§10.1 順6 に落ち、防御的
+  delete が一切積まれない）。レビューで実際に「確定同期済み→編集→即
+  discard→ローカル削除」の手順で再現された。判定を「このジョブの
+  `attempts` **または** discard 直前の mapping が
+  `mappingImpliesExternalTouch` だったか」の OR に修正し、この手順を
+  そのまま回帰テストとして追加した
+  （`test/__tests__/healthSyncManualActions.integration.test.ts`
+  「D-51 regression」）
+- **🟠 `uncertain` を編集で再同期させると D-35 の明示的な拒否が覆る**：
+  `uncertain`/`declined` はどちらも `discardSyncJob` の同じ確認文
+  （「この記録を Health Connect へ同期しない」）からしか設定されない。
+  利用者からは判定根拠の `attempts`（ワーカーがそのジョブを試行済み
+  だったか）が不可視なため、同じ文言を確認した2人が、この見えない
+  内部事情だけで異なる将来挙動（片方は編集で同期が自動的に復活する）に
+  なってしまう——D-35 の「黙って破棄すると利用者はローカルと HC が
+  一致していると誤解する」の鏡像。`planForEdit` は `uncertain` を
+  `synced` 側ではなく `declined` 側（noop）に倒すよう修正した
+  （`planForDelete` 側は物理的な状態の問いなので `synced` 側のまま
+  ——この非対称こそが D-51 の主旨）
+
+いずれも設計判断記録 D-51 に訂正の経緯を追記済み。
 
 ### Known gaps（次のステップ）
 

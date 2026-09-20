@@ -1,4 +1,4 @@
-import { planForDelete, planForEdit, planForRecord, toMappingState, type CurrentJobState } from '../syncJobPlanner';
+import { mappingImpliesExternalTouch, planForDelete, planForEdit, planForRecord, toMappingState, type CurrentJobState } from '../syncJobPlanner';
 import type { SyncState } from '../../types/HealthSync';
 
 describe('planForRecord', () => {
@@ -24,8 +24,8 @@ describe('planForEdit (§9.3 編集 rows, D-51 の4値 mappingState)', () => {
     expect(planForEdit(null, 'synced')).toEqual({ action: 'insert', operation: 'update' });
   });
 
-  it("inserts update when no job exists and mappingState is uncertain — not an opt-out, so an edit is exactly the moment to try again (D-51)", () => {
-    expect(planForEdit(null, 'uncertain')).toEqual({ action: 'insert', operation: 'update' });
+  it('does nothing when mappingState is uncertain — both uncertain and declined are reached from the SAME D-35 confirmation text, so an edit must not silently resume syncing for one but not the other (D-51, corrected in review)', () => {
+    expect(planForEdit(null, 'uncertain')).toEqual({ action: 'noop' });
   });
 
   it('does nothing when mappingState is declined — D-35\'s explicit "don\'t sync this" must not be silently overridden by an unrelated edit (D-51)', () => {
@@ -112,6 +112,15 @@ describe('planForDelete (§10.1, job-first table, D-51 の4値 mappingState)', (
 
   it('順6: no job, mappingState declined — nothing to do (definitely never reached the provider, same as none)', () => {
     expect(planForDelete(null, 'declined')).toEqual({ action: 'noop' });
+  });
+});
+
+describe('mappingImpliesExternalTouch (shared by planForDelete and services/HealthSyncManualActions.discardSyncJob, D-21: avoid duplicating this predicate)', () => {
+  it('is true for synced and uncertain, false for declined and none', () => {
+    expect(mappingImpliesExternalTouch('synced')).toBe(true);
+    expect(mappingImpliesExternalTouch('uncertain')).toBe(true);
+    expect(mappingImpliesExternalTouch('declined')).toBe(false);
+    expect(mappingImpliesExternalTouch('none')).toBe(false);
   });
 });
 
