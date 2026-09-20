@@ -21,11 +21,12 @@ Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI 
 に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
 `HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
 AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
-（`app/settings/health-connect.tsx`）まで実装完了。**Pixel 11 実機で ON→権限→
-Connected・記録/削除の自動同期は確認済み**（下記「Phase 4 実装状況」の
-「実機確認（Pixel 11、初回）」参照、実機テストでのみ再現するタイミング依存
-バグを1件発見・修正済み）、Retry/破棄・切断警告等の残りの確認・
-Android 9〜13 実機検証（D-20）・§9.11 のリリースビルド分離は未着手。
+（`app/settings/health-connect.tsx`）まで実装完了。**Pixel 11 実機で
+ON→権限→Connected・記録/削除の自動同期・破棄（confirm ダイアログ＋実際の
+discard）は確認済み**（下記「Phase 4 実装状況」の「実機確認（Pixel 11、
+初回/2回目）」参照、実機テストでのみ再現するタイミング依存バグを2件
+発見・修正済み）。Retry の実際の再試行・切断警告・claim 中表示等の残りの
+確認・Android 9〜13 実機検証（D-20）・§9.11 のリリースビルド分離は未着手。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -2702,17 +2703,46 @@ column named sync_state`（D-51 より前の古い DB スキーマが端末に�
 早期 return し、`available`/`hasPermission` を false に固定してしまう
 ——enabled=true かつ実際に同期成功済みでも "Health Connect isn't
 installed" と表示され、次の5秒ポーリングまで放置される、という形で実機で
-再現した。「読み込み中でまだ分からない」と「確定して false だった」を
-`enabledKnownRef` で区別し、確定した直後に `refreshConnectionHealth()` を
-明示的に呼び直すよう修正——3巡目レビューで追加した `enabledRef` 早期
-returnガード自体が生んだ回帰で、ユニットテストでは検出できない類の
-タイミング依存バグ（画面のマウント〜複数 effect の実行順序に依存）
-だった。修正後、force-stop→再起動直後や Settings 画面への連続的な
-出入りでもステータスが即座に安定することを確認済み
+再現した。3巡目レビューで追加した `enabledRef` 早期 return ガード自体が
+生んだ回帰で、ユニットテストでは検出できない類のタイミング依存バグ
+（画面のマウント〜複数 effect の実行順序に依存）だった。
 
-Retry now/破棄の確認ダイアログ、claim 中の無効化表示、delete job が
-残っている状態での OFF 切断警告、`permission-revoked` の実機確認は
-今回未実施（下記 Known gaps に残す）。
+その場しのぎの修正（専用の `enabledKnownRef` を追加）で収めた後、
+レビューで「`enabled` state 自体も相変わらず `boolean` で『未確定』と
+『確定して false』を同一視している——今回たまたま `load()` の DB 読み取り
+（3件＋ジョブ件数ぶんの `buildRow`）が enabled の読み込みより遅いから
+表面化していないだけで、根は同じ」「マウント時に `refreshConnectionHealth`
+が2つの effect から2回走っている」と指摘され、根本から直した：
+`enabled` state・`enabledRef` とも `boolean | null`（`null` = 未読み込み）
+にし、`healthConnect.enabled` の読み込みを別 effect に分けず `load()` の
+DB 読み取りブロックに統合（`enabledRef.current === null` の間だけ読む）。
+これにより①`setLoaded(true)` の時点で enabled は必ず確定済みになり、
+②マウント時のネイティブ往復（isAvailable→ensureInitialized→
+getGrantedPermissions）も1回に減った。render 側も `loaded || enabled ===
+null` の間は描画しないガードを追加し、実行順序が将来崩れても壊れない形に
+した。`enabledKnownRef` という専用 ref との二重管理も、この統合で1本
+（`enabledRef`）に畳まれた。
+
+#### 実機確認（Pixel 11、2回目）
+
+上記修正後、force-stop→再起動直後の初回マウントで即座に「Connected」が
+安定して表示されること（40分アイドル後のコールドスタートでも再現）、
+Settings 画面への連続的な出入り（3回連続）でもステータスが崩れないことを
+確認した。
+
+レビューで「discard は `health_sync` に declined/uncertain を永続化し、
+以後 `planForDelete` の分岐を変える書き込みで UI から元に戻す導線が無い
+ため、実機で一度通しておくべき」と指摘され、確認した：HC を OFF にして
+ジョブを凍結させ（切断してもジョブは破棄しない、§10.5 の性質を利用）、
+「Don't sync」→確認ダイアログ「Don't sync this record? / Solo + Us and
+Health Connect will no longer match.」→確定→ジョブが一覧から消え
+「Everything is synced」に戻ることを確認。あわせて、OFF 中は Retry now が
+無効化され「Turn on Sync to Health Connect to retry these.」の caption が
+出ること（レビュー2巡目で直した canRetry ロジック）も実機で確認できた。
+
+Retry now の実際の再試行、claim 中の無効化表示、delete job が残っている
+状態での OFF 切断警告、`permission-revoked` の実機確認は今回未実施
+（下記 Known gaps に残す）。
 
 #### Known gaps（次のステップ）
 
@@ -2730,10 +2760,11 @@ Retry now/破棄の確認ダイアログ、claim 中の無効化表示、delete 
   するようになったため優先度が上がっている）。`SyncCoordinator`・AppState
   配線・Settings UI（HC を ON にする手段）はすべて実装済みで、これが
   この検証に着手できる最初の機会になる
-- **Settings UI の実機確認は一部完了**（上記「実機確認（Pixel 11、初回）」
-  参照）：HC ON→権限ダイアログ→Connected 表示、Activity 記録/削除→HC
-  への反映、Last synced の実際の更新は確認済み。**残り**：Retry now/
-  破棄ボタンの文言・確認ダイアログ、claim 中の行の無効化、delete job が
+- **Settings UI の実機確認は大部分完了**（上記「実機確認（Pixel 11、
+  初回/2回目）」参照）：HC ON→権限ダイアログ→Connected 表示、Activity
+  記録/削除→HC への反映、Last synced の実際の更新、破棄（confirm ダイアログ
+  ＋実際の discard）、OFF 中の Retry now 無効化＋caption は確認済み。
+  **残り**：Retry now の実際の再試行、claim 中の行の無効化、delete job が
   残っている状態での OFF 切断時の警告と再接続後の再開、
   `permission-revoked` の表示、HC 未インストール環境での ON 操作時の表示、
   バックグラウンド/フォアグラウンド遷移でのクラッシュや無限ループの有無

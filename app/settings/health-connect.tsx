@@ -165,7 +165,12 @@ export default function HealthConnectSettingsScreen() {
   const { revision, bump } = useDataRevision();
 
   const [loaded, setLoaded] = useState(false);
-  const [enabled, setEnabled] = useState(false);
+  // `null` = healthConnect.enabled をまだ読んでいない（false ではない——
+  // 「未確定」と「確定して false だった」を型で区別する。render 側は
+  // `loaded && enabled !== null` になるまで描画しない。レビューで、
+  // 「未確定を false と同一視している」構図が `refreshConnectionHealth`
+  // だけでなくこの state 自体にも残っている、と指摘され、対応した。
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [available, setAvailable] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
@@ -193,22 +198,13 @@ export default function HealthConnectSettingsScreen() {
   // 依存配列に入れて再生成すると、トグルのたびに `load`/ポーリング用
   // interval が丸ごと作り直されてしまう（レビュー指摘の前は無かった問題
   // だが、この ref は元々その再生成を避けるためのもの）。ref を経由して
-  // 最新値だけを読む。
-  const enabledRef = useRef(enabled);
+  // 最新値だけを読む——`enabled` state と同じ `boolean | null`（`null` =
+  // まだ読んでいない）なので、これ1本で「未確定」と「確定して false
+  // だった」を区別できる（以前は専用の `enabledKnownRef` と2本立てだった）。
+  const enabledRef = useRef<boolean | null>(null);
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
-
-  // `healthConnect.enabled` の起動時読み込み（下の effect）は非同期——
-  // それが解決するまでの間、`enabledRef.current` は `useState(false)` の
-  // 初期値のまま。この「まだ確定していない」区間と「確定して false
-  // だった」区間を区別しないと、実際には enabled=true な状態でも
-  // `refreshConnectionHealth` が早期 return して `available`/
-  // `hasPermission` を false のまま固定してしまう——実機で実際に発生
-  // （enabled=true・同期成功済みなのに "Health Connect isn't installed"
-  // と表示され、次のポーリングまで放置される）。確定するまでは「無条件に
-  // スキップしない」側に倒す。
-  const enabledKnownRef = useRef(false);
 
   /**
    * 可用性チェックと権限チェックを別の失敗ドメインとして扱う（両方とも
@@ -234,16 +230,20 @@ export default function HealthConnectSettingsScreen() {
    * unavailable（未インストール）という誤った表示に倒れる
    * （レビューで実際に再現指摘）。
    *
-   * `enabled=false` の間は早期 return する——`connectionStatus` が
-   * `!enabled` を最優先で `not-connected` に倒すため、`available`/
-   * `hasPermission` は表示に一切影響しない（`handleEnable` は自前で
-   * `isAvailable()` を呼び直す）。ここを素通りさせると、同期 OFF の間も
-   * 5秒ごとに isAvailable→ensureInitialized→getGrantedPermissions という
-   * 無意味なネイティブ往復（＝OFF なのに HC クライアントを定期的に
-   * 初期化する）が走り続ける（レビュー指摘）。
+   * `enabled === false`（確定して OFF）の間だけ早期 return する——
+   * `enabled === null`（まだ読めていない）は素通りさせる。`connectionStatus`
+   * は `!enabled` を最優先で `not-connected` に倒すため、確定して OFF なら
+   * `available`/`hasPermission` は表示に一切影響しない（`handleEnable` は
+   * 自前で `isAvailable()` を呼び直す）。ここを無条件に素通りさせると、
+   * 同期 OFF の間も5秒ごとに isAvailable→ensureInitialized→
+   * getGrantedPermissions という無意味なネイティブ往復（＝OFF なのに HC
+   * クライアントを定期的に初期化する）が走り続ける（レビュー指摘）一方、
+   * 「まだ読めていない」を「確定して false」と同一視してここで早期 return
+   * すると、enabled=true・同期成功済みでも一時的に "Health Connect isn't
+   * installed" と表示される（実機で再現・レビューで指摘）。
    */
   const refreshConnectionHealth = useCallback(async () => {
-    if (enabledKnownRef.current && !enabledRef.current) {
+    if (enabledRef.current === false) {
       if (mountedRef.current) {
         setAvailable(false);
         setHasPermission(false);
@@ -276,36 +276,6 @@ export default function HealthConnectSettingsScreen() {
     }
   }, []);
 
-  // healthConnect.enabled は、この画面自身の handleEnable/disconnect
-  // 以外のどこからも書き換えられない（DB の唯一のライターがこの画面）ため、
-  // 起動時に一度だけ読めば十分——`load`（表示専用の値の定期更新）では
-  // 触らない。これを load の中で毎回読み直すと、権限ダイアログ表示中や
-  // runExclusive 待ちの最中に先行ポーリングの古い読み取り結果が後着して
-  // enabled を一瞬巻き戻す競合が起きる（レビュー指摘：表示専用の値と
-  // ユーザー操作の対象を同じ経路で更新していたのが原因）。
-  //
-  // 読み込み後に `refreshConnectionHealth()` を明示的に呼ぶ——この effect
-  // より先に `load()`（マウント時の別 effect）が `refreshConnectionHealth`
-  // に到達した場合、`enabledKnownRef.current` がまだ false なので
-  // スキップはしないが、その時点ではまだ `enabled` の実際の値を知らない
-  // （enabled=false の場合、無駄なネイティブ呼び出しを1回だけ許容する
-  // トレードオフ、上のコメント参照）。ここで確定した直後にもう一度
-  // 呼ぶことで、その1回だけの猶予を確実に正しい状態へ収束させる。
-  useEffect(() => {
-    (async () => {
-      try {
-        const value = await getSetting(db, 'healthConnect.enabled');
-        enabledRef.current = value;
-        enabledKnownRef.current = true;
-        if (mountedRef.current) setEnabled(value);
-      } catch (error) {
-        logError('Loading healthConnect.enabled failed', error);
-        enabledKnownRef.current = true; // 失敗時も既定値 false で確定させる
-      }
-      await refreshConnectionHealth();
-    })();
-  }, [db, refreshConnectionHealth]);
-
   const loadingRef = useRef(false);
   const rerunRequestedRef = useRef(false);
 
@@ -329,6 +299,36 @@ export default function HealthConnectSettingsScreen() {
       // try/catch している（provider-unavailable として扱う）のと同じ
       // 分離をここでも行う。
       try {
+        // healthConnect.enabled は、この画面自身の handleEnable/disconnect
+        // 以外のどこからも書き換えられない（DB の唯一のライターがこの
+        // 画面）ため、初回の load() でだけ読む——`enabledRef.current` が
+        // `null`（まだ読んでいない）の間だけ実行し、以後は読み直さない。
+        // 毎回読み直すと、権限ダイアログ表示中や runExclusive 待ちの
+        // 最中に先行ポーリングの古い読み取り結果が後着して enabled を
+        // 一瞬巻き戻す競合が起きる（レビュー指摘：表示専用の値と
+        // ユーザー操作の対象を同じ経路で更新していたのが原因）。
+        //
+        // 同じ DB 読み取りブロックの中に置くことで、下の `setLoaded(true)`
+        // が呼ばれる時点では enabled は必ず確定済み（`null` ではない）に
+        // なる——以前は別の effect に分けていたため、`load()` 側が先に
+        // `refreshConnectionHealth()` に到達すると enabled 確定前に接続
+        // チェックが走ってしまう窓があった（実機で再現・レビューで指摘）。
+        // 別 effect だと「マウント時に2回ネイティブ往復する」二重発火も
+        // 起きていた——1つの effect（この `load()`）に統合したことで
+        // どちらも解消する。
+        if (enabledRef.current === null) {
+          // この読み取り自体が失敗しても `enabled` を `null`（＝画面が
+          // 永久に "Loading…" のまま固まる）に留めない——既定値 `false`
+          // で確定させ、他の DB 読み取り（ジョブ一覧等）は続行する。
+          let value = false;
+          try {
+            value = await getSetting(db, 'healthConnect.enabled');
+          } catch (error) {
+            logError('Loading healthConnect.enabled failed', error);
+          }
+          enabledRef.current = value;
+          if (mountedRef.current) setEnabled(value);
+        }
         const [lastSyncedValue, timeFormatValue, jobRows] = await Promise.all([
           getSetting(db, 'healthConnect.lastSyncedAt'),
           getSetting(db, 'preferences.timeFormat'),
@@ -523,7 +523,13 @@ export default function HealthConnectSettingsScreen() {
     }
   };
 
-  if (!loaded) {
+  // `enabled === null` は構造的には `loaded` と同時に解消するはず（`load()`
+  // が enabled を読んでから `setLoaded(true)` する、上記コメント参照）だが、
+  // それを暗黙の実行順序だけに頼らず、ここで明示的に型として確認する——
+  // 「まだ読めていない」を「確定して false」と同一視しない、という今回の
+  // 修正の趣旨を、この画面のどこか1箇所の実行順序が崩れても壊れない形で
+  // 保つ（レビュー指摘）。これ以降 `enabled` は `boolean` に narrow される。
+  if (!loaded || enabled === null) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
