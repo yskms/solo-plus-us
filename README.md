@@ -2651,6 +2651,27 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
   `health-connect.tsx` 内のローカル関数だった
 - 全27スイート・376件パス
 
+#### レビュー3巡目で見つかったもの（いずれも低・必須ではないとの評価込みで指摘）
+
+- **`loaded` がネイティブ呼び出しの完了まで待つ構造だった**：`load()` は
+  DB 読み取りブロックの後に `await refreshConnectionHealth()` してから
+  `finally` で `setLoaded(true)` していたため、D-41 と同じ「cancel も
+  タイムアウトも無い」native module 呼び出しが settle しなければ画面が
+  永久に "Loading…" のまま固まりうる（`loadingRef` も解放されずポーリングも
+  止まる）。`setLoaded(true)` を DB ブロック直後に移し、接続ステータスは
+  後から埋まる progressive enhancement にした
+- **`enabled=false` の間も5秒ごとにネイティブ往復していた**：
+  `connectionStatus` は `!enabled` を最優先で `not-connected` に倒すため
+  `available`/`hasPermission` は表示に無関係なのに、`refreshConnectionHealth`
+  は毎回 `isAvailable`→`ensureInitialized`→`getGrantedPermissions` を
+  素通りさせていた。`enabledRef`（トグルのたびに `load`/interval を
+  再生成しないための ref）で早期 return するようにした
+- `healthSyncJobPresentation.ts` 冒頭の doc に `connectionStatus` 系の説明を
+  追記（`describeJobAction` 専用の説明のままだった）
+- **見送ったもの**：`permission-revoked` からの復帰導線（再許可ボタン/
+  `openHealthConnectSettings()` への導線）は UI/UX §18 に明文が無いため
+  v1 では実装しない（上記 Known gaps に記録）
+
 #### Known gaps（次のステップ）
 
 - **§9.11 のリリースビルド分離（`without-health-connect` /
@@ -2675,3 +2696,10 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
   文言・確認ダイアログ、claim 中の行の無効化、delete job が残っている
   状態での OFF 切断時の警告と再接続後の再開、Last synced の実際の更新、
   HC 未インストール環境での ON 操作時の表示
+- **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
+  無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
+  OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、
+  または `openHealthConnectSettings()` への導線）は無い。仕様（UI/UX §18）
+  に明文が無いため v1 は見送り（レビューで指摘・妥当と判断）。実装するなら
+  `HealthConnectService.openHealthConnectSettings` のラッパーが必要
+  （現状未追加）

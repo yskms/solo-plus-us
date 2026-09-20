@@ -207,6 +207,16 @@ export default function HealthConnectSettingsScreen() {
     })();
   }, [db]);
 
+  // `refreshConnectionHealth`（後述）は `enabled` を判定に使うが、それ自体を
+  // 依存配列に入れて再生成すると、トグルのたびに `load`/ポーリング用
+  // interval が丸ごと作り直されてしまう（レビュー指摘の前は無かった問題
+  // だが、この ref は元々その再生成を避けるためのもの）。ref を経由して
+  // 最新値だけを読む。
+  const enabledRef = useRef(enabled);
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
+
   /**
    * 可用性チェックと権限チェックを別の失敗ドメインとして扱う（両方とも
    * `available`/`hasPermission` を一括で倒すと壊れる、レビューで再指摘）。
@@ -230,8 +240,23 @@ export default function HealthConnectSettingsScreen() {
    * ステータスが「権限チェックがたまたま失敗しただけ」で
    * unavailable（未インストール）という誤った表示に倒れる
    * （レビューで実際に再現指摘）。
+   *
+   * `enabled=false` の間は早期 return する——`connectionStatus` が
+   * `!enabled` を最優先で `not-connected` に倒すため、`available`/
+   * `hasPermission` は表示に一切影響しない（`handleEnable` は自前で
+   * `isAvailable()` を呼び直す）。ここを素通りさせると、同期 OFF の間も
+   * 5秒ごとに isAvailable→ensureInitialized→getGrantedPermissions という
+   * 無意味なネイティブ往復（＝OFF なのに HC クライアントを定期的に
+   * 初期化する）が走り続ける（レビュー指摘）。
    */
   const refreshConnectionHealth = useCallback(async () => {
+    if (!enabledRef.current) {
+      if (mountedRef.current) {
+        setAvailable(false);
+        setHasPermission(false);
+      }
+      return;
+    }
     let isAvailable = false;
     try {
       isAvailable = await HealthConnectService.isAvailable();
@@ -296,10 +321,23 @@ export default function HealthConnectSettingsScreen() {
         logError('Loading Health Connect settings (DB) failed', error);
       }
 
+      // DB の内容（未同期ジョブ一覧・Last synced）が state に入った時点で
+      // 「読み込み中」画面は終える——`refreshConnectionHealth` の完了は
+      // 待たない。isAvailable()/ensureInitialized()/hasWritePermission() は
+      // D-41 と同じ「cancel もタイムアウトも実装しない」設計の native
+      // module 呼び出しで、settle しなければここで永久に await し続ける
+      // ことになりうる（`services/HealthConnectService.ts` の doc comment
+      // 参照）。ここで待ってしまうと画面全体が "Loading…" のまま固まり、
+      // `loadingRef` も解放されずポーリングも止まる（レビュー指摘）。
+      // 接続ステータスは後から埋まる progressive enhancement として扱う
+      // ——初期値は `available`/`hasPermission` とも `false`
+      // （`connectionStatus` は「確認できるまでは Connected と表示しない」
+      // 安全側の既定値）。
+      if (mountedRef.current) setLoaded(true);
+
       await refreshConnectionHealth();
     } finally {
       loadingRef.current = false;
-      if (mountedRef.current) setLoaded(true);
       if (rerunRequestedRef.current) {
         rerunRequestedRef.current = false;
         load();
