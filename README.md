@@ -2495,7 +2495,7 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
   そのままコード化した純粋関数 `describeJobAction`。優先順位は
   内部不整合（`lastErrorCode === 'LOCAL_ACTIVITY_NOT_FOUND'`）→ `delete` →
   それ以外（create/update/recreate）
-- **UI/UX §18 モックからの2つの意図的な逸脱**（`health-connect.tsx` の
+- **UI/UX §18 モックからの意図的な逸脱**（`health-connect.tsx` の
   doc comment に明記）：
   1. モックは Partnered/Solo 別々のトグルを描くが、データモデルは
      `healthConnect.enabled` という単一 boolean のみ（Phase 1 から既存）。
@@ -2506,6 +2506,10 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
      無く、delete ジョブは定義上 Activity が既に無いから存在する。
      そうした行は `created_at`（ジョブが積まれた日時）を代わりに表示し、
      バッジは出さない
+  3. §10.5「未処理が残っている間は Settings に件数を表示し続ける」は、
+     この画面内（Unsynced changes の見出し）でのみ満たす——`settings/
+     index.tsx` の Settings トップの行にはバッジを出さない（そのファイルは
+     現状 DB に一切アクセスしない静的な一覧のため）
 - **`healthConnect.lastSyncedAt` の配線漏れを解消**：`types/Settings.ts` に
   型・既定値・Export除外リストまで用意されていたが、どこからも書き込まれて
   いなかった。`services/SyncWorker.ts` の `finalizeUpsertSuccess`/
@@ -2525,7 +2529,78 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
 - テスト：`services/__tests__/healthSyncJobPresentation.test.ts`（新規、
   operation × lastErrorCode の全分岐）、`test/__tests__/syncWorker.
   integration.test.ts` に `healthConnect.lastSyncedAt` 更新の検証を追加。
-  全27スイート・368件パス
+  全27スイート・372件パス
+
+#### レビューで見つかり、修正したもの
+
+- **🔴 可用性チェックの失敗で画面全体が「何も無い」状態に倒れる（iOS では
+  常時発生）**：初版は DB 読み取り4件と `HealthConnectService.isAvailable()`
+  を同じ `Promise.all` に入れていた。`react-native-health-connect` は iOS
+  向けに「どのメソッドを呼んでも必ず throw する Proxy」を返す実装
+  （`node_modules/react-native-health-connect/lib/commonjs/index.js` の
+  `moduleProxy`）のため、iOS では `isAvailable()` が毎回 reject し、
+  `Promise.all` 全体が失敗して `enabled`/`lastSyncedAt`/`jobs` の
+  `setState` が1つも走らず、未処理ジョブが残っていても「Everything is
+  synced」に見えてしまっていた（§10.5 違反）。DB 読み取りとネイティブの
+  可用性/権限チェックを別の `try/catch` に分離し、一方の失敗が他方を
+  巻き込まないようにした（`SyncWorker.ts` の `drainDueJobs` が
+  `ensureInitialized()` の reject を個別に扱っているのと同じ形）
+- **🔴 HEALTH セクションが iOS でも表示されていた**：Health Connect は
+  Android 専用機能（§9.11）で、上記の理由によりこの画面のあらゆる操作が
+  iOS では失敗するだけだった。`app/settings/index.tsx` の HEALTH セクション
+  を `Platform.OS === 'android'` でガードした——「まだビルドされていない
+  項目はプレースホルダー行を置かない」という同ファイルの既存ルールの
+  延長
+- **🟠 切断に進行表示が無い**：§18「破壊的操作は同期の完了を待つ」に対し、
+  Switch を disabled にするだけで何も表示していなかった。`data.tsx` の
+  置換復元と同水準（スピナー＋ラベル、キャンセルボタンは無し）の busy
+  表示を追加した
+- **🟠 切断中・HC 未インストール時の Retry now が無反応**：§10.5 により
+  切断してもジョブは保持されるため、`enabled=false` かつジョブが残っている
+  状態は正常に到達する。この状態では `drainDueJobs` が provider-disabled
+  で即 return するため Retry now を押しても何も起きず、故障に見えていた。
+  `enabled=false` の間は Retry now を無効化し、一覧の見出しに理由を出す
+  ようにした（Discard は引き続き有効——§10.5 の個別打ち切り経路）
+- **🟠 権限取り消し後も「Connected」を表示し続ける**：接続ステータスが
+  `enabled`/`isAvailable()` しか見ておらず、OS 側で権限が取り消されても
+  （§9.5.4）ドットは緑のままだった。`HealthConnectService.
+  hasWritePermission()`（新設、`getGrantedPermissions()` を使う——
+  `requestWritePermission()` と違いダイアログを出さない）を追加し、
+  ステータスを `connected`/`not-connected`/`unavailable`/
+  `permission-revoked` の4値にした
+- **🟡 5秒ポーリングの設計に4つの不備**：①`enabled` を毎回 DB から
+  読み直していたため、権限ダイアログ表示中や `runExclusive` 待ちの最中に
+  先行ポーリングの古い結果が後着して一瞬巻き戻ることがあった→`enabled`
+  はこの画面自身の書き込み以外で変わらないため、起動時の一度だけ読み、
+  定期更新の対象から外した。②unmount 後の `setState` ガードが無かった→
+  `mountedRef` を追加。③`isLoadingRef` が多重実行防止のみで、実行中に
+  来た `bump()` 起因の再読込を取りこぼしていた→`SyncWorkerLoop.tsx` の
+  `drainingRef`/`rerunRequestedRef` と同じ「実行中なら完了後にもう一度」に
+  変更。④バックグラウンドでもタイマーが回り続け、N+1 の
+  `findActivityById` が無意味に走り続けていた→`AppState` を見てフォア
+  グラウンド中だけ回すようにした（復帰時は即座に1回読み直す）
+- **🟡 `healthConnect.lastSyncedAt` の書き込みが `finalizeUpsertSuccess`
+  の中で非対称だった**：「外部呼び出しが成功した事実は、ジョブ行を消せる
+  かとは無関係に記録する」（D-32 と同じ理由）と自分で書いたコメントに
+  反し、実際には Activity が見つかる分岐の中でしか書いていなかった——
+  処理中に Activity が削除された §9.5.1 else 分岐（外部呼び出し自体は
+  成功している）で書き漏れていた。`db.transaction` の先頭・無条件に
+  移動した
+- **🟢 doc comment の陳腐化**：`SyncCoordinator.ts`「Settings UI 自体が
+  まだ無いため配線先が無い」、`HealthSyncJobRepository.ts`「SyncWorker は
+  Phase 4 で未実装」——いずれも本ステップで実装済みになったため誤りに
+  なっていた。修正した
+- **🟢 内部不整合ジョブ（`LOCAL_ACTIVITY_NOT_FOUND`）にも Retry now を
+  出していた**：Activity が無い事前チェックで決定論的に落ちるだけの状態
+  なので、再試行しても claim → 同じチェック → `markJobInternalInconsistency`
+  を繰り返すだけだった。`describeJobAction` の `retryLabel` を
+  `string | null` にし、このケースでは `null`（ボタン自体を出さない）に
+  した
+- **見送ったもの**：`requestManualRetry` が `last_error_code` をクリアしない
+  点、`findAllJobsForProvider` の N+1（`buildRow`）は、いずれも現在の UI が
+  operation 別の一般的な文言しか出さずエラーコード別の文言を出していない
+  こと、上記のバックグラウンド停止で N+1 の常時コストは解消したことから、
+  見送った（指摘としては妥当、現状のスコープでは実害が無いと判断）
 
 #### Known gaps（次のステップ）
 

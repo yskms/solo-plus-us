@@ -13,13 +13,21 @@
  * ショットに関する方針」and `lib/screenMask.ts`. HEALTH's "Health Connect"
  * row (§18 Screen 08) covers ON/OFF and the unsynced-changes retry/discard
  * flow (§9.6/§10.4/§10.5) — see `settings/health-connect.tsx`'s doc comment
- * for its two intentional deviations from the §18 mockup. PREFERENCES has
+ * for its intentional deviations from the §18 mockup. That section is
+ * `Platform.OS === 'android'`-only (レビュー指摘) — Health Connect itself is
+ * Android-only (§9.11) and the iOS counterpart (`healthkit` provider) isn't
+ * implemented, so on iOS there is nothing this row could actually do; showing
+ * it there would open a screen whose every action (`HealthConnectService.
+ * isAvailable()`/`ensureInitialized()`/etc., all backed by a Proxy that
+ * throws on iOS — see `node_modules/react-native-health-connect/lib/
+ * commonjs/index.js`'s `moduleProxy`) fails, matching this file's own rule
+ * of not showing rows for things that don't work here. PREFERENCES has
  * only "Appearance" — §17's mockup also lists First Day of Week / Time
  * Format there, but those aren't built yet, so (same rule as above) they
  * don't get placeholder rows.
  */
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
@@ -67,8 +75,12 @@ export default function SettingsIndexScreen() {
           ]}
         />
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>HEALTH</Text>
-        <SettingsGroup rows={[{ label: 'Health Connect', onPress: () => router.push('/settings/health-connect') }]} />
+        {Platform.OS === 'android' && (
+          <>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>HEALTH</Text>
+            <SettingsGroup rows={[{ label: 'Health Connect', onPress: () => router.push('/settings/health-connect') }]} />
+          </>
+        )}
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
         <SettingsGroup rows={[{ label: 'Export & Import', onPress: () => router.push('/settings/data') }]} />

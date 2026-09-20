@@ -79,11 +79,16 @@
  *   なる（このプロジェクトの layering: `database/` は `services/` に
  *   依存しない）。将来これらが「生きた接続に対して」実行される経路が
  *   追加された場合は、この前提が崩れるため再検討すること。
- * - **全Activity削除（§10.6）・Health Connect の切断処理（§10.5）は
- *   Settings UI 自体がまだ無いため配線先が無い**——実装時は必ず、
- *   アプリ本体の DB に対する呼び出し側で `runExclusive` 経由にすること
- *   （Repository/Service から直接 `health_sync_jobs` を全削除しない、
- *   §9.12 の明記事項）。
+ * - **Health Connect の切断処理（§10.5）は `app/settings/health-connect.tsx`
+ *   の `disconnect` が配線する**：`SyncCoordinator.runExclusive(() =>
+ *   setSetting(db, 'healthConnect.enabled', false))` として呼ぶ——`data.tsx`
+ *   の置換復元と同じ形。渡すコールバックは `setSetting` 一発のみで、
+ *   内側から drain 相当の処理は呼ばない（ネストするとデッドロックする、
+ *   上記「直列化」節参照）。
+ * - **全Activity削除（§10.6）は Settings UI 自体がまだ無いため配線先が
+ *   無い**——実装時は必ず、アプリ本体の DB に対する呼び出し側で
+ *   `runExclusive` 経由にすること（Repository/Service から直接
+ *   `health_sync_jobs` を全削除しない、§9.12 の明記事項）。
  */
 
 /** `isSuspended()` を導出する。0 = 通常状態、>0 = 破壊的操作が1件以上「呼ばれてから完全に終わるまで」の区間にある。 */

@@ -87,14 +87,16 @@ async function finalizeUpsertSuccess(
   externalRecordId: string | null,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // Settings「Last synced」（§18/§10.4）表示用。この関数が呼ばれる時点で
+    // 外部呼び出し自体は既に成功している——`upsertMapping` 自体のコメント
+    // （D-32）と同じ理由で、以下のどの分岐（Activity が見つかる/見つからない、
+    // 再送/確定）を辿るかとは無関係に、無条件・最初に書く（レビューで、
+    // Activity が処理中に削除された分岐だけ書き漏れていた非対称を指摘された）。
+    await setSetting(tx, 'healthConnect.lastSyncedAt', nowUtcIso());
+
     const activity = await ActivityRepository.findActivityById(tx, job.activityId);
     if (activity) {
       await HealthSyncRepository.upsertMapping(tx, { activityId: job.activityId, provider, externalRecordId });
-      // Settings「Last synced」（§18/§10.4）表示用。upsertMapping 自体のコメント（D-32）
-      // が言う「外部呼び出しが成功した事実は、ジョブ行を消せるかとは無関係に記録する」
-      // と同じ理由で、下の syncVersion 不一致（再送）分岐より前・両方の分岐に共通して書く
-      // ——再送分岐でも、送った syncVersion に対する外部呼び出し自体は成功している。
-      await setSetting(tx, 'healthConnect.lastSyncedAt', nowUtcIso());
 
       if (activity.syncVersion !== sentSyncVersion) {
         // §9.5.1「create送信中に編集→mappingは作られる→ジョブは残り、大きい

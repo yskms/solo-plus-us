@@ -26,12 +26,15 @@ describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
   });
 
   it.each<[JobOperation]>([['create'], ['update'], ['recreate'], ['delete']])(
-    'lastErrorCode=LOCAL_ACTIVITY_NOT_FOUND は operation=%s によらず内部不整合の文言（確認文なし）を優先する',
+    'lastErrorCode=LOCAL_ACTIVITY_NOT_FOUND は operation=%s によらず内部不整合の文言（確認文なし・再試行なし）を優先する',
     (operation) => {
       const copy = describeJobAction({ operation, lastErrorCode: 'LOCAL_ACTIVITY_NOT_FOUND' });
       expect(copy.statusText).toBe('Sync error');
       expect(copy.discardLabel).toBe('Dismiss this error');
       expect(copy.discardConfirm).toBeNull();
+      // 再試行しても claim→同じ事前チェック→markJobInternalInconsistency を
+      // 繰り返すだけ（Activity は永久に戻らない）なので、再試行ボタン自体を出さない。
+      expect(copy.retryLabel).toBeNull();
     },
   );
 
@@ -44,11 +47,8 @@ describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
     },
   );
 
-  it('retryLabel はどのケースでも共通', () => {
+  it('retryLabel は内部不整合以外のどのケースでも共通', () => {
     expect(describeJobAction({ operation: 'delete', lastErrorCode: null }).retryLabel).toBe('Retry now');
     expect(describeJobAction({ operation: 'create', lastErrorCode: null }).retryLabel).toBe('Retry now');
-    expect(describeJobAction({ operation: 'create', lastErrorCode: 'LOCAL_ACTIVITY_NOT_FOUND' }).retryLabel).toBe(
-      'Retry now',
-    );
   });
 });

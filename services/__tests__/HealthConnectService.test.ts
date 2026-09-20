@@ -9,6 +9,7 @@
 const mockInitialize = jest.fn();
 const mockGetSdkStatus = jest.fn();
 const mockRequestPermission = jest.fn();
+const mockGetGrantedPermissions = jest.fn();
 const mockInsertRecords = jest.fn();
 const mockDeleteRecordsByUuids = jest.fn();
 
@@ -16,6 +17,7 @@ jest.mock('react-native-health-connect', () => ({
   initialize: (...args: unknown[]) => mockInitialize(...args),
   getSdkStatus: (...args: unknown[]) => mockGetSdkStatus(...args),
   requestPermission: (...args: unknown[]) => mockRequestPermission(...args),
+  getGrantedPermissions: (...args: unknown[]) => mockGetGrantedPermissions(...args),
   insertRecords: (...args: unknown[]) => mockInsertRecords(...args),
   deleteRecordsByUuids: (...args: unknown[]) => mockDeleteRecordsByUuids(...args),
   // 実際の定数値（node_modules/react-native-health-connect/lib/typescript/constants.d.ts で確認済み）。
@@ -65,6 +67,25 @@ describe('requestWritePermission', () => {
   it('is false when the granted list does not include it (declined)', async () => {
     mockRequestPermission.mockResolvedValue([]);
     expect(await HealthConnectService.requestWritePermission()).toBe(false);
+  });
+});
+
+describe('hasWritePermission (Settings §18 の接続ステータス表示用)', () => {
+  it('does not show a dialog — reads getGrantedPermissions, not requestPermission', async () => {
+    mockGetGrantedPermissions.mockResolvedValue([{ accessType: 'write', recordType: 'SexualActivity' }]);
+    await HealthConnectService.hasWritePermission();
+    expect(mockGetGrantedPermissions).toHaveBeenCalled();
+    expect(mockRequestPermission).not.toHaveBeenCalled();
+  });
+
+  it('is true when the write permission is currently granted', async () => {
+    mockGetGrantedPermissions.mockResolvedValue([{ accessType: 'write', recordType: 'SexualActivity' }]);
+    expect(await HealthConnectService.hasWritePermission()).toBe(true);
+  });
+
+  it('is false once the OS-side permission has been revoked (§9.5.4)', async () => {
+    mockGetGrantedPermissions.mockResolvedValue([]);
+    expect(await HealthConnectService.hasWritePermission()).toBe(false);
   });
 });
 

@@ -10,10 +10,10 @@
  * `services/ActivityService` combines the two.
  *
  * `services/SyncWorker` / `services/HealthConnectService` (§9.5–§9.7, the
- * actual claim/finalize loop and native provider calls) are Phase 4 and
- * not implemented yet — see README "Known gaps". The claim/finalize
- * primitives below exist now anyway because they're plain SQL with no
- * native dependency, so Phase 4 only has to add the provider calls.
+ * actual claim/finalize loop and native provider calls) are implemented
+ * (Phase 4) — see README "Phase 4 実装状況". The claim/finalize primitives
+ * below were written earlier as plain SQL with no native dependency, ahead
+ * of that loop, but are the same primitives it uses now.
  */
 import { generateId } from '../lib/id';
 import { nowUtcIso } from '../lib/datetime';
@@ -145,9 +145,9 @@ export async function clearAllClaims(executor: SqlExecutor): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// The following are DB primitives for the (Phase 4, not yet implemented)
-// SyncWorker claim/finalize loop — §9.5/§9.6. Included now because they're
-// plain SQL with no native dependency.
+// The following are DB primitives for the SyncWorker claim/finalize loop —
+// §9.5/§9.6 (services/SyncWorker.ts). Written as plain SQL with no native
+// dependency ahead of that loop's own implementation.
 // ---------------------------------------------------------------------------
 
 /** Distinguishable from `null` (no due job at all) — a caller (`services/SyncWorker`) that loses the race should try the next due row instead of concluding the queue is empty. */

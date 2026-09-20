@@ -78,6 +78,28 @@ Settings UI（HC の ON/OFF・手動再試行/破棄）を実装する際は、�
 drain トリガや破壊的操作を追加することになるため、この2点を必ず踏まえる
 こと。詳細な経緯は README「Phase 4 実装状況」のレビュー履歴参照。
 
+### `react-native-health-connect` は iOS で「呼ぶと必ず throw する Proxy」
+
+`node_modules/react-native-health-connect/lib/commonjs/index.js` は iOS/未対応
+プラットフォーム向けに `HealthConnectModule` を「どのメソッドを呼んでも
+`throw` する `Proxy`」にしている（`moduleProxy`）。つまり
+`HealthConnectService.isAvailable()`/`ensureInitialized()` 等は iOS では
+**毎回確実に reject する**——一時的なエラーではなく恒常的な状態。
+
+これを他の非同期処理（特に DB 読み取り）と同じ `Promise.all` に入れると、
+その `Promise.all` 全体が常に失敗扱いになる。Settings > Health Connect 画面
+（`app/settings/health-connect.tsx`）の初版でこの事故を実際に踏んだ——DB
+読み取り4件とまとめていたため、iOS では毎回「何も同期されていない」ように
+見えるだけでなく、未処理の delete job が残っていても件数が0件に見え、
+§10.5「未処理が残っている間は件数を表示し続ける」に違反していた。
+
+- Health Connect のネイティブ呼び出しは、DB 読み取りとは別の `try/catch`
+  に分離すること（`services/SyncWorker.ts` の `drainDueJobs` が
+  `ensureInitialized()` の reject を個別に扱っているのと同じ形）。
+- 根本的な対策は `app/settings/index.tsx` の HEALTH セクションを
+  `Platform.OS === 'android'` でガードすること——Health Connect は
+  Android 専用機能（§9.11）なので、iOS でこの画面自体を表示しない。
+
 ### Android のダーク/ライト切替まわりの落とし穴
 
 画面遷移中に一瞬見える帯や、テーマ切替の反映漏れは `contentStyle`（React Navigation

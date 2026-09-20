@@ -39,6 +39,7 @@
  */
 import {
   deleteRecordsByUuids,
+  getGrantedPermissions,
   getSdkStatus,
   initialize,
   insertRecords,
@@ -115,6 +116,18 @@ export async function ensureInitialized(): Promise<boolean> {
  */
 export async function requestWritePermission(): Promise<boolean> {
   const granted = await requestPermission([WRITE_PERMISSION]);
+  return granted.some((p) => p.accessType === 'write' && p.recordType === RECORD_TYPE);
+}
+
+/**
+ * Settings 画面の接続ステータス表示用（§18）——`requestWritePermission` と
+ * 違い、ダイアログを出さず「既に許可されているか」だけを問う。OS 側で
+ * 権限が取り消された場合、それ自体は claim 後の失敗として現れる（§9.5.4）
+ * が、Settings のヘッダーが `enabled && isAvailable()` だけを見ていると
+ * 「Connected」のまま固定されてしまうため、これで補強する。
+ */
+export async function hasWritePermission(): Promise<boolean> {
+  const granted = await getGrantedPermissions();
   return granted.some((p) => p.accessType === 'write' && p.recordType === RECORD_TYPE);
 }
 

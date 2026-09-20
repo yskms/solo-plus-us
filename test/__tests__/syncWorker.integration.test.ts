@@ -158,6 +158,18 @@ describe('processNextDueJob — create/update success (§9.5.1)', () => {
     // health_connect doesn't need this (§5.4, clientRecordId suffices), but the generic
     // §9.5.1 "else" bookkeeping should still run without throwing.
   });
+
+  it('still records healthConnect.lastSyncedAt when the Activity was deleted mid-flight — the external call succeeded regardless of which finalize branch runs (§9.5.1 else, corrected in review)', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockImplementation(async () => {
+      await ActivityService.deleteActivity(db, activity.id);
+      return { ok: true, externalRecordId: null };
+    });
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).not.toBeNull();
+  });
 });
 
 describe('processNextDueJob — failure & backoff (§9.6)', () => {

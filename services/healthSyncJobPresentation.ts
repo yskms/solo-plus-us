@@ -22,8 +22,14 @@ import type { HealthSyncJobRow } from '../types/HealthSync';
 export interface JobActionCopy {
   /** claim されていない場合のステータス行文言（§10.4 のモック文言）。 */
   statusText: string;
-  /** 「今すぐ再試行」共通ラベル。 */
-  retryLabel: string;
+  /**
+   * 「今すぐ再試行」ラベル。内部不整合（§9.5.3）は `null`——claim 時の
+   * 事前チェックで Activity が無いと判定された、決定論的に再現するだけの
+   * 状態のため、再試行しても claim → 同じチェック → `markJobInternalInconsistency`
+   * を毎回繰り返すだけ（`services/SyncWorker.ts` の該当分岐参照）。破棄しか
+   * 意味のあるアクションが無い（§9.6 の表も内部不整合には破棄しか挙げていない）。
+   */
+  retryLabel: string | null;
   /** operation ごとに変わる破棄ボタンのラベル。 */
   discardLabel: string;
   /** 破棄前に出す確認ダイアログの文言。内部不整合のみ `null`（確認文なし、§9.6）。 */
@@ -36,7 +42,7 @@ export function describeJobAction(job: Pick<HealthSyncJobRow, 'operation' | 'las
   if (job.lastErrorCode === 'LOCAL_ACTIVITY_NOT_FOUND') {
     return {
       statusText: 'Sync error',
-      retryLabel: RETRY_LABEL,
+      retryLabel: null,
       discardLabel: 'Dismiss this error',
       discardConfirm: null,
     };
