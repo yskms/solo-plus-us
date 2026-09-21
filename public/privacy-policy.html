@@ -164,7 +164,8 @@
         <li>すべての記録データは、SQLCipher により暗号化された端末内データベースにのみ保存されます。</li>
         <li>暗号鍵は端末の Keychain（iOS）/ Android Keystore に保管され、生体認証の情報とは独立しています。</li>
         <li>Android では、記録データを OS の自動バックアップ・端末間移行（デバイス間コピー）の対象から明示的に除外しています。</li>
-        <li>iOS では現時点でこの除外を実装しておらず、データベースファイル自体は iCloud / iTunes のバックアップに含まれます。ただし暗号鍵は端末外に出ない設定のため、そのバックアップから復元してもデータベースを復号することはできません。</li>
+        <li>iOS では現時点でこの除外を実装しておらず、データベースファイル自体は iCloud / iTunes のバックアップに含まれます。暗号鍵は端末に紐づく設定のため、<strong>別の端末</strong>にそのバックアップから復元した場合はデータベースを復号できません。同一端末への復元時の挙動は OS の実装に依存するため、本ポリシーでは断定しません。</li>
+        <li>記録データは、利用者が削除するかアプリをアンインストールするまで端末内に保持されます。当方が運用するサーバーでの保持は一切ありません。</li>
         <li>
           以上の結果として、端末の紛失・初期化・アンインストールが発生すると、記録データは実質的に復元できなくなります。復元手段は次項のエクスポート／インポートのみです。
         </li>
@@ -172,8 +173,14 @@
 
       <h2>4. Health Connect との連携（Android）</h2>
       <p>
-        本アプリは、利用者が設定画面で明示的に有効化した場合に限り、
-        Android の Health Connect と連携します。既定では無効です。
+        本アプリには、Health Connect 連携に対応したビルドと、対応していない
+        ビルドがあります。<strong>以下はHealth Connect 対応ビルドにのみ
+        当てはまります。</strong>対応していないビルドでは、Health Connect
+        関連の設定・機能はアプリ内に一切表示されず、利用もできません。
+      </p>
+      <p>
+        Health Connect 対応ビルドでは、利用者が設定画面で明示的に有効化した
+        場合に限り、Android の Health Connect と連携します。既定では無効です。
       </p>
       <ul>
         <li>Health Connect へ送信される情報は「日時」と「Protection（避妊具等の使用有無）」のみです。</li>
@@ -201,9 +208,11 @@
           「置換インポート（バックアップから丸ごと復元）」を実行する際は、安全のため、
           置換前の記録データを平文 JSON として自動的にバックアップするファイルが端末に
           生成されます。このファイルは共有シートを経由しないため上記の自動削除の対象外で、
-          現時点ではアプリ内に削除用の操作を用意しておらず、端末に残り続けます（iOS では
-          §3 の通り iCloud / iTunes バックアップの対象にもなります）。不要な場合は、端末の
-          ファイル管理アプリ等から手動で削除してください。
+          現時点ではアプリ内に削除用の操作を用意していません。Android では、保存先として
+          選んだ場所を端末のファイル管理アプリ等から手動で削除できます。iOS では現時点で
+          このファイルをアプリ外（「ファイル」アプリ等）から参照・削除する手段がなく、
+          アプリをアンインストールするまで端末に残り続けます（§3 の通り iCloud / iTunes
+          バックアップの対象にもなります）。
         </li>
         <li>エクスポートした JSON ファイルから記録データをインポート（復元）することも可能です。</li>
       </ul>
@@ -216,10 +225,12 @@
         iOS のバックアップの扱いは §3 を参照してください）。
       </p>
       <p>
-        Health Connect と連携している場合、記録を削除するとその削除を Health Connect
-        側にも反映する処理が行われます。ただし、Health Connect 連携が無効になっている間や、
-        削除の反映がまだ完了していない間は、その記録が Health Connect 側に残り続けることが
-        あります。連携を有効な状態に戻すと、未反映の削除は改めて Health Connect 側へ反映されます。
+        Health Connect 対応ビルドをご利用で、かつ連携を有効にしている場合、記録を削除する
+        とその削除を Health Connect 側にも反映する処理が行われます。ただし、連携が無効に
+        なっている間や、削除の反映がまだ完了していない間は、その記録が Health Connect 側に
+        残り続けることがあります。連携を有効な状態に戻すと、未反映の削除は改めて Health
+        Connect 側へ反映されます。（Health Connect 非対応ビルドをご利用の場合、本アプリは
+        Health Connect と一切通信しません。）
       </p>
 
       <h2>8. 対象年齢</h2>
@@ -300,7 +311,8 @@
         <li>All records are stored only in an on-device database encrypted with SQLCipher.</li>
         <li>The encryption key is stored in the device's Keychain (iOS) / Android Keystore, independently of biometric data.</li>
         <li>On Android, your records are explicitly excluded from the OS's automatic backup and device-to-device transfer.</li>
-        <li>On iOS, this exclusion is not yet implemented, so the database file itself is included in iCloud/iTunes backups. However, the encryption key never leaves the device, so the database cannot be decrypted even if it is restored from such a backup.</li>
+        <li>On iOS, this exclusion is not yet implemented, so the database file itself is included in iCloud/iTunes backups. The encryption key is tied to your device, so restoring that backup to a <strong>different</strong> device will not let it decrypt the database. This policy does not make a claim about restoring to the same device, since that behavior depends on the OS.</li>
+        <li>Your records are kept on your device until you delete them or uninstall the App. We do not retain them on any server we operate.</li>
         <li>
           As a result, if your device is lost, reset, or the App is
           uninstalled, your records effectively cannot be recovered. The
@@ -310,8 +322,17 @@
 
       <h2>4. Health Connect Integration (Android)</h2>
       <p>
-        The App integrates with Android Health Connect only if you
-        explicitly enable it in Settings. It is disabled by default.
+        The App is distributed in two variants: one that supports Health
+        Connect integration and one that does not.
+        <strong>Everything below applies only to the Health
+        Connect–enabled variant.</strong> In the other variant, Health
+        Connect–related settings and features are not shown in the App and
+        cannot be used at all.
+      </p>
+      <p>
+        In the Health Connect–enabled variant, the App integrates with
+        Android Health Connect only if you explicitly enable it in
+        Settings. It is disabled by default.
       </p>
       <ul>
         <li>Only "date/time" and "protection used" are sent to Health Connect.</li>
@@ -343,9 +364,12 @@
           existing records before making any changes. This file does not
           go through the share sheet, so it is not auto-deleted, and the
           App does not currently offer a way to delete it from within its
-          UI — it remains on your device (and, on iOS, is included in
-          iCloud/iTunes backups as described in section 3) until you remove
-          it yourself using your device's file manager.
+          UI. On Android, you can delete it yourself from wherever you
+          chose to save it, using your device's file manager. On iOS,
+          there is currently no way to access or delete this file from
+          outside the App (e.g. via the Files app) — it remains on your
+          device until you uninstall the App (and, in the meantime, is
+          included in iCloud/iTunes backups as described in section 3).
         </li>
         <li>You can also import a JSON export to restore your records.</li>
       </ul>
@@ -359,11 +383,14 @@
         backups are currently handled).
       </p>
       <p>
-        If Health Connect sync is enabled, deleting a record also queues a
-        request to delete the corresponding entry from Health Connect.
-        However, while sync is disabled, or while a deletion has not yet
-        been processed, that entry can remain in Health Connect for a
-        while. Re-enabling sync will resume any pending deletions.
+        If you are using the Health Connect–enabled variant and sync is
+        enabled, deleting a record also queues a request to delete the
+        corresponding entry from Health Connect. However, while sync is
+        disabled, or while a deletion has not yet been processed, that
+        entry can remain in Health Connect for a while. Re-enabling sync
+        will resume any pending deletions. (If you are using the variant
+        without Health Connect support, the App never communicates with
+        Health Connect at all.)
       </p>
 
       <h2>8. Age Rating</h2>
