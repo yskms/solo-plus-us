@@ -21,17 +21,19 @@ Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI 
 に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
 `HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
 AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
-（`app/settings/health-connect.tsx`）まで実装完了。**Pixel 11 実機で
-Settings UI のほぼ全項目を確認済み**（下記「Phase 4 実装状況」の
-「実機確認（Pixel 11、初回/2回目/3回目）」参照、実機テストでのみ再現する
-タイミング依存バグを2件発見・修正済み）：ON→権限→Connected・記録/削除の
-自動同期・破棄・claim 中の行の無効化・Retry now の実際の再試行・delete job
-が残っている状態での OFF 切断警告と再接続後の再開・`permission-revoked`
-表示・バックグラウンド/フォアグラウンド遷移。**残るのは HC 未インストール
-環境での ON 操作時の表示のみ**——Pixel 11 は Android の Health Connect
-プラットフォーム統合パスのため検証不能と判明済み、D-20 の Android 9〜13
-実機検証（Pixel 3、未着手）と合わせて実施する。§9.11 のリリースビルド
-分離・§13.6 の復元後再同期（Phase 4 の Known gap、未実装）も未着手。
+（`app/settings/health-connect.tsx`）まで実装完了。**Settings UI の実機
+確認は完了**（下記「Phase 4 実装状況」の「実機確認（Pixel 11、
+初回/2回目/3回目）」「実機確認（Pixel 3、D-20）」参照、実機テストでのみ
+再現するタイミング依存バグを2件発見・修正済み）：ON→権限→Connected・
+記録/削除の自動同期・破棄・claim 中の行の無効化・Retry now の実際の
+再試行・delete job が残っている状態での OFF 切断警告と再接続後の再開・
+`permission-revoked` 表示・バックグラウンド/フォアグラウンド遷移・HC
+未インストール環境での ON 操作時の表示（Pixel 3、非プラットフォーム
+統合パス）。**Android 9〜13（D-20）の実機検証も完了**——存在しない
+`clientRecordId` への delete は reject され通常のリトライ・バックオフに
+乗ることを Pixel 3 実機で確認し、設計判断記録 D-20 に追記済み。§9.11 の
+リリースビルド分離・§13.6 の復元後再同期（Phase 4 の Known gap、未実装）
+は未着手。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -105,6 +107,12 @@ insert/delete を実機で通す一環として、存在しない `clientRecordI
 まとめて検証する（今は着手しない）。検証時は HC アプリのバージョン・端末の OS バージョン・Google Play
 システムアップデートの日付を記録すること（結果は検証時点の HC アプリ実装に依存するため）。
 Pixel 3 が手元にない場合は、Play ストア入りの Android 12〜13 エミュレータでも同じ経路を通せる。
+
+**2026-09-21 追記：上記の Android 9〜13 実機検証は Phase 4 で実施済み。**
+Pixel 3（Android 12）・Health Connect v2026.08.06.00 で、存在しない
+`clientRecordId` への delete が reject されることを確認した。詳細は
+下記「Phase 4 実装状況」の「実機確認（Pixel 3、D-20）」・設計判断記録
+D-20 参照。
 
 ## Phase 1 実装状況
 
@@ -2838,33 +2846,76 @@ gradle 再ビルドは不要だった）。
   D-20 と同じ非プラットフォーム統合パス）でなければ意味を持たない
   ——**D-20 の Pixel 3 実機検証と合わせて実施する**
 
+#### 実機確認（Pixel 3、D-20——Android 9〜13 非プラットフォーム統合パス）
+
+2026-09-21、Pixel 3（Android 12、API 31）で実施。この端末には Health
+Connect が最初から入っていない（Android 13 以下は Play ストア配布の別
+アプリのため）ため、まず上記「HC 未インストール環境での ON 操作」を
+この端末で確認できた：Sync トグル ON →「Health Connect isn't installed」
+「Install Health Connect to sync your records.」の Alert が正しく表示
+され、OK で閉じても状態は Not connected のまま——Pixel 11 では検証不能
+だった項目が、非プラットフォーム統合パスでは想定どおり動くことを確認
+できた。
+
+続けて Play ストアから Health Connect（v2026.08.06.00）をインストールし、
+D-20 本題（存在しない `clientRecordId` への delete）を検証した：
+
+1. Solo + Us で Sync ON →実際の OS 権限フロー（すべて許可 / 性行為の
+   書き込みトグルを個別に ON → 許可）を通す——要求されるのは
+   「性行為の書き込み」のみで、Pixel 11 の platform 経路と同じく
+   READ 権限は要求されないことをこの経路でも確認
+2. Activity を1件記録→自動同期→ Health Connect アプリの「データと
+   アクセス」画面で実レコードが入っていることを確認
+3. **Health Connect アプリ側から直接そのレコードを削除**（外部で
+   先に消えた状態を人為的に再現）
+4. Solo + Us 側で同じ Activity を削除→ delete ジョブ作成→ Retry now
+
+**結果**：`deleteRecordsByUuids` が
+`{"code":"UNDERLYING_ERROR","message":"Request contains invalid UID.",
+"str":"android.os.RemoteException: Request contains invalid UID."}`
+で reject された（一時的に `console.log` を仕込んで実測、確認後に
+`git diff` が空になることを確認してから削除）。`classifyError()` の
+switch に `UNDERLYING_ERROR` は無いため `UNKNOWN` に分類され、§9.6 の
+通常のリトライ・バックオフに乗る——**Android 9〜13 では「存在しない」
+削除は成功にならず、上限到達まで自動リトライを繰り返した末に手動待ち
+（Retry now/discard）に落ちる。** これは D-20 の「ラッパーが識別できない
+場合は既知の制限として受け入れる」という想定どおりの帰結で、実装変更は
+不要と判断した。詳細な確認結果は
+[設計判断記録 D-20](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-20-削除の存在しないを成功として扱いread-権限は追加しない)
+に追記済み。「Stop retrying」による破棄（確認文言「Stop retrying this
+deletion? / This record may remain in Health Connect.」）も実機で
+正常に動作し、ジョブが消えて「Everything is synced.」に戻ることを確認した。
+
+**実機検証中に踏んだ、この端末固有の妨害要因**（アプリのバグではない）：
+検証の後半、Gmail の大量通知により通知シェードが開いたまま固着し、
+adb 経由のタップが吸われて一切効かなくなる状態を繰り返し踏んだ
+（`cmd statusbar collapse`・systemUI 再起動でも解消せず、ユーザーに端末を
+直接操作してもらって解消）。個人の実機を検証機に使う場合、通知量が
+多い端末では同様の症状が起こりうる——再現しない場合は uiautomator の
+タップが本当に届いているか（`dumpsys window | grep mCurrentFocus` が
+自アプリを指しているか）を先に確認すること。
+
 #### Known gaps（次のステップ）
 
 - **§9.11 のリリースビルド分離（`without-health-connect` /
   `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
   含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
   まだ存在しない）
-- **Android 9〜13（非プラットフォーム統合パス）での実機検証（D-20）は
-  意図的に未実施のまま**——「今は着手しない」とすでに決定済み（本README
-  「ステータス」節の Phase 4 前提条件の確認結果を参照）。
-  `HealthConnectService`/`SyncWorker` を
-  実際にアプリ上で動かして insert/delete を実機で通す最初の機会に、
-  存在しない `clientRecordId` の delete を1ケース追加する形で**まとめて**
-  検証する（D-51 により `uncertain` 経由でこの経路が通常運用でも発生
-  するようになったため優先度が上がっている）。`SyncCoordinator`・AppState
-  配線・Settings UI（HC を ON にする手段）はすべて実装済みで、これが
-  この検証に着手できる最初の機会になる
-- **Settings UI の実機確認はほぼ完了**（上記「実機確認（Pixel 11、
-  初回/2回目/3回目）」参照）：HC ON→権限ダイアログ→Connected 表示、Activity
-  記録/削除→HC への反映、Last synced の実際の更新、破棄（confirm ダイアログ
-  ＋実際の discard）、OFF 中の Retry now 無効化＋caption、claim 中の行の
-  無効化、Retry now の実際の再試行、delete job が残っている状態での OFF
-  切断時の警告と再接続後の再開、`permission-revoked` の表示、
-  バックグラウンド/フォアグラウンド遷移でのクラッシュ・無限ループの
-  有無（AppState 配線自体、ステップ4参照）は確認済み。**残り**：HC
-  未インストール環境での ON 操作時の表示のみ——Pixel 11（プラットフォーム
-  統合パス）では検証不能と判明したため、D-20 の Pixel 3 実機検証と
-  合わせて実施する（詳細は上記「実機確認（Pixel 11、3回目）」参照）
+- **Settings UI の実機確認は完了**（上記「実機確認（Pixel 11、
+  初回/2回目/3回目）」「実機確認（Pixel 3、D-20）」参照）：HC ON→権限
+  ダイアログ→Connected 表示、Activity 記録/削除→HC への反映、Last synced
+  の実際の更新、破棄（confirm ダイアログ＋実際の discard）、OFF 中の
+  Retry now 無効化＋caption、claim 中の行の無効化、Retry now の実際の
+  再試行、delete job が残っている状態での OFF 切断時の警告と再接続後の
+  再開、`permission-revoked` の表示、バックグラウンド/フォアグラウンド
+  遷移でのクラッシュ・無限ループの有無（AppState 配線自体、ステップ4
+  参照）、HC 未インストール環境での ON 操作時の表示（Pixel 3 で確認、
+  Pixel 11 の platform 統合パスでは検証不能）
+- **Android 9〜13（非プラットフォーム統合パス）での D-20 実機検証は
+  完了**（上記「実機確認（Pixel 3、D-20）」参照）：存在しない
+  `clientRecordId` への delete は `UNDERLYING_ERROR`/「Request contains
+  invalid UID.」で reject され、`UNKNOWN` 分類→通常のリトライ・バック
+  オフに乗ることを確認した。設計判断記録 D-20 に確認結果を追記済み
 - **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
   無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
   OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、

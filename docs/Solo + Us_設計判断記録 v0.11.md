@@ -582,6 +582,21 @@ note や mood の編集頻度は低く、最適化の価値が分岐のコスト
 > Android 9〜13 で違うのはその結果として reject されうる（＝手動待ちに落ちて未同期表示が
 > 残りうる）という点だけである。詳細は基本設計 §9.4・§9.7 の確認結果を参照。
 
+> **実機確認結果（2026-09-21、Pixel 3 / Android 12、Play ストア配布の
+> Health Connect アプリ v2026.08.06.00）：above の予測どおり reject される
+> ことを確認した。** 手順：①アプリ側で insert → Health Connect アプリの
+> 「データとアクセス」画面から該当レコードを直接削除（外部で先に消えた
+> 状態を再現）→②アプリ側で同じ Activity を削除して delete ジョブを作成
+> →③ Retry now で実行。結果は
+> `{"code":"UNDERLYING_ERROR","message":"Request contains invalid UID.",
+> "str":"android.os.RemoteException: Request contains invalid UID."}`
+> という reject で、`classifyError()` の switch に `UNDERLYING_ERROR` は
+> 無いため `UNKNOWN` に分類され、§9.6 の通常のリトライ・バックオフに乗る
+> ——**つまり Android 9〜13 では「存在しない」削除は永久に成功せず、
+> 上限到達まで自動リトライを繰り返した末に手動待ち（Retry now/discard）
+> に落ちる。** これは「識別できない場合は既知の制限として受け入れる」の
+> 想定どおりの帰結であり、実装変更は不要と判断した。
+
 ---
 
 ## D-21 削除フローは同期状態によって分岐する
