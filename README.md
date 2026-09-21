@@ -28,9 +28,11 @@ Settings UI のほぼ全項目を確認済み**（下記「Phase 4 実装状況�
 自動同期・破棄・claim 中の行の無効化・Retry now の実際の再試行・delete job
 が残っている状態での OFF 切断警告と再接続後の再開・`permission-revoked`
 表示・バックグラウンド/フォアグラウンド遷移。**残るのは HC 未インストール
-環境での ON 操作時の表示のみ**（ユーザー確認待ち）。Android 9〜13 実機検証
-（D-20）・§9.11 のリリースビルド分離・§13.6 の復元後再同期（Phase 4 の
-Known gap、未実装）は未着手。詳細は下記の各「実装状況」を参照。
+環境での ON 操作時の表示のみ**——Pixel 11 は Android の Health Connect
+プラットフォーム統合パスのため検証不能と判明済み、D-20 の Android 9〜13
+実機検証（Pixel 3、未着手）と合わせて実施する。§9.11 のリリースビルド
+分離・§13.6 の復元後再同期（Phase 4 の Known gap、未実装）も未着手。
+詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -2772,8 +2774,9 @@ mirror effect 自体を廃止し、`enabledRef` を更新すべき3箇所（`loa
 
 #### 実機確認（Pixel 11、3回目）
 
-2回目で未実施のまま残していた項目のうち、HC 未インストール環境の ON 操作
-以外をすべて確認した。claim 中の状態や「未 claim のまま OFF にする」瞬間は
+2回目で未実施のまま残していた項目をすべて確認した（HC 未インストール
+環境の ON 操作は試みたが、Pixel 11 では検証不能と判明——詳細は末尾）。
+claim 中の状態や「未 claim のまま OFF にする」瞬間は
 自然発生ではタイミングが合わないため、`services/HealthConnectService.ts`
 の `upsertActivity`/`deleteActivityRecord` 冒頭に一時的な `await
 new Promise((r) => setTimeout(r, ...))` を差し込んで意図的に外部呼び出しを
@@ -2820,10 +2823,20 @@ gradle 再ビルドは不要だった）。
   加えてバックグラウンドで15秒待機して `dumpsys cpuinfo` の累積値が
   待機前後で変化しないこと（＝ポーリングが暴走していないこと）を確認。
   クラッシュ・ログ上のエラーなし
-- **未実施のまま残るのは HC 未インストール環境での ON 操作時の表示のみ**。
-  実機の Health Connect 本体アプリ（`com.google.android.apps.healthdata`）
-  を無効化/アンインストールする必要があり、Solo + Us のサンドボックスを
-  超えて端末側のアプリ状態を変更するため、実施前にユーザーに確認する
+- **HC 未インストール環境での ON 操作時の表示は、Pixel 11（Android
+  プラットフォーム統合パス）では検証できないことが判明**：`adb shell pm
+  disable-user com.google.android.apps.healthdata` で Health Connect
+  本体アプリを無効化しても、`HealthConnectService.isAvailable()`
+  （`getSdkStatus`）は無効化前と変わらず利用可能を返し続け、Sync トグルを
+  OFF→ON しても `handleEnable` の「Health Connect isn't installed」
+  Alert は一度も出なかった——Android 14 以降は Health Connect がプラット
+  フォーム本体に統合されており、`com.google.android.apps.healthdata` は
+  設定 UI 側のフロントエンドに過ぎず、SDK の可用性はこのアプリの
+  有効/無効に左右されないためと考えられる（確認後、`pm enable` で
+  元の状態に復帰させ、Sync が引き続き正常動作することも確認済み）。
+  この検証は Android 9〜13（Health Connect が Play ストア配布の別アプリ、
+  D-20 と同じ非プラットフォーム統合パス）でなければ意味を持たない
+  ——**D-20 の Pixel 3 実機検証と合わせて実施する**
 
 #### Known gaps（次のステップ）
 
@@ -2849,7 +2862,9 @@ gradle 再ビルドは不要だった）。
   切断時の警告と再接続後の再開、`permission-revoked` の表示、
   バックグラウンド/フォアグラウンド遷移でのクラッシュ・無限ループの
   有無（AppState 配線自体、ステップ4参照）は確認済み。**残り**：HC
-  未インストール環境での ON 操作時の表示のみ
+  未インストール環境での ON 操作時の表示のみ——Pixel 11（プラットフォーム
+  統合パス）では検証不能と判明したため、D-20 の Pixel 3 実機検証と
+  合わせて実施する（詳細は上記「実機確認（Pixel 11、3回目）」参照）
 - **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
   無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
   OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、
