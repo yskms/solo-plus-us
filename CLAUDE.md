@@ -283,3 +283,38 @@ dev-client のライブ bundle ではこれが優先され、shell export した
 場合は、`.env.local`（gitignore 済み）に書いてから `expo start --clear`
 すること。`app.config.js` と JS 側の判定で挙動が食い違って見えたら、まず
 これを疑うこと。
+
+### Privacy Policy（`public/privacy-policy.html`）の管理者表記は、iOS 公開時に要再検討
+
+`public/privacy-policy.html` §10（EN: “Data Controller & Contact”）は、
+現状 **開発者名を `yskms.studio`、連絡先を `yskms.studio@gmail.com`**
+としている（GitHub Pages で公開済み：
+https://yskms.github.io/solo-plus-us/privacy-policy.html ）。これは
+Google Play 上の表示名（`play.google.com/store/apps/developer?id=yskms.studio`）
+に合わせた選択で、**「メールアドレスを本名にする必要がある」という話では
+ない**——問題になるのは開発者の**表示名**の方。
+
+Apple の Individual（個人）タイプの開発者アカウントは、屋号ではなく登録した
+法的氏名を App Store のストアページに強制的に公開表示する仕様で、これは
+Solo + Us 固有の設定ではなく **Apple のプラットフォーム仕様**。実際に既存の
+2アプリ（Filto、UTC NOW）で確認済み——同じアプリが Google Play では
+「yskms.studio」、Apple の Individual アカウント
+（apps.apple.com/us/developer/masashi-yasaka/id1748151382）では
+「Masashi Yasaka」として表示されている（2026-09-21 確認）。
+
+**したがって、Solo + Us を将来この同じ Apple ID の下で iOS リリースすると、
+Privacy Policy の記載（`yskms.studio`）と無関係に、App Store のストアページ
+自体が「Masashi Yasaka」をこのアプリに紐づけて公開する。** Privacy Policy 側
+だけを匿名の表記にしても、この露出は防げない。
+
+iOS ビルドは現在ブロック中（本ファイル冒頭参照）でリリース時期は未定のため、
+今は `yskms.studio` のままにしている（ユーザー了承済み、2026-09-21）。
+**iOS リリースが具体的に視野に入った時点で、以下のどちらかを選ぶ必要がある：**
+
+- Privacy Policy の管理者表記を `Masashi Yasaka` に変更し、Apple の表示と
+  一致させる
+- このアプリだけ別の Apple Organization アカウント（D-U-N-S 番号が必要）で
+  公開し、屋号のまま隠す
+
+放置すると「ストアは実名、ポリシーは屋号」という不一致が残ったまま公開
+されることになるため、iOS 公開作業に着手する際は必ずこの節を確認すること。
