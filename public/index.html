@@ -25,5 +25,11 @@
 </head>
 <body>
   <p>Redirecting to the <a href="./privacy-policy.html">Privacy Policy</a>…</p>
+  <script>
+    // Carries ?lang=ja / #ja through so a direct root link still lands on
+    // the requested language; the meta refresh above is the fallback when
+    // JS is disabled (it always lands on the default-language page).
+    location.replace('./privacy-policy.html' + location.search + location.hash);
+  </script>
 </body>
 </html>
