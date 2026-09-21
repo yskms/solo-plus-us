@@ -2329,7 +2329,8 @@ Connect の `drainDueJobs` が呼ばれる。`drainingRef` により直列化さ
    変更で壊れうる）
 6. **【低】Loading 分岐の `SafeAreaView` に `edges={['bottom']}` が無い**：
    `appearance.tsx` からそのまま踏襲していた既存の見落とし。共通コンポーネント
-   `SettingsOptionScreen` へ抽出する際に1箇所で修正した
+   `SettingsOptionScreen` への抽出時に直したつもりが実際には漏れており、
+   下記「2回目」で指摘・修正した
 7. **【低】ABOUT が §17 モックと異なり2枚のカードに分かれていた**：
    モックは About/Privacy Policy/Version を1グループとして示している。
    `Row` に非タップの `value` バリアントを追加し、`SettingsGroup` を
@@ -2347,6 +2348,35 @@ Connect の `drainDueJobs` が呼ばれる。`drainingRef` により直列化さ
     直線（`'`）が混在していたのを直線に統一した
 
 対応しなかったもの：無し（指摘10件すべて対応）。
+
+#### レビューで見つかり、修正したもの（2回目）
+
+1回目の対応内容自体（Version のネイティブ化、About のプライバシー追記など）は
+妥当と確認された。1件、実装と本 README の記録が食い違っている状態で
+コミットされていたという指摘。
+
+1. **【要対応】上記6番が実際には直っていなかった**：README には
+   「`SettingsOptionScreen` へ抽出する際に1箇所で修正した」と書いたが、
+   実際のコードは Loading 分岐の `SafeAreaView` に `edges={['bottom']}` が
+   付いていないままだった——コードの見た目上の変更（共通コンポーネントへの
+   移動）と、修正した「つもり」の記述が伴っていなかった。`components/
+   SettingsOptionScreen.tsx` の Loading 分岐に `edges={['bottom']}` を追加し、
+   今度は実際に反映した
+2. **【低】About の新規1行が英文法として不正**：「the date/time and
+   whether protection was used **is** also written there」は複合主語に
+   対し動詞が単数形だった。**are** に修正（書き込まれる内容自体——日時と
+   避妊具使用の有無——は `services/HealthConnectService.ts` の実装と
+   一致していることを確認済み）
+3. **【低・任意】Version のフォールバックが `app.json` の直 import のまま
+   だった**：`Application.nativeApplicationVersion` が優先されるため
+   中①の本質は解消済みだったが、`null` になる経路（web）のためだけに
+   `app.json`（plugin 設定を含む全体）が JS バンドルに取り込まれていた。
+   今回のレビューで `expo-constants` も同時にネイティブリンクされたため、
+   `Constants.expoConfig?.version` に置き換え、`app.json` の直 import 自体を
+   削除した（さらに `undefined` の場合の最終フォールバックとして `'unknown'`
+   を追加）
+
+対応しなかったもの：無し（今回の指摘3件すべて対応）。
 
 #### テスト
 

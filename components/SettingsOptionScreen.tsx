@@ -33,7 +33,7 @@ export default function SettingsOptionScreen<T extends string>({ options, value,
 
   if (value === null) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
         <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
       </SafeAreaView>
     );

@@ -31,7 +31,7 @@ const PRIVACY_FACTS = [
   'No account required',
   'Your activity data is encrypted and stored on this device',
   "We don't run a server that receives your activity data",
-  'If you turn on Health Connect sync, the date/time and whether protection was used is also written there',
+  'If you turn on Health Connect sync, the date/time and whether protection was used are also written there',
   'Files you export are not encrypted',
   'Your data is never used for advertising',
   'No analytics or crash reporting SDKs in this version',

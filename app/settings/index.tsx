@@ -35,11 +35,15 @@
  * mockup shows all three as one card, which is why `Row` supports a
  * non-navigable `value` variant rather than splitting "Version" into its
  * own group). "Version" reads `Application.nativeApplicationVersion`
- * (falling back to `app.json`'s `expo.version` only where the native module
- * returns `null`, e.g. web) rather than importing `app.json` directly —
- * a raw `app.json` import reflects the JS bundle's build-time value, which
- * can drift from what's actually installed (an OTA-updated bundle, or a
- * future `app.config.js`/EAS `remote`/`autoIncrement` version source) —
+ * (falling back to `expo-constants`'s `Constants.expoConfig?.version` only
+ * where the native module returns `null`, e.g. web) rather than a raw
+ * `app.json` import — `app.json` reflects the JS bundle's build-time
+ * value, which can drift from what's actually installed (an OTA-updated
+ * bundle, or a future `app.config.js`/EAS `remote`/`autoIncrement` version
+ * source); `Constants.expoConfig` is itself native-module-backed (also
+ * newly linked alongside `expo-application` — see CLAUDE.md), so this
+ * avoids pulling the whole `app.json` (plugin config included) into the
+ * JS bundle just for the rare native-module-unavailable fallback path —
  * see 2026-09-21 review.
  */
 import React from 'react';
@@ -47,8 +51,8 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
-import appConfig from '../../app.json';
 
 interface Row {
   label: string;
@@ -94,7 +98,7 @@ function SettingsGroup({ rows }: { rows: Row[] }) {
   );
 }
 
-const appVersion = Application.nativeApplicationVersion ?? appConfig.expo.version;
+const appVersion = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
 
 export default function SettingsIndexScreen() {
   const { colors } = useTheme();
