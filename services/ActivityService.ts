@@ -23,7 +23,7 @@ import type { SqlExecutor, Transactor } from '../database/SqlExecutor';
 import { getSetting, setSetting } from './SettingsRepository';
 import { planForDelete, planForEdit, planForRecord, toCurrentJobState, toMappingState } from './syncJobPlanner';
 import type { Activity, ActivityUpdateInput } from '../types/Activity';
-import type { Provider } from '../types/HealthSync';
+import type { JobOperation, Provider } from '../types/HealthSync';
 import { SYNC_DERIVED_SETTING_KEYS } from '../types/Settings';
 
 /** Every provider this app knows about, regardless of whether it's currently enabled — §10 delete cleanup must check all of them (a disabled provider can still hold a leftover mapping, D-45). */
@@ -186,12 +186,13 @@ export async function deleteActivity(db: Transactor, id: string): Promise<void> 
 
 /**
  * §10.6 "全 Activity 削除" (Settings > Delete Data): applies §10.1's
- * per-Activity branching to every Activity, in one transaction — not
- * `ActivityRepository.deleteAllActivities`, which is a raw table wipe used
- * only by `ImportService.performReplaceImport` *after* health_sync/
- * health_sync_jobs have already been cleared separately (§13.3), and which
- * deliberately creates no delete jobs (a replace-restore isn't "delete this
- * from Health Connect too" — §10.6's own table draws that distinction).
+ * per-Activity branching to every Activity, in one transaction. The one
+ * thing that must *not* be copied from `ImportService.performReplaceImport`
+ * (which also ends by bulk-clearing `health_sync`/`activities`, see below)
+ * is skipping job creation — a replace-restore isn't "delete this from
+ * Health Connect too" (§10.6's own table draws that distinction), so it
+ * clears `health_sync_jobs` outright instead of resolving it into `delete`
+ * jobs the way this function does.
  *
  * Unlike `deleteActivity`, this does **not** loop `applyDeletePlan` once per
  * Activity — that would cost 2 reads (job + mapping) per Activity per
@@ -245,9 +246,6 @@ export async function deleteAllActivities(db: Transactor): Promise<void> {
       const mappingByActivity = new Map(mappings.map((m) => [m.activityId, m]));
       const notBefore = nowUtcIso();
 
-      // Every job here has a non-null `current` state, so `planForDelete`
-      // only ever returns 'delete-job' or 'replace' (never 'insert'/'noop'
-      // — see its doc comment) — 順1..順4 of §10.1's table.
       for (const job of jobs) {
         const mapping = mappingByActivity.get(job.activityId) ?? null;
         const plan = planForDelete(toCurrentJobState(job), toMappingState(mapping));
@@ -260,23 +258,48 @@ export async function deleteAllActivities(db: Transactor): Promise<void> {
             notBefore,
           }); // 順2/3/4
         }
-        mappingByActivity.delete(job.activityId); // handled above — anything left has no job (順5 candidates only)
+        // else: 'noop' — reachable here (unlike in `applyDeletePlan`'s
+        // single-Activity context, where §9.3 calls it "発生しない"): a
+        // `delete` job left over from an Activity a *previous*, individual
+        // `deleteActivity` call already removed. Its own mapping is already
+        // gone (cleared synchronously at that time, §10.2 step 3), so
+        // `planForDelete` falls through to its "current is null-ish" branch
+        // and returns 'noop' — correctly, since this job isn't about any
+        // Activity being deleted *now* and must keep draining untouched.
+        // ('insert' cannot occur in this loop — this function's own
+        // `current` is always non-null here; `planForDelete` only returns
+        // 'insert' when `current` is null, which is the next loop below.)
+        mappingByActivity.delete(job.activityId); // handled above — anything left has no job (順5/順6 candidates only)
       }
 
-      // 順5: a mapping with no job gets a fresh delete job — batched, since
-      // in the common "everything already synced, nothing pending" case
-      // this is every mapping for the provider, which can be the entire
-      // sync history (unlike the job-replacement loop above, bounded by
-      // the outbox backlog).
-      const freshDeleteJobs = Array.from(mappingByActivity.values()).map((mapping) => ({
-        activityId: mapping.activityId,
-        provider,
-        operation: 'delete' as const,
-        externalRecordId: mapping.externalRecordId,
-        notBefore,
-      }));
+      // 順5 vs 順6: a mapping with no job needs a fresh delete job only if
+      // it implies the provider may actually hold this record —
+      // `mappingState 'synced'/'uncertain'` (順5). A `'declined'` mapping
+      // (no job) is 順6, not 順5 — D-35: the person explicitly chose "don't
+      // sync this to Health Connect" (`HealthSyncManualActions.
+      // discardSyncJob`), and that choice must survive a full delete just
+      // like it survives everything else; queuing a `delete` for it would
+      // send an external request for a record Health Connect was never
+      // told about. Routing through `planForDelete(null, ...)` itself
+      // (rather than a separately-inlined check) is what keeps this
+      // function's "same decision logic as `applyDeletePlan`" claim true —
+      // 2巡目のレビューで、ここを `operation: 'delete'` 固定にしていたことが
+      // 実際に `'declined'` を巻き込む回帰として見つかった（README 参照）。
+      const freshDeleteJobs: { activityId: string; provider: Provider; operation: JobOperation; externalRecordId: string | null; notBefore: string }[] = [];
+      for (const mapping of mappingByActivity.values()) {
+        const plan = planForDelete(null, toMappingState(mapping));
+        if (plan.action === 'insert') {
+          freshDeleteJobs.push({
+            activityId: mapping.activityId,
+            provider,
+            operation: plan.operation,
+            externalRecordId: mapping.externalRecordId,
+            notBefore,
+          }); // 順5
+        }
+        // else: 'noop' — 順6 (mappingState 'none'/'declined').
+      }
       await HealthSyncJobRepository.insertJobsBulk(tx, freshDeleteJobs);
-      // 順6 (no job, no mapping) needs nothing — the bulk Activity delete below covers it.
     }
 
     await HealthSyncRepository.deleteAllMappings(tx); // §10.2 step 3 / §10.6 pseudocode step 2, all providers, bulk

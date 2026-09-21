@@ -316,6 +316,29 @@ describe('deleteAllActivities — §10.6 bulk-applies §10.1 to every Activity',
     }
   });
 
+  it('順6, not 順5: a declined mapping with no job gets no delete job (D-35 — the person explicitly chose not to sync this record, and a full delete must not override that by requesting its deletion from a provider it was never sent to)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await HealthSyncRepository.upsertDeclinedOrUncertainMapping(db, { activityId: activity.id, provider: 'health_connect', syncState: 'declined' });
+    await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect'); // simulate: the create job itself was discarded (D-35), leaving only the 'declined' mapping row
+
+    await ActivityService.deleteAllActivities(db);
+
+    expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+  });
+
+  it('順5, not 順6: an uncertain mapping with no job still gets a delete job (D-51 — unlike declined, the provider may actually hold this record)', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await HealthSyncRepository.upsertDeclinedOrUncertainMapping(db, { activityId: activity.id, provider: 'health_connect', syncState: 'uncertain' });
+    await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect');
+
+    await ActivityService.deleteAllActivities(db);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+  });
+
   it('resets healthConnect.lastSyncedAt to null (§10.6 "全削除の開始時点で...以前の「Last synced」を残すと誤解を招く")', async () => {
     await enableHealthConnect();
     await setSetting(db, 'healthConnect.lastSyncedAt', '2026-09-14T14:42:00Z');

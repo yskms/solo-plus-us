@@ -121,7 +121,12 @@ export async function deleteAllMappingsForActivity(executor: SqlExecutor, activi
   await executor.execute('DELETE FROM health_sync WHERE activity_id = ?', [activityId]);
 }
 
-/** §13.3: wipes every mapping, across all providers — used only by the Import replace-restore flow. */
+/**
+ * Wipes every mapping, across all providers. Two callers: `ImportService.
+ * performReplaceImport` (§13.3, replace-restore) and `ActivityService.
+ * deleteAllActivities` (§10.6, full delete) — both call this only after
+ * whatever each needs from `health_sync` has already been read/resolved.
+ */
 export async function deleteAllMappings(executor: SqlExecutor): Promise<void> {
   await executor.execute('DELETE FROM health_sync');
 }

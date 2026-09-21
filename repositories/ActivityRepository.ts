@@ -325,7 +325,14 @@ export async function restoreActivityRow(executor: SqlExecutor, activity: Activi
   );
 }
 
-/** §13.3: wipes every Activity (and, by cascade of the caller's own transaction ordering, the caller is expected to have already cleared health_sync/health_sync_jobs first — see ImportService). */
+/**
+ * Wipes every Activity — the caller is expected to have already cleared
+ * health_sync/health_sync_jobs first (FK RESTRICT), by whatever ordering
+ * fits its own transaction. Two callers, both after they've resolved
+ * health_sync_jobs their own way: `ImportService.performReplaceImport`
+ * (§13.3 — clears jobs outright, no delete jobs) and `ActivityService.
+ * deleteAllActivities` (§10.6 — resolves jobs into `delete` jobs first).
+ */
 export async function deleteAllActivities(executor: SqlExecutor): Promise<void> {
   await executor.execute('DELETE FROM activities');
 }

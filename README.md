@@ -2564,6 +2564,47 @@ doc comment に同じ判断を明記した。
 対応しなかったもの（上記「ボタン順序」以外）：無し（指摘6件のうち5件は
 コード変更、1件は既存の姉妹画面との一貫性を理由に意図的に見送り）。
 
+#### レビューで見つかり、修正したもの（2回目）
+
+上記5件の修正内容自体は妥当と確認された。4番（性能改善のための書き直し）に
+**回帰が1件**見つかった。
+
+1. **【要対応・回帰】順6（declined マッピング・ジョブ無し）に delete ジョブ
+   を作ってしまっていた**：4番の書き直しで、順5のバッチ生成部が「ジョブ
+   消込後に残ったマッピングすべて」を `operation: 'delete'` で無条件に
+   積んでいた。しかし §10.1 の表は、ジョブが無いマッピングを
+   `mappingState` で二分する——`synced`/`uncertain`（順5、insert）と
+   `none`/`declined`（順6、noop）。`declined` は `HealthSyncManualActions.
+   discardSyncJob` が作る正規の状態（D-35「この記録を Health Connect へ
+   同期しない」を利用者が明示的に選んだ結果）であり、`planForDelete(null,
+   'declined')` は本来 `noop` を返す。書き直し後のコードはこの分岐を
+   経由せず `'delete'` を決め打ちしていたため、利用者が明示的に同期しない
+   と決めた記録に対しても外部削除ジョブを積んでしまっていた——`declined`
+   を巻き込んだ回帰。修正は、残ったマッピング1件ごとに
+   `planForDelete(null, toMappingState(mapping))` を呼び、`action ===
+   'insert'` のものだけをバッチに積む形にした（`applyDeletePlan` と
+   「同じ決定ロジックだけを経由する」という doc comment の主張を、実際に
+   成り立たせる形）。`declined`（job 作らない）と `uncertain`（job 作る）
+   の対になるテストを2件追加し、非対称性が守られていることを確認した
+2. **【軽微】ジョブループのコメントが不正確だった**：「`planForDelete` は
+   `'delete-job'`/`'replace'` の2種類しか返さない」という主張は、個別削除
+   （`deleteActivity`）で既に作られていた `delete` ジョブ（Activity は既に
+   別の機会に削除済みだが、外部への delete がまだ未完了で outbox に残って
+   いるもの）が `findAllJobsForProvider` に含まれるケースを見落としていた。
+   このケース自体は `noop` に落ちて何もしない（正しい——このジョブは今回の
+   全削除対象とは無関係で、そのまま drain を続けるべき）が、コメントの
+   「2種類しか無い」という前提は誤り。分岐を `else` で明示し、コメントを
+   実態に合わせて書き直した
+3. **【軽微】doc comment の自己矛盾・記載の取り残し**：`deleteAllActivities`
+   冒頭の doc comment が「`ActivityRepository.deleteAllActivities` は
+   Import 専用」と書きながら、直後にその関数をまさに呼んでいて矛盾して
+   いた。冒頭を「ジョブを作らない点が Import との違い」という本来の対比
+   だけに絞り、`HealthSyncRepository.deleteAllMappings`／
+   `ActivityRepository.deleteAllActivities` 自体の doc comment も
+   呼び出し元が2つになったことを反映する内容に更新した
+
+対応しなかったもの：無し（指摘3件すべて対応）。
+
 #### テスト
 
 `services/ActivityService.ts` の `deleteAllActivities` は
@@ -2572,11 +2613,12 @@ doc comment に同じ判断を明記した。
 no-op であること、Activity ごとに異なる §10.1 の分岐（順1: 未送信 create は
 そのまま消す／順2: 送信済みかもしれない create は delete に置き換える／順5:
 同期済みマッピングのみの Activity には新規 delete ジョブが残る、複数件での
-バッチ挿入経路を含む）が一括適用でも個別適用と同じ結果になることを検証。
-`healthConnect.lastSyncedAt` が `null` にリセットされること（Activity が
-無い場合を含む）も検証。`app/settings/delete-data.tsx` 自体は他の画面
-コンポーネントと同様ユニットテスト対象外——`npx tsc --noEmit` と全テスト
-スイート（28スイート・405件）のパスで検証した。
+バッチ挿入経路を含む／順6: declined マッピングには delete ジョブを作らない
+——順5 の uncertain との対比込み）が一括適用でも個別適用と同じ結果になる
+ことを検証。`healthConnect.lastSyncedAt` が `null` にリセットされること
+（Activity が無い場合を含む）も検証。`app/settings/delete-data.tsx` 自体は
+他の画面コンポーネントと同様ユニットテスト対象外——`npx tsc --noEmit` と
+全テストスイート（28スイート・407件）のパスで検証した。
 
 #### 実機確認（Pixel 3、2026-09-21）
 
@@ -2615,6 +2657,16 @@ synced」に時刻が入る）ことを確認したうえで、改めて Delete 
   既存の正しい挙動（delete も「同期が成功した」という事実の一種のため）。
   トランザクションのコミット直後に `null` になっていること自体は、上記の
   単体テストで直接検証済み
+
+**回帰（指摘1）の実機再現は断念、単体テストで代替**：実機で `declined`
+状態を作るには「記録直後、`SyncWorkerLoop` がジョブを claim する前に
+Settings > Health Connect から Don't sync を確定する」タイミングを取る
+必要があるが、この端末の drain は数秒以内に完了するため adb 操作の往復
+（dump → 座標計算 → tap）がそのレース に間に合わず、2回試みたいずれも
+job が先に同期済みになった（`declined` を経由する前に `synced` へ進んで
+しまった）。この経路は `db.transaction` 内のタイミングに依存しない純粋な
+分岐ロジックの問題であり、上記の単体テスト（`declined`/`uncertain` の
+対）で決定的に検証できているため、実機での再現には固執しなかった。
 
 #### Known gaps
 
