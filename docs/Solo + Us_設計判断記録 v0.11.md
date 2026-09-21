@@ -146,6 +146,14 @@ Health Connect の `Metadata.clientRecordId` に `activity.id` を設定する�
 `deleteRecords` の client record id 指定を露出しているかを確認する。
 **露出していない場合、HC 同期の v1.0 投入を見送る。**
 
+> **確認結果（2026-09-19、ソース読解による）：`react-native-health-connect` v4.1.3
+> （commit `8d72b6a`）で確認済み。**
+> `Metadata.clientRecordId` / `clientRecordVersion` を型・ネイティブ実装の両方で往復できる。
+> 削除も `deleteRecordsByUuids(recordType, recordIdsList, clientRecordIdsList)` として
+> client record id を直接渡せる。この2点は OS バージョンに依存しない。詳細・調査対象
+> バージョンの全リストは基本設計 §9.4 の確認結果を参照。**ラッパー導入時に上記バージョンから
+> 変わっていないか再確認すること。**
+
 **理由**
 
 外部への書き込みに成功した直後・ローカルに外部 ID を保存する前にプロセスが落ちると、
@@ -533,8 +541,12 @@ note や mood の編集頻度は低く、最適化の価値が分岐のコスト
 | 結果 | 扱い |
 |---|---|
 | 削除成功 | ジョブ削除 |
-| 「存在しない」 | **成功として扱う** |
+| 「存在しない」 | **成功として扱う**※ |
 | その他のエラー | リトライ。上限到達で手動待ち |
+
+※ Android 9〜13（非プラットフォーム統合パス）では実装上この行を選べない
+（ラッパーが「存在しない」を他のエラーと識別できない）ため、実際には
+「その他のエラー」行と同じ扱いになる。2026-09-21 の実機確認結果を参照。
 
 手動待ちのジョブには「再試行」と **「破棄」** を用意する（文言は D-35 に従う）。
 
@@ -553,6 +565,69 @@ note や mood の編集頻度は低く、最適化の価値が分岐のコスト
 
 ラッパーが削除時の「存在しない」を他のエラーと識別できるか。
 できない場合は「削除済みだがローカル確定前に落ちると未同期表示が残る」を既知の制限として受け入れる。
+
+> **確認結果（2026-09-19、ソース読解による）：Android 14 以降の経路に限り確認済み
+> ——ただし「識別」ではなく無区別に成功する。**
+> `react-native-health-connect` v4.1.3 の `deleteRecordsByUuids` が経由する platform の
+> `RecordIdFilter` ベース削除は、AOSP `HealthConnectServiceImpl` の実装（出荷タグ
+> `android-14.0.0_r32` と 2026-09-19 時点の `main` HEAD の両方で確認）を辿ると、存在しない ID
+> を投げても例外を送出するコードパスが存在しない。存在しない `clientRecordId` を渡しても
+> reject されず resolve するため、上表の「成功」「存在しない」の2行は呼び出し側から見て
+> 同じ resolve という1つの分岐になる。バージョン詳細（`connect-client` は実際に配布されている
+> 1.1.0 の sources jar で確認済み）は基本設計 §9.4 参照。
+>
+> **Android 9〜13（非プラットフォーム統合パス、Play ストア配布の別アプリ経由 IPC）は未確認。**
+> このアプリのサーバー側実装は AOSP に公開されておらず、ソース読解では確認できない
+> （2026-09-19 時点でユーザー判断により実機/エミュレータでの追加検証は行わない）。
+> **この OS 範囲が、上の「ゲートに追加」で述べた『ラッパーが識別できない場合』に該当する
+> ため、上表の「存在しない→成功として扱う」行ではなく「識別できない場合は既知の制限として
+> 受け入れる」を適用する。** 実装自体は OS バージョンで分岐させない——`deleteRecordsByUuids`
+> が resolve すれば成功、reject すれば他のエラーと同じくリトライに回すだけであり、
+> Android 9〜13 で違うのはその結果として reject されうる（＝手動待ちに落ちて未同期表示が
+> 残りうる）という点だけである。詳細は基本設計 §9.4・§9.7 の確認結果を参照。
+
+> **実機確認結果（2026-09-21、Pixel 3 / Android 12、Play ストア配布の
+> Health Connect アプリ v2026.08.06.00）：above の予測どおり reject される
+> ことを確認した。** 手順：①アプリ側で insert → Health Connect アプリの
+> 「データとアクセス」画面から該当レコードを直接削除（外部で先に消えた
+> 状態を再現）→②アプリ側で同じ Activity を削除して delete ジョブを作成
+> →③ Retry now で実行。結果は
+> `{"code":"UNDERLYING_ERROR","message":"Request contains invalid UID.",
+> "str":"android.os.RemoteException: Request contains invalid UID."}`
+> という reject で、`classifyError()` の switch に `UNDERLYING_ERROR` は
+> 無いため `UNKNOWN` に分類され、§9.6 の通常のリトライ・バックオフに乗る
+> ——**つまり Android 9〜13 では「存在しない」削除は永久に成功せず、
+> `attempts` が `MAX_AUTOMATIC_ATTEMPTS`（10）に到達するまで自動リトライを
+> 繰り返した末に手動待ち（Retry now/discard）に落ちる。** バックオフ表
+> `[5,15,60,300,900,3600,21600,86400]` 秒により、1回目の失敗から手動待ちに
+> 落ちるまで実時間で約55.4時間（≈2.3日）かかる——この間「未同期」の表示が
+> 残り続ける。これは「識別できない場合は既知の制限として受け入れる」の
+> 想定どおりの帰結であり、**`delete` ジョブに関しては**実装変更は不要と
+> 判断した。
+>
+> **この結論の範囲（2026-09-21、レビュー指摘を受けて追記）**
+>
+> - **`recreateActivity`（§9.3.1・D-34）は未検証で、上記結論の対象外。**
+>   `services/HealthConnectService.ts` の `recreateActivity` は「delete が
+>   失敗したら insert せずここで失敗を返す」ため、`operation: 'recreate'`
+>   のジョブが外部レコード不在の状況に当たった場合、Android 9〜13 では
+>   今回確認した reject を delete 段階で受け続け、**insert に一度も到達
+>   できないまま**同じ約55時間サイクルで手動待ちに落ちる。現状
+>   `operation: 'recreate'` を生成するコードは存在しない（§13.6 は Known
+>   gap、未実装）ため実害は無いが、D-34 の「`NOT_FOUND` を成功扱いに
+>   している以上、先頭からの再実行は常に安全」という記述は、Android
+>   9〜13 では「安全（副作用が無い）」は成り立つが「いずれ成功する」は
+>   成り立たない。§13.6 実装時に D-34 側で別途判断すること（D-34 にも
+>   同内容を追記済み）
+> - **検証したのは「HC アプリ側で直接削除して不在を再現する」という
+>   1経路のみ。** D-20 が本来想定する「外部 delete 成功直後・ローカル
+>   確定前のクラッシュ」も対象 UID が存在しないという点では同じはずだが、
+>   HC 内部実装（トゥームストーンの有無等）次第で完全に一致しない可能性は
+>   理論上残る
+> - **検証環境は Pixel 3 / Android 12（API 31）/ Health Connect
+>   v2026.08.06.00 の1台1バージョンのみ。** 単一 APK 配布のため大きな
+>   差は考えにくいが、上記の「Android 9〜13 では」という記述はこの1点の
+>   実測に基づく
 
 ---
 
@@ -947,6 +1022,19 @@ HealthKit にも SyncIdentifier / SyncVersion があるため（D-40）、同じ
 NOT_FOUND を成功扱いにしている以上、先頭からの再実行は常に安全である。
 実装者がフラグを追加したくなる箇所なので、持たないことを明記する。
 
+> **2026-09-21 追記（D-20 の Android 9〜13 実機確認を受けて）：
+> 「安全」と「いずれ成功する」は別物であることに注意。**
+> D-20 の実機確認により、Android 9〜13（非プラットフォーム統合パス）では
+> NOT_FOUND は実際には reject される（成功扱いにならない）ことが判明した。
+> 「先頭から再実行して問題ない」という安全性の主張自体は変わらない
+> （副作用のある状態を持たないため、何度再実行しても壊れない）が、外部
+> レコードが本当に存在しない状況で `recreate` を Android 9〜13 で使うと、
+> delete 段階で reject され続け insert に到達できないまま、§9.6 の
+> バックオフを最後まで消費して（約55時間）手動待ちに落ちる——「常に安全」
+> ではあっても「常に成功する」わけではない。§13.6（Import 後の再同期）で
+> `recreate` を実際に使うコードを書く際は、この帰結を踏まえて再検討する
+> こと。詳細は D-20 の確認結果を参照。
+
 **却下した案**
 
 | 案 | 却下理由 |
@@ -1181,6 +1269,59 @@ create を claim → 外部呼び出し中 → 置換復元が health_sync_jobs 
 | cancel できない | タイムアウトは UI の待機打ち切りにだけ使う |
 | タイムアウト経過 | 破壊的操作を中止し、再試行を案内する |
 | 外部 Promise が未 settle | **Coordinator は in-flight のまま扱う** |
+
+> **確認結果（2026-09-19、ソース読解による。実機/エミュレータでの実行検証ではない）：
+> Health Connect の insert / delete は、いずれの経路でも明示的な cancel をサポートしない。
+> したがって JS 側がタイムアウトで待つのをやめても、ネイティブ呼び出しは止められず継続する
+> （継続を止める手段自体が存在しないため）。上表の「cancel できない」行が確定的に適用される。**
+>
+> - `react-native-health-connect` v4.1.3（commit `8d72b6a`）：`HealthConnectModule.kt` /
+>   `HealthConnectManager.kt` の `insertRecords` / `deleteRecordsByUuids` はいずれも
+>   `CoroutineScope(Dispatchers.IO).launch { ... }` で起動され、返り値の `Job` は保持されない。
+>   `HealthConnectModule.kt` の `@ReactMethod` 一覧に `cancel` に相当するメソッドは存在しない。
+>   JS 側が Promise を諦めても、この coroutine を止める手段が最初から無い。
+> - **Android 13 以前の経路**（`HealthConnectClientImpl` → 別プロセスの Health Connect アプリへ
+>   AIDL 経由）：根拠は **androidx 側の AIDL インターフェース**（`IHealthDataService`）に
+>   cancellation を渡す引数が無いこと。`delegate.insertData(...).await()` /
+>   `deleteData(...).await()` が呼ぶ `service.insertData(requestContext, request, callback)`
+>   （`ServiceBackedHealthDataClient.kt`）はこの3引数のみで、cancellation を伝える手段がない。
+>   coroutine 側の `.await()` を諦めても、別プロセスへ送信済みの Binder リクエストは止まらない。
+>   `IHealthDataService` はアプリに同梱される `androidx.health.connect:connect-client` 側が
+>   定義するインターフェースであり、相手の非公開実装（Health Connect アプリ）が一方的に
+>   cancel 用のメソッドを追加しても、同梱バージョンの connect-client からは呼べない。
+>   したがってこの結論が変わりうるのは connect-client の更新時であり、相手アプリの改訂ではない。
+> - **Android 14 以降の経路**（`HealthConnectClientUpsideDownImpl` → platform 統合パス）：
+>   根拠は **platform 側の公開 API `android.health.connect.HealthConnectManager` 自体**に
+>   cancellation の契約が存在しないこと。`insertRecords` / `deleteRecords` の全オーバーロードの
+>   シグネチャを、出荷版タグ `android-14.0.0_r32` と `main` HEAD
+>   `45168a88ae2a7e1abafe1cc81001d97ff00194e2`（2026-09-19時点の最新開発版）の**両方**で確認した
+>   （D-20 で確認済みの delete 挙動と同じ2点だが、今回は cancel シグネチャの有無として再確認した）。
+>   `CancellationSignal` を受け取るオーバーロードは1つもなく（`(records/request, executor,
+>   callback)` のみ）、両者は完全に同一シグネチャだった。androidx 側の実装
+>   （`suspendCancellableCoroutine { continuation -> healthConnectManager.insertRecords(
+>   records, executor, continuation.asOutcomeReceiver()) }`）も `CancellationSignal` を
+>   一切生成・登録していない。`androidx.core.os.asOutcomeReceiver` の KDoc 自身が
+>   「cancellation をサポートする API は `CancellationSignal` を作って
+>   `continuation.invokeOnCancellation { canceller.cancel() }` を登録すべき」と明記しているが、
+>   このパターンは使われていない。
+>
+> **結論：** 2つの経路は cancel 不可の根拠が異なる——Android 14 以降は「platform API 自体に
+> cancel の契約が無い」こと、Android 9〜13 は「androidx の AIDL インターフェースに cancel を
+> 渡す手段が無い」ことが理由であり、どちらも**ラッパーの実装漏れではない**。結論（cancel 不可）
+> は両経路で一致するが、根拠が別物なので、一方が将来変わっても他方の結論が自動的に変わるわけ
+> ではない。platform API 側（Android 14 以降）は AOSP タグと main HEAD で経路が一致することを
+> 確認したため、当面のバージョンでは安定していると考えてよい。androidx の AIDL 側（Android
+> 9〜13 の相手）は、`connect-client` のバージョンを固定している限り変わらない
+> （AIDL 定義は同梱する androidx 側にあり、相手の非公開実装が変わっても影響しない）。
+> **connect-client のバージョンを更新する際は再確認すること。**
+>
+> **未調査事項：** Health Connect 側・OS 側に独自のタイムアウトがあるか（ANR、Binder 切断、
+> 別プロセスの Health Connect アプリが kill される等で callback が失敗扱いになる経路）は
+> 調査していない。これは「外部 Promise が永久に settle しない」ケースがどれだけ起きるかに
+> 関わるが、D-41 は元々そのケースを「アプリ再起動のみが逃げ道」として扱っており、頻度に
+> 関わらず規則は変わらない。
+>
+> **ラッパー入れ替え・バージョン更新時は再確認すること。**
 
 **タイムアウトを「外部処理の終了」とみなさない。**
 「待ちきれないから強行する」経路も作らない。破壊的操作はやり直せるが、
@@ -1727,6 +1868,173 @@ Add Activity（`app/record.tsx`）と同じネイティブ date/time picker が�
 
 ---
 
+## D-51 `health_sync` に `sync_state`（synced/uncertain/declined）を追加し、discard 後の追跡漏れを解消する
+
+（Phase 4 の Settings UI（手動再試行/破棄）実装に着手する前に、`services/
+syncJobPlanner.ts` の `planForEdit` と `repositories/HealthSyncJobRepository.ts` の
+`discardJob` の両方が「Phase 4 の設計判断として保留」としていた同じ欠落を解消する。
+以下の「決定」は2回のレビューを経た最終形——`planForEdit` の `uncertain` の扱いと
+`discardSyncJob` の判定式の2点は、実装後のレビューで実際にデータが孤児化する
+再現が取れ、訂正した。経緯は各該当箇所に残している）
+
+**背景**
+
+§9.3/§10.1 の判定表は「mapping の有無」を2値（あり/なし）として扱っていたが、
+実際には「あり」に見える状態が2種類の異なる過去を持ちうる：
+
+- 本当に確定同期した（`SyncWorker` の finalize が成功した、§9.5.1）
+- `attempts > 0` のジョブを利用者が「破棄」した——外部に届いたかもしれないが確認できない
+
+同様に「なし」に見える状態にも2種類ある：
+
+- この provider に一度も同期対象になったことがない
+- `attempts = 0` のジョブを利用者が「破棄」した——D-35 の明示的な「同期しない」選択
+
+この4状態を2値に潰していたため、次の2つの追跡漏れが起きていた。
+
+1. `attempts > 0` の create/update/recreate ジョブを破棄すると mapping も無いまま
+   になり、後で Activity を削除しても `planForDelete(null, false)` が「何もしない」
+   （§10.1 順6）と判定し、外部に残っているかもしれないレコードの防御的削除が
+   行われない。
+2. D-35 で明示的に「同期しない」を選んだ record と、単にこの provider に一度も
+   同期対象になったことがない record を区別できず、`planForEdit` は両方を
+   「no backfill-on-edit」として扱うほかなかった。
+
+**決定**
+
+`health_sync` に `sync_state TEXT NOT NULL DEFAULT 'synced' CHECK (sync_state IN
+('synced','uncertain','declined'))` を追加する（v1 はまだ未リリースのため、D-11
+の「一度リリースしたら ALTER TABLE のみ」はまだ適用されず、`SCHEMA_V1_STATEMENTS`
+を直接編集した）。あわせて `last_synced_at` を nullable にする——`uncertain`/
+`declined` の行は「確認できた同期時刻」を持たない。
+
+`services/syncJobPlanner.ts` の判定は、mapping の有無（boolean）ではなく
+`MappingState = 'none' | 'synced' | 'uncertain' | 'declined'`（`'none'` は
+行が無い状態）を受け取るように変更する。
+
+| mappingState | `planForEdit`（no job） | `planForDelete`（no job、§10.1 順5/6） | create ジョブの§10.1 順1/2 |
+|---|---|---|---|
+| `synced` | insert update | insert delete | 順2（touch possible 側） |
+| `uncertain` | **noop**（下記「レビューで訂正」参照） | insert delete | 順2（touch possible 側） |
+| `declined` | noop | noop | 順1 相当（touch not possible 側） |
+| `none` | noop | noop | 順1 相当（touch not possible 側） |
+
+`planForDelete` では `uncertain` は `synced` と同じ側（外部に届いた可能性が
+ある）に、`declined` は `none` と同じ側（届いていないと確定している）に倒す
+——これは「物理的に外部にレコードが残っているかもしれないか」という状態の
+問いであり、discard によって解消される話ではない。
+
+**`planForEdit` は `uncertain` を `synced` ではなく `declined` 側（noop）に
+倒す（レビューで訂正）。** 当初「discard は『もう待たない』という意思表示で
+あって『二度と同期しない』という意思表示ではない」という理由で `synced` 側
+（編集で再同期を試みる）に倒していたが、これは誤りだった。`uncertain` と
+`declined` はどちらも `discardSyncJob` からしか設定されず、**入口は
+D-35 の同じ確認文（「この記録を Health Connect へ同期しない」）ひとつだけ**
+——利用者からは `attempts`（ワーカーがそのジョブを一度でも試行していたか）
+は不可視で、同じボタンを同じ文言の上で押した2人が、この見えない内部事情
+だけで異なる将来挙動（片方は編集で自動的に同期が復活し、もう片方はしない）
+になってしまう。D-35 の理由（「黙って破棄すると、利用者はローカルと HC が
+一致していると誤解する」）の鏡像にあたる問題であり、確認文の約束を守るには
+`uncertain` も `declined` と同じく「編集だけでは復活しない」でなければ
+ならない。v1 は「破棄を取り消す」手段自体を用意しないため、これは方針と
+整合する。
+
+**`planForEdit` と `planForDelete` はこの点で非対称になる**——前者は
+「アクティブな同期を再開してよいか」という**利用者の意図**の問い、後者は
+「防御的な削除が必要かもしれないか」という**物理的な状態**の問いで、
+discard は後者を全く解消しない。`services/syncJobPlanner.ts` の
+`mappingImpliesExternalTouch(mappingState)` として、後者の判定だけを
+`planForDelete` と `discardSyncJob`（後述）の両方から共有する形で export
+した（D-21「表の複製を避ける」）。
+
+**この判定を書き込む2箇所**
+
+1. `HealthSyncRepository.upsertMapping`（`SyncWorker` の finalize 成功時）は
+   常に `sync_state = 'synced'` を明示的に書く——`ON CONFLICT ... DO UPDATE SET`
+   に含め忘れると、`uncertain` だった行が実際に同期成功しても `uncertain` の
+   まま残ってしまう（実装前のレビューで指摘され、修正した）。
+2. `services/HealthSyncManualActions.discardSyncJob`（新設、Settings「破棄」の
+   実体）は、`HealthSyncJobRepository.discardJob`（ジョブ削除のみ）と
+   `HealthSyncRepository.upsertDeclinedOrUncertainMapping`（新設）を1トランザ
+   クションで束ね、`uncertain`/`declined` を決める。
+
+   **判定は破棄するジョブ自身の `attempts` だけでは決められない（レビューで
+   実際に再現された不具合）。** `update`/`recreate` ジョブは `planForEdit` が
+   `mappingState === 'synced'` のときにしか作らない——つまり `update` ジョブの
+   存在自体が「既に確認済みの mapping がある」ことを含意する。その `update`
+   が一度も試行されない（`attempts === 0`）まま破棄されても、それ以前の
+   `create`/`recreate` が既に外部へ到達している可能性は消えない。`attempts
+   === 0` だけで `declined` にすると、確実に存在するかもしれない外部
+   レコードの `external_record_id` を保持したまま `sync_state` だけ
+   `declined` にしてしまい（`upsertDeclinedOrUncertainMapping` は
+   `external_record_id` を上書きしないため矛盾した行になる）、`planForDelete`
+   から見えなくなる（§10.1 順6 に落ち、防御的 delete が一切積まれない）。
+   したがって判定は「このジョブの `attempts` **または** discard 直前の
+   mapping が `mappingImpliesExternalTouch` だったか」の OR で行う。
+
+   D-39 のガード（`discardJob` は claim 済みジョブを拒否する）により、この
+   時点で `claimed_at` は必ず `NULL`——`planForDelete` の一般形
+   `externalTouchPossible = attempts > 0 || claimedAt !== null || ...` の
+   うち `claimedAt` 項だけは省略してよい（`attempts` 項と mapping 項は省略
+   できない）。`delete`/内部不整合（§9.5.3）ジョブの破棄は Activity が既に
+   存在しないため（FK RESTRICT）、`health_sync` には触れない。
+
+**`upsertDeclinedOrUncertainMapping` は `external_record_id`/`last_synced_at`
+を上書きしない**——`sync_state` だけを変更する。既に `synced` だった mapping が
+`uncertain` に落ちても、`external_record_id`（HealthKit では将来の防御的削除に
+必要になりうる、§5.4）と `last_synced_at`（「最後に確認できた同期時刻」という
+事実）は失わない。新規行（今まで一度も mapping が無かった場合）は両方 `NULL`
+のまま——保存すべき値がまだ無い。**この保持は上記 `discardSyncJob` の修正後は
+必須になる**——`declined` から `uncertain` へ判定し直すケースで、保持されて
+いた `external_record_id` がそのまま delete ジョブへ引き継がれる
+（`ActivityService.deleteActivity` の `mapping?.externalRecordId` 経由）。
+
+**理由**
+
+- discard 確認文（D-35）を変更せずに済む——`uncertain`/`declined` どちらも
+  「今の内容が一致しなくなる可能性がある」という同じ文言で正しく、後続の
+  delete が取る挙動（防御的削除の有無）だけが内部で変わる。
+- `services/syncJobPlanner.ts`/`HealthSyncJobRepository.discardJob` の両方が
+  同じ欠落を「Phase 4 の設計判断として保留」としていた——doc comment を
+  実装のたびに書き直さず、ここで一度に解消する。
+
+**却下した案**
+
+- discard 時に `health_sync_jobs` へ `not_before = NULL` のまま残す案（ジョブを
+  消さない）——D-35 の「破棄」の意味（もう自動再試行しない）と矛盾する上、
+  Settings の「未同期の変更」一覧に消えないジョブとして残り続け、D-35 が避けた
+  かった「解決済みに見えるが実は違う」状態の逆（未解決に見えるが実は解決済み）
+  を作ってしまう。
+- `uncertain` を `synced` と同じ側（`planForEdit` で編集のたびに再同期を
+  試みる）にする案——実装したが、レビューで「discard 確認文の約束と実挙動が
+  食い違う」ことが指摘され、上記の通り `declined` 側（noop）に訂正した。
+- `discardSyncJob` の判定をこのジョブ自身の `attempts` だけにする案——実装
+  したが、レビューで「`update`/`recreate` ジョブは常に `synced`/`uncertain`
+  な mapping の存在を前提にしているため、このジョブの `attempts` だけでは
+  『外部に到達していない』ことを証明できない」ことが指摘され、既存 mapping
+  の状態も見る形に訂正した。
+
+**受け入れる制約**
+
+`health_sync` は Export に含まれない（D-42、Export の対象は `activities` と
+allowlist された settings のみ）。したがって置換復元（D-10/§13.3）を実行すると
+`uncertain`/`declined` は失われ、復元後は「一度も同期対象になっていない」
+（`none`）に戻る——D-10 の既存の設計（mapping は置換復元で作り直さない）と
+整合的なので、意識して受け入れる。
+
+**副次的に確認された事項**
+
+`uncertain` の discard→delete 経路は、`external_record_id = NULL` のまま
+Health Connect へ delete を投げる（health_connect は clientRecordId でアドレ
+ッシングするため、§5.4）——「存在しない clientRecordId に対する delete」が
+通常運用で発生する経路になる。これは D-20 の Android 9〜13 実機検証項目
+（README「Phase 4」Known gaps）がカバーすべき対象そのものである。
+
+**2026-09-21 追記：この実機検証は完了した。** Pixel 3（Android 12）で
+reject されることを確認済み——詳細は D-20 の「確認結果」参照。
+
+---
+
 ## 実装着手の前提条件
 
 以下が確定するまで DB を触るコードを書かない。すべて DB ファイル形式かドライバ選定を決めるため。
@@ -1747,13 +2055,21 @@ Add Activity（`app/record.tsx`）と同じネイティブ date/time picker が�
 - [x] D-42 Export の型境界
 ### Health Connect ラッパーの検証（v1.0 のゲート）
 
-- [ ] **D-04 / D-19 `clientRecordId` と `clientRecordVersion` を露出しているか**
-- [ ] **D-34 `clientRecordId` を指定した削除 API を露出しているか**
-- [ ] **D-20 削除時の「存在しない」を他のエラーと識別できるか**
-- [ ] **D-41 ネイティブ呼び出しがタイムアウト後も継続するか、明示的に cancel できるか**
+- [x] **D-04 / D-19 `clientRecordId` と `clientRecordVersion` を露出しているか**
+- [x] **D-34 `clientRecordId` を指定した削除 API を露出しているか**
+- [x] **D-20 削除時の「存在しない」を成功として扱えるか**
+      （Android 14 以降はソース読解で確認・そもそもエラーにならない。Android 9〜13 は 2026-09-21 に
+      Pixel 3 実機で確認済み——reject される（`UNDERLYING_ERROR`）ため既知の制限を適用。
+      詳細は D-20 の確認結果を参照）
+- [x] **D-41 ネイティブ呼び出しがタイムアウト後も継続するか、明示的に cancel できるか**
+      （全経路で cancel 不可と確認。14以降は platform API、9〜13 は androidx の AIDL が根拠——詳細は D-41 の確認結果を参照）
 
-上3件を満たせない場合は **HC 同期の v1.0 投入を見送る**。
-4件目は見送り条件ではないが、cancel できない場合は D-41 の「in-flight のまま扱う」規則が必須になる。
+**1・2件目（D-04/D-19・D-34）を満たせない場合は HC 同期の v1.0 投入を見送る。**
+**3件目（D-20）を満たせない場合は見送りにはせず、D-20 の「識別できない場合は既知の制限として
+受け入れる」を適用する。**
+**4件目（D-41）も cancel 不可と確定した。** 見送り条件ではないため v1.0 投入は妨げないが、
+D-41 の「in-flight のまま扱う」規則の適用が必須であることが確定した（cancel をサポートする場合
+との分岐は実質的に発生しない）。
 
 ### HealthKit 実装時の確認（v1.0 のゲートではない）
 

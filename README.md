@@ -17,7 +17,24 @@ Repository → Quick Record → Undo → 履歴 → Export/Import の往復）�
 Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面・
 Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI は Android 実機（Pixel 11）で
 確認済み・iOS は未確認**（`expo run:ios` が Xcode 26.3 のコンパイラ不具合で実行できない
-ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。詳細は下記の各「実装状況」を参照。
+ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。**Phase 4**（Health Connect 同期）
+に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
+`HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
+AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
+（`app/settings/health-connect.tsx`）まで実装完了。**Settings UI の実機
+確認は完了**（下記「Phase 4 実装状況」の「実機確認（Pixel 11、
+初回/2回目/3回目）」「実機確認（Pixel 3、D-20）」参照、実機テストでのみ
+再現するタイミング依存バグを2件発見・修正済み）：ON→権限→Connected・
+記録/削除の自動同期・破棄・claim 中の行の無効化・Retry now の実際の
+再試行・delete job が残っている状態での OFF 切断警告と再接続後の再開・
+`permission-revoked` 表示・バックグラウンド/フォアグラウンド遷移・HC
+未インストール環境での ON 操作時の表示（Pixel 3、非プラットフォーム
+統合パス）。**Android 9〜13（D-20）の実機検証も完了**——存在しない
+`clientRecordId` への delete は reject され通常のリトライ・バックオフに
+乗ることを Pixel 3 実機で確認し、設計判断記録 D-20 に追記済み。§9.11 の
+リリースビルド分離・§13.6 の復元後再同期（Phase 4 の Known gap、未実装）
+は未着手。
+詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -61,11 +78,42 @@ DB を触るコードを書く前に確定が必要なもの（すべて DB フ�
 - [x] 同期ワーカーの楽観的並行制御（revision / claim）
 - [x] 同期確定処理の3分岐と `recreate` 操作
 - [x] アプリ設定の保存先（暗号化 DB 内の `app_settings`）
-- [ ] Health Connect ラッパーが `clientRecordId` と `clientRecordVersion` を露出しているか
-- [ ] 削除時の「存在しない」を他のエラーと識別できるか
+- [x] Health Connect ラッパーが `clientRecordId` と `clientRecordVersion` を露出しているか
+- [x] 削除時の「存在しない」を成功として扱えるか（Android 14 以降のみソースで確認。9〜13 は未確認のため既知の制限を適用）
+- [x] ネイティブ呼び出しの cancel/タイムアウト（§9.12）——全経路で cancel 不可と確認（14以降は platform API、9〜13 は androidx の AIDL が根拠）
 
-未確定の2件は Health Connect ラッパーの調査項目で、**満たせない場合は HC 同期の v1.0 投入を見送る**。
-DB 設計には影響しないため Phase 1 は着手できる。
+2026-09-19、`react-native-health-connect` v4.1.3 を対象にソース読解で調査（実機/エミュレータでの
+実行検証ではない）。`clientRecordId`/`clientRecordVersion`（D-04/D-19）は OS バージョンに依存せず
+確認済み。削除時の「存在しない」の識別可否（D-20）は Android 14（API 34）以降のプラットフォーム
+統合パスに限り「識別」ではなく「そもそもエラーにならない」ことを実装レベルで確認——Android 9〜13
+（Play ストア配布の別アプリ経由 IPC、非公開実装）は未検証で、この範囲は基本設計 §9.7 の
+「既知の制限として受け入れる」を適用する（ユーザー判断により追加の実機検証は現時点で行わない）。
+cancel/タイムアウト（D-41）は、ラッパーに加え、経路ごとの根拠（Android 14 以降は AOSP platform
+の `HealthConnectManager`、9〜13 は `androidx.health.connect` の AIDL）のいずれにも cancel を
+伝える手段（`CancellationSignal` 等）が存在しないことをソースレベルで確認し、cancel 不可と
+確定した。**したがって JS 側がタイムアウトで
+待つのをやめても、ネイティブの insert/delete は止められず継続する**（Health Connect 側・OS 側
+独自のタイムアウトの有無は未調査）。Android 14 以降は platform API 自体に cancel の契約が無いこと、
+Android 9〜13 は androidx の AIDL インターフェースに cancel を渡す手段が無いことが根拠で、
+2経路は根拠が別物のため一方が変わっても他方の結論は自動的には変わらない。
+詳細は基本設計 §9.4/§9.7/§9.12・設計判断記録 D-04/D-20/D-41 の「確認結果」参照。
+DB 設計には影響しないため Phase 1 は着手できる。**チェックは「v1.0 投入を妨げる要因なし」の意味であり、
+全 OS バージョンでの実機検証完了を意味しない。**
+Phase 4 に向けて残っている確認事項（見送り条件ではない）は、上記の Android 9〜13 の削除挙動の実機検証のみ
+（**2026-09-21 に実施済み——下記追記および「実機確認（Pixel 3、D-20）」参照**）。
+**Pixel 3（最終公式 OS が Android 12。Health Connect は Android 13 以下では Play ストア配布の別アプリの
+ため、未確認の非プラットフォーム統合パス＝`HealthConnectClientImpl` 経由の AIDL 呼び出しをそのまま
+実機で踏める）が検証機として使える**（2026-09-19 確認）。`HealthConnectService` 実装時（Phase 4）に
+insert/delete を実機で通す一環として、存在しない `clientRecordId` の delete を1ケース追加する形で
+まとめて検証する（今は着手しない）。検証時は HC アプリのバージョン・端末の OS バージョン・Google Play
+システムアップデートの日付を記録すること（結果は検証時点の HC アプリ実装に依存するため）。
+Pixel 3 が手元にない場合は、Play ストア入りの Android 12〜13 エミュレータでも同じ経路を通せる。
+
+**2026-09-21 追記：上記の Android 9〜13 実機検証は Phase 4 で実施済み。**
+Pixel 3（Android 12）・Health Connect v2026.08.06.00 で、存在しない
+`clientRecordId` への delete が reject されることを確認した。詳細は
+下記「Phase 4 実装状況」の「実機確認（Pixel 3、D-20）」・設計判断記録
+D-20 参照。
 
 ## Phase 1 実装状況
 
@@ -1874,6 +1922,9 @@ Pixel 11（API 34+、arm64-v8a）で確認。`fix/screen-mask-android14-register
 Partnered の通常記録、いずれも問題なし。iOS は上記「iOS ローカルビルドがブロック中」
 （CLAUDE.md 参照、Xcode 26.3 の Swift/C++ コンパイラ不具合）のため未確認のまま。
 
+Activity Detail の DATE & TIME 編集は、Pixel 11 で日付変更 → Save → force-stop →
+再起動後も永続化されることを確認済み（2026-09-21）。
+
 #### Known gaps
 
 - **iOS の実機/シミュレータでの動作確認が未実施**：CLAUDE.md 参照（Xcode 26.3 の
@@ -2060,3 +2111,854 @@ iOS の動作を保証しない。
   `AppearanceProvider` は DB 接続確立後にしかマウントできないため、DB 接続前の
   画面はこの override を原理的に見られない（OS の配色のみに従う）。ユーザーから
   見れば見た目が完全には統一されないが、許容する仕様として扱う
+
+## Phase 4 実装状況
+
+基本設計 §18 の順序（clientRecordId/clientRecordVersion 確認 → 同期 → リトライ →
+削除同期 → Health apps declaration 提出 → ストア申請）に従って着手。
+`phase4/health-connect-foundation` ブランチ。
+
+### ステップ1: react-native-health-connect 導入 + expo prebuild（完了）
+
+- `react-native-health-connect@4.1.3` を追加。design doc（設計判断記録
+  D-04/D-19/D-41、基本設計 §9.4）でソース読解済みのバージョンと完全一致
+  （`connect-client:1.1.0` 固定依存も一致）——再検証は不要
+- `app.json` の `android.permissions` に
+  `android.permission.health.WRITE_SEXUAL_ACTIVITY` のみ追加。**READ 権限は
+  追加していない**（D-20/§9.7：削除の存在確認のために READ 権限を追加する
+  経路は採らない、D-12：審査面積を自分から増やさない）
+- `expo-build-properties` で `minSdkVersion` を 24→26 に変更。Health Connect
+  自体が API 26（Android 8.0）未満を対応外としているため必須の変更——
+  Health Connect 機能に限らず**アプリ全体の対応 OS 範囲が変わる**（Android
+  7.0/7.1 端末が対象外になる）。v1 はまだリリース前のため、この時点で対応を
+  絞ることに実害はないと判断した
+- [plugins/withHealthConnectPermissionsRationale.js](plugins/withHealthConnectPermissionsRationale.js)
+  を新規作成。Health Connect の permission 画面から起動される rationale
+  Activity（Android 13-: intent-filter 直接 / Android 14+:
+  `ViewPermissionUsageActivity` activity-alias 経由）を追加する。
+  **`react-native-health-connect` の README サンプルは alias の
+  `targetActivity` を `.MainActivity` としているが、Android 公式ドキュメント
+  （developer.android.com の Health Connect get-started）を直接確認したところ
+  `.PermissionsRationaleActivity` を指すのが正しい実装だったため、公式に
+  合わせた**（MainActivity に同じ intent-filter を重複させると解決が曖昧に
+  なる）
+- rationale 画面の内容は「Play Console に登録するプライバシーポリシーと
+  同一でなければならない」（Android 公式ドキュメント）が、ホスト済みの
+  プライバシーポリシーページはまだ存在しない（ストア申請は本 Phase の
+  最終ステップ）。暫定的にアプリ内蔵の静的テキスト（WebView で外部 URL を
+  読み込まない）で実装した。**実際のプライバシーポリシーを公開する際は、
+  この画面の文言をそのポリシーと一致させること**
+- MainActivity への手動編集は不要（permission delegate の登録は
+  `react-native-health-connect` 同梱の Expo Module が
+  `ReactActivityHandler` 経由で自動的に行う。ソースを確認し、MainActivity.kt
+  に編集が入っていないことを確認済み）
+- `expo prebuild -p android --clean` → `cd android && ./gradlew
+  assembleDebug` で実機なしのビルド成功を確認済み（BUILD SUCCESSFUL）
+
+### ステップ2: HealthConnectService.ts・SyncWorker.ts（完了）
+
+- [services/HealthConnectService.ts](services/HealthConnectService.ts)：
+  `react-native-health-connect` への唯一の入口。`upsertActivity`
+  （create/update 合流、§9.2/§9.4）・`deleteActivityRecord`・
+  `recreateActivity`（§9.3.1、delete 失敗時は insert しない）を提供。
+  送るのは `time` と `protectionUsed` のみ（§9.9）、addressing は
+  `clientRecordId`（= activity.id）/`clientRecordVersion`（=
+  activity.syncVersion）で行い `external_record_id` は health_connect では
+  常に null（§5.4）。cancel 不可（D-41 確認済み）のため意図的に
+  `Promise.race()` によるタイムアウトを実装していない——タイムアウトの
+  判断は SyncCoordinator（次ステップ）の責務
+- エラー分類は `node_modules/.../ExceptionsUtils.kt` の code 文字列一覧を
+  ソースで確認して実装（推測なし）。`NOT_FOUND`/`RATE_LIMITED` に対応する
+  code は存在しないため、削除の「存在しない」は特別扱いせず
+  resolve=成功・reject=失敗の単一処理のみ（§9.7 確認結果通り）
+- [services/SyncWorker.ts](services/SyncWorker.ts)：§9.5 の claim/finalize
+  ループ（`processNextDueJob`）と、due なジョブを無くなるまで処理する
+  `drainDueJobs`。§9.5.1（外部の成功とジョブの完了を分ける）・§9.5.3
+  （内部不整合）・§9.6（バックオフ・上限到達で手動待ち）・§9.7（削除の
+  単純化された確定処理）を実装。**AppState 監視・定期実行・破壊的操作との
+  排他（§9.12）は含まない**——`lib/screenMask.ts` と同じく、純粋なループ本体と
+  「いつ呼ぶか」の配線を分離した（配線は次の SyncCoordinator ステップで行う）
+- 内部不整合（§9.5.3/§9.5.4）を検出した場合、**開発ビルドでも例外は投げない**
+  よう実装した。基本設計は「開発ビルドでは assert / テスト失敗とする」と
+  書いているが、文字通り実行時に throw すると `drainDueJobs` のループ全体が
+  止まり、他の due なジョブまで巻き添えで処理できなくなる（Rule 2 と矛盾）。
+  「テスト失敗とする」は自動テストがこの分岐を検出する形で満たし
+  （`test/__tests__/syncWorker.integration.test.ts`）、実行時は `logError`
+  （Activity の内容を含まない、§8.7）でジョブを進行不能マークするに留めた
+- テスト：`services/__tests__/HealthConnectService.test.ts`（`react-native-
+  health-connect` をモック化した単体テスト、エラー分類・値変換・recreate の
+  2段階を検証）、`test/__tests__/syncWorker.integration.test.ts`
+  （`HealthConnectService` をモック化し実 SQLite に対して claim/finalize の
+  状態遷移を検証）
+- `package.json` の `jest.collectCoverageFrom` から2ファイルの除外エントリを
+  削除（実装・テストとも揃ったため）
+
+#### レビューで見つかり、修正したもの（1回目）
+
+- **🔴 送信中に Activity を編集すると、その編集が Health Connect へ永久に
+  送られないバグ**：`finalizeUpsertSuccess` は `deleteJobIfRevisionMatches`
+  だけでジョブ完了を判定していたが、`planForEdit`（Phase 1）は既存ジョブの
+  `revision` に触れない設計（§9.3、ワーカーが送信時に最新値を読む前提）
+  のため、外部呼び出し中に挟まった編集を revision では検出できず、
+  ジョブが削除されて編集が失われていた（§9.5.1「create送信中に編集→
+  ジョブは残り、大きいsync_versionで送り直す」に違反）。修正当時のテストは
+  この誤った挙動をそのまま期待値として固定していた。
+  `HealthSyncJobRepository.releaseClaimForResend` を新設し、送信した
+  `syncVersion` と再読込した現在値を比較、異なればジョブを削除せず claim
+  だけ解放して再送させるよう修正。該当テストの期待値も修正し、実際に
+  再送されることまで検証するテストを追加した
+- **🟠 permission rationale の intent-filter が MainActivity と
+  独自 Activity の両方に登録されていた**：`app.json` に併記していた
+  ライブラリ同梱の config plugin（`"react-native-health-connect"`）が
+  `.MainActivity` 自身にも同じ `ACTION_SHOW_PERMISSIONS_RATIONALE`
+  intent-filter を追加していたため、Android 13 以前で解決が曖昧になって
+  いた。ライブラリの plugin 自体を `app.json` から外し（permission delegate
+  の自動登録は Expo Modules autolinking 経由で別物のため影響なし）、
+  マニフェストへの追記を自作 plugin だけに一本化。生成済みマニフェストで
+  重複が消えたことを確認済み
+- **🟠 rationale 画面がダークモードで読めない**：`setTextColor(Color.BLACK)`
+  を固定していたが、Activity の theme（`Theme.AppCompat.DayNight`）は
+  window 背景をダークにするため黒文字が埋もれる。`theme.resolveAttribute
+  (android.R.attr.textColorPrimary, ...)` でテーマに追従する色を都度解決
+  するよう修正
+- **🟡 コメントの不整合**：存在しないファイル名
+  （`withHealthConnectPermissionsRationaleActivity.kt.js`）を参照していた
+  記述を削除
+- **🟡 `lost-claim-race` が実際には返らず、claim 競合で drain が早期終了する
+  可能性**：`claimNextDueJob` は「due なジョブが無い」と「claim 競合に
+  負けた」をどちらも `null` で返していたため区別できなかった。
+  `LOST_CLAIM_RACE` という区別可能な戻り値を追加し、`drainDueJobs` が
+  競合時に諦めず次の due なジョブへ進めるようにした（v1 は単一 runtime
+  なので現状は起きないが、`SyncCoordinator` 実装後に備えた）
+- **🟡 Activity が存在する側の §9.5.4（確定時にジョブが消えている）を
+  検出していなかった**：`deleteJobIfRevisionMatches`/`releaseClaimForResend`
+  の戻り値（成否）を確認せず握り潰していた箇所に、失敗時の `logError` を
+  追加
+- **🟡 `ensureInitialized()` が reject した場合に `drainDueJobs` 自体が
+  reject していた**：try/catch で包み、`processedCount: 0` を返すよう修正
+- **🟡 依存バージョンの指定**：`react-native-health-connect` を
+  `^4.1.3` → `4.1.3`（D-04/D-41 はこの正確なバージョンをソース読解した
+  結果であり、`^` だと未検証のマイナー更新が入りうるため）、
+  `expo-build-properties` を `^57.0.21` → `~57.0.21`（他の expo-* パッケージ
+  と同じ規約に合わせた）
+- **🟡 自動リトライ上限の境界**（`attempts >= 10` vs `> 10`）：仕様の文言
+  「上限（10）を超えた」は字面上どちらにも読めるため、「自動試行は10回
+  まで」という解釈を採用した理由をコードコメントに明記するに留めた
+  （挙動は変更なし）
+
+新たに追加した `HealthSyncJobRepository.releaseClaimForResend`・
+`LOST_CLAIM_RACE` の判定は `test/__tests__/healthSyncJobRepository.
+integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
+`test/__tests__/syncWorker.integration.test.ts` に追加。全20スイート・
+284件パス、`assembleDebug` でビルド成功も再確認済み
+
+### ステップ3: SyncCoordinator（完了。AppState 配線は次のステップへ持ち越し）
+
+- [services/SyncCoordinator.ts](services/SyncCoordinator.ts)：§9.12 の
+  mutex。`isSuspended()`・`trackExternalCall()`・`runExclusive()` を、
+  クラスではなくこのプロジェクトの他モジュールと同じ「関数 + モジュール
+  状態」のスタイルで実装。**`suspend`/`resume` は export しない**——
+  破壊的操作は必ず `runExclusive` 経由（呼び忘れ・例外パスでの
+  すり抜けを構造的に防ぐ。2回目のレビュー指摘、テストからは
+  `__testHooks` 経由でのみアクセス）
+- **cancel 不可（D-41 確認済み）を前提に、`runExclusive`/`trackExternalCall`
+  はタイムアウトで打ち切れない単純な await として実装**。§9.12 が定義する
+  「タイムアウトは UI の待機を打ち切るためだけに使う／外部 Promise が未
+  settle の間は呼び出し側が諦めても裏で待ち続け、実際に settle してから
+  通常状態へ戻す」という挙動は、現時点でこれを呼ぶどの呼び出し元にも
+  「実行中に待機を打ち切れる」UI が無い（`app/settings/data.tsx` の
+  busy 状態にキャンセルボタンが無いことを確認済み）ため未実装——意図的な
+  Known gap として `SyncCoordinator.ts` に明記した
+- `runExclusive` は内部の FIFO キューで直列化する（2回目のレビュー指摘・
+  下記参照）。**このキューは同一呼び出しスタック内でのネストには対応
+  できない**（デッドロックする）ため、ネストしないことは呼び出し側の
+  責務——`ImportService.performReplaceImport` が Coordinator を一切
+  意識しないのはこのため（後述）
+- `services/SyncWorker.ts` の `processNextDueJob` を、`isSuspended()` の
+  確認から `SyncCoordinator.trackExternalCall` へ同期的に入るところまでの
+  間に await を挟まない形に整理。**claim（`claimNextDueJob`）自体も
+  `trackExternalCall` の内側に含める**——外部呼び出し以降だけを追跡対象に
+  すると、claim の awaited UPDATE が破壊的操作のトランザクションに巻き
+  込まれ、破壊的操作が ROLLBACK した場合に claim だけが取り消されずに
+  永久に残ってしまう（2回目のレビュー指摘。stale claim を消すのは起動時の
+  `clearAllClaims` だけなので、次回起動まで残り続けるバグになりえた）。
+  「一度 claim したジョブは必ず確定まで進む」という単純な性質になり、
+  対称的な「suspended なら claim を差し戻す」経路（当初あった
+  `releaseClaimForResend` によるロールバック的な分岐）自体が不要になった
+- **`SyncCoordinator.trackExternalCall` はネイティブ呼び出し・finalize の
+  DB 書き込み・claim のすべてを含めて包む**よう実装した。最初はネイティブ
+  呼び出しだけを包んでいたが、finalize の `db.transaction` と破壊的操作の
+  `db.transaction` が同じ接続上でほぼ同時に始まりうることが integration
+  test で「cannot start a transaction within a transaction」として顕在化
+  し、範囲を広げて修正した
+- `inFlightExternalCall` は単一スロットではなく `Set` で保持し、`suspend`
+  は現在 in-flight の**すべて**の完了を待つ（2回目のレビュー指摘。今は
+  単一ループなので同時に1つしか無いが、次の AppState 配線で複数トリガに
+  なると現実的に到達する）
+- 連続 `lost-claim-race`（前ステップで新設）に上限（5回）を設け、
+  `drainDueJobs` が無進捗のまま回り続けることを防いだ
+- `DrainResult` に `stoppedReason`（`'drained' | 'suspended' |
+  'provider-disabled' | 'provider-unavailable' | 'lost-race-limit'`）を
+  追加——AppState 配線側が「resume 後に再 drain すべきか」を判断できる
+  ようにした（2回目のレビュー指摘）
+- `services/ImportService.performReplaceImport`（§13.3 置換復元）は
+  **Coordinator を一切意識しない**（純粋な DB 操作。`performAppendImport`
+  と同じ扱いに戻した）。`SyncCoordinator.runExclusive` で包むのは
+  **呼び出し側**——`app/settings/data.tsx` の `handleConfirmReplace`
+  （アプリ本体の生きた DB に対して呼ぶ、§9.12 の対象操作のうち実際に
+  SyncWorker と競合しうる唯一の既存呼び出し元）。当初は
+  `performReplaceImport` 自身に `runExclusive` を仕込んでいたが、
+  `services/RecoveryService.restoreFromBackup`（§8.8）が同じ関数を
+  **一時 DB**（`tempDb`、アプリ本体の接続とは別物）に対して呼んでおり、
+  Coordinator はプロセス全体のグローバル状態のため、無関係な一時 DB への
+  操作がグローバルな mutex 状態を動かしてしまっていた（2回目のレビュー
+  指摘。直列化キューの追加と組み合わさると自己デッドロックの経路にも
+  なりえた）。DB Migration（`database/migrations/index.ts`）と Recovery
+  は、いずれも「生きた DB 接続」が存在する前に／存在しない状態でのみ
+  実行される——SyncWorker が動きようがない区間なので、意図的に
+  `runExclusive` で包んでいない。この前提の詳細は `SyncCoordinator.ts`
+  のコメント参照
+- テスト：`services/__tests__/SyncCoordinator.test.ts`（DB 非依存の
+  mutex 単体テスト。直列化・複数 in-flight 呼び出しの追跡を含め、
+  §17.3 I12/I13/I20 を明示的に参照）、
+  `test/__tests__/syncCoordinator.integration.test.ts`（実 SQLite +
+  実際の `performReplaceImport`（呼び出し側で `runExclusive` に包む形）+
+  モック化した `HealthConnectService` で end-to-end 検証。上記のネストした
+  トランザクションのバグはこのテストで発見・修正した）、
+  `test/__tests__/syncWorker.integration.test.ts` に claim 自体が保護
+  されていることの検証を含む Coordinator 統合テストを追加。全22スイート・
+  307件パス
+
+#### レビューで見つかり、修正したもの（3回目）
+
+- **🟠 `runExclusive` が `isSuspended()` を同期的に立てていなかった**：
+  直列化キュー（2回目のレビューで追加）は `exclusiveQueue.then(...)` の
+  中で `suspended = true` を設定していたため、`runExclusive()` を呼んだ
+  直後の数 microtask は `isSuspended()` が false のままになる窓があった。
+  `__testHooks.suspend()` を直接呼ぶ単体テストはこの性質を守っている
+  ように見えていたが、**production の唯一の入口である `runExclusive`
+  自身はこの性質を持っていなかった**——テストが緑でも不変条件が
+  守られていない状態だった。`suspendingCount`（カウンタ）を
+  `runExclusive` の**先頭で同期的に**加算し `finally` で同期的に減算する
+  形に変更し、`isSuspended()` が「呼ばれてから完全に終わるまで」一貫して
+  true になるよう修正した。修正の効果を実際に検証するテスト
+  （`runExclusive()` を呼んだ直後、await を一切挟まずに `isSuspended()`
+  を確認する）を追加した
+- **🟡 タイムアウト未実装との相互作用**：直列化キューの追加により、
+  ネイティブ呼び出しが永久に settle しない場合の影響範囲が「その破壊的
+  操作1件がハング」から「以降のすべての `runExclusive` 呼び出しが実行
+  不能」に広がっていた。`SyncCoordinator.ts` の「実装していないもの」
+  節にこの影響範囲の変化を明記した
+- **🟢 命名の見直し**：`trackExternalCall`/`waitForInFlightExternalCalls`
+  は実態（claim〜finalize の1サイクル全体）と合わなくなっていたため
+  `trackSyncCycle`/`waitForInFlightSyncCycles` に改名した
+- （検討したが見送ったもの）`performReplaceImport` を生きた DB 用/一時 DB
+  用の2関数に型レベルで分割する案：現状は呼び出し元が1箇所ずつしかなく、
+  doc コメントで明示済みのため、API 表面を増やすコストに見合わないと
+  判断した。§10.6 全Activity削除等、新しい破壊的操作を追加する際にこの
+  判断が今も妥当か再検討すること
+
+### ステップ4: AppState 配線（実装完了。実機確認は未実施）
+
+- [contexts/SyncWorkerLoop.tsx](contexts/SyncWorkerLoop.tsx)：「いつ
+  `drainDueJobs` を呼ぶか」（§9.5.4 の AppState 表：`active`→開始・
+  再開、`inactive`/`background`→新規 claim 停止・実行中の呼び出しは
+  確定処理まで進める、次の`active`→再開）を配線する `useSyncWorkerLoop`
+  hook。`lib/screenMask.ts` の `useScreenMask`（純粋な遷移判定関数 +
+  AppState 配線の分離）と同じ構造で、純粋関数
+  `shouldTriggerDrainOnAppStateChange` を切り出した
+- `services/SyncWorker.ts` の `drainDueJobs` に `shouldContinue` オプションを
+  追加し、`DrainStoppedReason` に `'backgrounded'` を追加——このファイルは
+  「いつ呼ぶか」を知らないという既存の設計方針は変えず、「継続してよいか」を
+  呼び出し側から注入する形にした
+- 周期的な再チェック（10秒間隔）を実装した。§9.5.4 はフォアグラウンド中に
+  `not_before` が経過したジョブ（5秒の Undo 遅延等）をいつ拾うかを規定して
+  いない——仕様上の根拠は無いので調整可能な値として扱っている
+- `DataRevision`（記録・編集・削除のたびに bump される既存の仕組み）の
+  変化でも drain を試みる。マウント時の重複呼び出しを避けるため、
+  revision 監視の effect は初回マウント時だけスキップする
+- **`SyncCoordinator.runExclusive` は呼ばない**——`drainDueJobs` が内部で
+  `isSuspended()` を確認するだけで新規 claim は自然に止まる。将来
+  Settings UI から同様の drain 処理を `runExclusive` の内側から呼ぶと
+  デッドロックしうる（§9.12「直列化」節）ため、その旨をファイル冒頭に
+  明記した
+- `app/_layout.tsx` の `AppShell`（`DatabaseProvider`/`DataRevisionProvider`
+  の内側）で呼び出す。表示は無い（副作用のみの hook）
+- テスト：`contexts/__tests__/SyncWorkerLoop.test.tsx`
+  （`lib/__tests__/screenMask.test.ts` と同じ react-test-renderer による
+  検証）、`test/__tests__/syncWorkerLoop.concurrency.integration.test.ts`
+  （実 SQLite での多重 drain 再現）。全24スイート・324件パス
+- **実機/エミュレータでの動作確認は未実施**——この時点で接続された
+  Android 実機/エミュレータが無かったため。ネイティブファイルは変更して
+  いないためビルド自体は不要だが、起動・バックグラウンド/フォアグラウンド
+  遷移でクラッシュや無限ループが無いことは実機側の確認が必要
+
+#### レビューで見つかり、修正したもの
+
+- **🔴 drain の多重実行ガードが無く、`db.transaction` が衝突する**：
+  `drain()` はトリガ4つ（マウント時・AppState→foreground復帰・周期実行・
+  DataRevision bump）に対して fire-and-forget だった。ネイティブ呼び出しが
+  周期間隔（10秒）を超えて続くと（低速端末・コールドスタート・D-41の
+  「cancel もタイムアウトも無い」性質から現実的にありうる）、次の周期
+  tick が2本目の `drainDueJobs` を起動し、2本がそれぞれ別のジョブを
+  claim して両方が finalize の `db.transaction` に到達し「cannot start a
+  transaction within a transaction」で衝突することを、レビュー側が実機
+  相当の再現で確認・報告。`drainingRef`/`rerunRef` で「実行中なら、完了後に
+  もう一度だけ実行する」形に直列化し、取りこぼしも防いだ。さらに
+  `services/SyncWorker.ts` の `processNextDueJob` に1サイクル単位の
+  try/catch を追加——多重実行ガードを入れても finalize が何らかの理由で
+  例外を投げれば claim が残る性質自体は残るため、失敗時は
+  `markJobFailed` 相当（§9.6 の通常のバックオフ経路）でジョブを解放し、
+  drain ループ全体を道連れにしないようにした（Rule 2）。実際に
+  「cannot start a transaction within a transaction」を発生させた上で
+  ジョブが正しく回復することを確認する統合テストを追加した
+  （`test/__tests__/syncWorkerLoop.concurrency.integration.test.ts`）
+- **🟠 `AppState.currentState` が `'active'` とは限らない**：React Native
+  自身、マウント直後の `currentState` の初期値が信頼できない既知の癖が
+  ある（`null`/`'unknown'` になりうる）。`=== 'active'` で判定していると、
+  その場合に「継続してよいか」が false のまま固定され、セッション中一度も
+  バックグラウンドへ移行しなければ同期が一度も走らずに終わる。
+  `'background'`/`'inactive'` **以外**はフォアグラウンド扱いにする形へ
+  反転し（不明な状態は安全側＝動かす方に倒す）、`AppState.currentState`
+  が `null` の状態でもマウント時に drain されることを検証するテストを
+  追加した
+
+### ステップ5: 「同期しないことを選んだ」永続状態の設計判断（完了。UI は次のステップ）
+
+設計判断記録 [D-51](docs/Solo%20+%20Us_設計判断記録%20v0.11.md) 参照。
+`services/syncJobPlanner.ts`/`repositories/HealthSyncJobRepository.ts` の
+両方が「Phase 4 の設計判断として保留」としていた欠落——discard 後の
+delete が防御的cleanupを落とす、declinedとuncertainを区別できない——を解消。
+
+- `health_sync` に `sync_state`（`'synced'|'uncertain'|'declined'`）を追加、
+  `last_synced_at` を nullable に変更（`database/schema.ts` を直接編集
+  ——v1 は未リリースのため D-11 の「ALTER TABLE のみ」はまだ適用されない）
+- `services/syncJobPlanner.ts`：`planForEdit`/`planForDelete` の第2引数を
+  `mappingExists: boolean` から `MappingState`（`'none'|'synced'|
+  'uncertain'|'declined'`）に変更。`planForDelete` では `uncertain` は
+  `synced` と同じ側（防御的cleanupを積む）、`declined` は `none` と
+  同じ側（何もしない）に倒す。両者で共有する述語
+  `mappingImpliesExternalTouch` を export（D-21「表の複製を避ける」）
+- `repositories/HealthSyncRepository.ts`：`upsertMapping`（`SyncWorker`
+  finalize成功時）は常に `sync_state='synced'` を明示的に書く——
+  `ON CONFLICT DO UPDATE SET` に含め忘れると、`uncertain` だった記録が
+  実際に同期成功しても `uncertain` のまま残ってしまう不具合を実装前の
+  レビューで指摘され、修正した。新設の `upsertDeclinedOrUncertainMapping`
+  は `external_record_id`/`last_synced_at` を上書きしない（将来の防御的
+  削除・履歴として保持する価値の方が高いと判断）
+- `services/HealthSyncManualActions.ts`（新設）：Settings「破棄」の実体
+  `discardSyncJob`。ジョブ削除と `health_sync` への `uncertain`/`declined`
+  記録を1トランザクションで束ねる（`ActivityService.deleteActivity` と
+  同じ構造）
+- discard の確認文（D-35）は変更不要——`uncertain`/`declined` どちらも
+  同じ文言で正しく、後続の delete が取る挙動だけが内部で変わる
+- テスト：`services/__tests__/syncJobPlanner.test.ts`（4値の全分岐）、
+  `test/__tests__/healthSyncRepository.integration.test.ts`、
+  `test/__tests__/healthSyncManualActions.integration.test.ts`
+  （discard→delete で防御的cleanupが積まれることを含む end-to-end 検証）。
+  全26スイート・352件パス
+- **副次的な影響**：`uncertain` からの delete は `external_record_id=NULL`
+  のまま HC へ delete を投げるため、「存在しない clientRecordId への
+  delete」が通常運用で発生する経路になった。この経路がカバーすべき
+  Android 9〜13（D-20）実機検証は 2026-09-21 に実施済み——Pixel 3 で
+  reject されることを確認した（詳細は下記「実機確認（Pixel 3、D-20）」・
+  設計判断記録 D-20 参照）
+- **受け入れた制約**：`health_sync` は Export に含まれない（D-42）ため、
+  置換復元（D-10）を実行すると `uncertain`/`declined` は失われ `none` に
+  戻る——D-10 の既存設計と整合的なので意識して受け入れる
+
+#### レビューで見つかり、修正したもの
+
+- **🔴 `discardSyncJob` の判定が、破棄するジョブ自身の `attempts` だけでは
+  不十分だった**：`update`/`recreate` ジョブは `planForEdit` が
+  `mappingState === 'synced'` のときにしか作られないため、`update` ジョブの
+  存在自体が「既に確認済みの mapping がある」ことを含意する。その
+  `update` が未試行（`attempts === 0`）のまま破棄されても、それ以前の
+  `create` が既に外部へ到達している可能性は消えない——`attempts === 0`
+  だけで `declined` と判定すると、確実に存在する `external_record_id`
+  を持ったまま `sync_state` だけ `declined` になり（`
+  upsertDeclinedOrUncertainMapping` は `external_record_id` を上書きしない
+  ため）、`planForDelete` から見えなくなる（§10.1 順6 に落ち、防御的
+  delete が一切積まれない）。レビューで実際に「確定同期済み→編集→即
+  discard→ローカル削除」の手順で再現された。判定を「このジョブの
+  `attempts` **または** discard 直前の mapping が
+  `mappingImpliesExternalTouch` だったか」の OR に修正し、この手順を
+  そのまま回帰テストとして追加した
+  （`test/__tests__/healthSyncManualActions.integration.test.ts`
+  「D-51 regression」）
+- **🟠 `uncertain` を編集で再同期させると D-35 の明示的な拒否が覆る**：
+  `uncertain`/`declined` はどちらも `discardSyncJob` の同じ確認文
+  （「この記録を Health Connect へ同期しない」）からしか設定されない。
+  利用者からは判定根拠の `attempts`（ワーカーがそのジョブを試行済み
+  だったか）が不可視なため、同じ文言を確認した2人が、この見えない
+  内部事情だけで異なる将来挙動（片方は編集で同期が自動的に復活する）に
+  なってしまう——D-35 の「黙って破棄すると利用者はローカルと HC が
+  一致していると誤解する」の鏡像。`planForEdit` は `uncertain` を
+  `synced` 側ではなく `declined` 側（noop）に倒すよう修正した
+  （`planForDelete` 側は物理的な状態の問いなので `synced` 側のまま
+  ——この非対称こそが D-51 の主旨）
+
+いずれも設計判断記録 D-51 に訂正の経緯を追記済み。
+
+### ステップ6: Settings 画面の Health Connect UI（実装完了。実機確認は未実施）
+
+基本設計 §9.6（再試行/破棄の operation 別文言）・§10.4（未同期の変更の可視化）・
+§10.5（切断時の警告）・§9.12（切断は `SyncCoordinator.runExclusive` 経由）、
+UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付きフローは対象外の
+まま（`app/settings/data.tsx`/`index.tsx` で既に明示、切断時の警告が見るのは
+「未処理の delete job」の件数だけ）。
+
+- `app/settings/health-connect.tsx`（新規）：接続ステータス（Connected/Not
+  connected/未インストール）、単一の "Sync to Health Connect" トグル、
+  About synchronization、Last synced、未同期の変更一覧（`describeJobAction`
+  による operation 別の文言・確認ダイアログ、claim 中は「Syncing…」で
+  操作を無効化）
+- `services/healthSyncJobPresentation.ts`（新規）：§9.6 の破棄文言テーブルを
+  そのままコード化した純粋関数 `describeJobAction`。優先順位は
+  内部不整合（`lastErrorCode === 'LOCAL_ACTIVITY_NOT_FOUND'`）→ `delete` →
+  それ以外（create/update/recreate）
+- **UI/UX §18 モックからの意図的な逸脱**（`health-connect.tsx` の
+  doc comment に明記）：
+  1. モックは Partnered/Solo 別々のトグルを描くが、データモデルは
+     `healthConnect.enabled` という単一 boolean のみ（Phase 1 から既存）。
+     単一トグルにした
+  2. 未同期の変更一覧はモック上は日付＋Solo/Partnered バッジ付きだが、
+     `delete` ジョブ（および内部不整合で Activity が消えている行）は
+     構造的にそれができない——`health_sync_jobs` に `activities` への FK が
+     無く、delete ジョブは定義上 Activity が既に無いから存在する。
+     そうした行は `created_at`（ジョブが積まれた日時）を代わりに表示し、
+     バッジは出さない
+  3. §10.5「未処理が残っている間は Settings に件数を表示し続ける」は、
+     この画面内（Unsynced changes の見出し）でのみ満たす——`settings/
+     index.tsx` の Settings トップの行にはバッジを出さない（そのファイルは
+     現状 DB に一切アクセスしない静的な一覧のため）
+- **`healthConnect.lastSyncedAt` の配線漏れを解消**：`types/Settings.ts` に
+  型・既定値・Export除外リストまで用意されていたが、どこからも書き込まれて
+  いなかった。`services/SyncWorker.ts` の `finalizeUpsertSuccess`/
+  `finalizeDeleteSuccess`（外部呼び出し成功の確定処理）で書くようにした
+  ——`upsertMapping` と同じトランザクション内（D-32 と同じ理由：外部呼び出し
+  が成功した事実は、ジョブ行を消せるかとは無関係に記録する）
+- 切断（トグル OFF）は必ず `SyncCoordinator.runExclusive` 経由——CLAUDE.md/
+  §9.12 で名指しされている注意点。渡すコールバックは `setSetting` 一発のみで、
+  内側から drain 相当の処理を呼ばない（runExclusive のネスト禁止に抵触しない）
+- 手動再試行/破棄の成功後は `useDataRevision().bump()` を呼ぶだけ——新しい
+  drain トリガは追加していない（`SyncWorkerLoop.tsx` 側の既存の直列化
+  経路にそのまま乗る、CLAUDE.md 参照）。画面がマウントされている間は
+  読み取り専用の5秒 polling でジョブ一覧を再取得し、バックグラウンドの
+  周期 drain（10秒間隔、DataRevision を bump しない）で claim が外れた
+  行が古びて見えるのを防ぐ——`drainDueJobs` は一切呼ばないため、これも
+  「新しい drain トリガ」には当たらない
+- テスト：`services/__tests__/healthSyncJobPresentation.test.ts`（新規、
+  operation × lastErrorCode の全分岐）、`test/__tests__/syncWorker.
+  integration.test.ts` に `healthConnect.lastSyncedAt` 更新の検証を追加。
+  全27スイート・372件パス
+
+#### レビューで見つかり、修正したもの
+
+- **🔴 可用性チェックの失敗で画面全体が「何も無い」状態に倒れる（iOS では
+  常時発生）**：初版は DB 読み取り4件と `HealthConnectService.isAvailable()`
+  を同じ `Promise.all` に入れていた。`react-native-health-connect` は iOS
+  向けに「どのメソッドを呼んでも必ず throw する Proxy」を返す実装
+  （`node_modules/react-native-health-connect/lib/commonjs/index.js` の
+  `moduleProxy`）のため、iOS では `isAvailable()` が毎回 reject し、
+  `Promise.all` 全体が失敗して `enabled`/`lastSyncedAt`/`jobs` の
+  `setState` が1つも走らず、未処理ジョブが残っていても「Everything is
+  synced」に見えてしまっていた（§10.5 違反）。DB 読み取りとネイティブの
+  可用性/権限チェックを別の `try/catch` に分離し、一方の失敗が他方を
+  巻き込まないようにした（`SyncWorker.ts` の `drainDueJobs` が
+  `ensureInitialized()` の reject を個別に扱っているのと同じ形）
+- **🔴 HEALTH セクションが iOS でも表示されていた**：Health Connect は
+  Android 専用機能（§9.11）で、上記の理由によりこの画面のあらゆる操作が
+  iOS では失敗するだけだった。`app/settings/index.tsx` の HEALTH セクション
+  を `Platform.OS === 'android'` でガードした——「まだビルドされていない
+  項目はプレースホルダー行を置かない」という同ファイルの既存ルールの
+  延長
+- **🟠 切断に進行表示が無い**：§18「破壊的操作は同期の完了を待つ」に対し、
+  Switch を disabled にするだけで何も表示していなかった。`data.tsx` の
+  置換復元と同水準（スピナー＋ラベル、キャンセルボタンは無し）の busy
+  表示を追加した
+- **🟠 切断中・HC 未インストール時の Retry now が無反応**：§10.5 により
+  切断してもジョブは保持されるため、`enabled=false` かつジョブが残っている
+  状態は正常に到達する。この状態では `drainDueJobs` が provider-disabled
+  で即 return するため Retry now を押しても何も起きず、故障に見えていた。
+  `enabled=false` の間は Retry now を無効化し、一覧の見出しに理由を出す
+  ようにした（Discard は引き続き有効——§10.5 の個別打ち切り経路）
+- **🟠 権限取り消し後も「Connected」を表示し続ける**：接続ステータスが
+  `enabled`/`isAvailable()` しか見ておらず、OS 側で権限が取り消されても
+  （§9.5.4）ドットは緑のままだった。`HealthConnectService.
+  hasWritePermission()`（新設、`getGrantedPermissions()` を使う——
+  `requestWritePermission()` と違いダイアログを出さない）を追加し、
+  ステータスを `connected`/`not-connected`/`unavailable`/
+  `permission-revoked` の4値にした
+- **🟡 5秒ポーリングの設計に4つの不備**：①`enabled` を毎回 DB から
+  読み直していたため、権限ダイアログ表示中や `runExclusive` 待ちの最中に
+  先行ポーリングの古い結果が後着して一瞬巻き戻ることがあった→`enabled`
+  はこの画面自身の書き込み以外で変わらないため、起動時の一度だけ読み、
+  定期更新の対象から外した。②unmount 後の `setState` ガードが無かった→
+  `mountedRef` を追加。③`isLoadingRef` が多重実行防止のみで、実行中に
+  来た `bump()` 起因の再読込を取りこぼしていた→`SyncWorkerLoop.tsx` の
+  `drainingRef`/`rerunRequestedRef` と同じ「実行中なら完了後にもう一度」に
+  変更。④バックグラウンドでもタイマーが回り続け、N+1 の
+  `findActivityById` が無意味に走り続けていた→`AppState` を見てフォア
+  グラウンド中だけ回すようにした（復帰時は即座に1回読み直す）
+- **🟡 `healthConnect.lastSyncedAt` の書き込みが `finalizeUpsertSuccess`
+  の中で非対称だった**：「外部呼び出しが成功した事実は、ジョブ行を消せる
+  かとは無関係に記録する」（D-32 と同じ理由）と自分で書いたコメントに
+  反し、実際には Activity が見つかる分岐の中でしか書いていなかった——
+  処理中に Activity が削除された §9.5.1 else 分岐（外部呼び出し自体は
+  成功している）で書き漏れていた。`db.transaction` の先頭・無条件に
+  移動した
+- **🟢 doc comment の陳腐化**：`SyncCoordinator.ts`「Settings UI 自体が
+  まだ無いため配線先が無い」、`HealthSyncJobRepository.ts`「SyncWorker は
+  Phase 4 で未実装」——いずれも本ステップで実装済みになったため誤りに
+  なっていた。修正した
+- **🟢 内部不整合ジョブ（`LOCAL_ACTIVITY_NOT_FOUND`）にも Retry now を
+  出していた**：Activity が無い事前チェックで決定論的に落ちるだけの状態
+  なので、再試行しても claim → 同じチェック → `markJobInternalInconsistency`
+  を繰り返すだけだった。`describeJobAction` の `retryLabel` を
+  `string | null` にし、このケースでは `null`（ボタン自体を出さない）に
+  した
+- **見送ったもの**：`requestManualRetry` が `last_error_code` をクリアしない
+  点、`findAllJobsForProvider` の N+1（`buildRow`）は、いずれも現在の UI が
+  operation 別の一般的な文言しか出さずエラーコード別の文言を出していない
+  こと、上記のバックグラウンド停止で N+1 の常時コストは解消したことから、
+  見送った（指摘としては妥当、現状のスコープでは実害が無いと判断）
+
+#### レビュー2巡目で見つかり、修正したもの
+
+1巡目の修正（`hasWritePermission()` 新設・4値ステータス化）自体が新たな
+不備を持ち込んでいたのを、再レビューで指摘・修正。
+
+- **🟠 `hasWritePermission()` を `ensureInitialized()` 無しで呼んでいた**：
+  ネイティブ側の `getGrantedPermissions` は `throwUnlessClientIsAvailable`
+  を通り、`initialize()` 未実行だと `ClientNotInitialized` で reject する
+  （`HealthConnectManager.kt`）。`initialize()` を呼ぶ経路は
+  `drainDueJobs`（`enabled` が true のときだけ）と `handleEnable` の2つ
+  しか無いため、`enabled=false` のままこの画面を開くと毎回 reject して
+  `logError` が5秒ごとに積み上がり、`enabled=true` でもアプリ起動直後
+  （`SyncWorkerLoop` の最初の drain が `ensureInitialized()` に到達する前）
+  は一時的に reject しうる。さらに深刻なのは catch の倒し方——
+  `isAvailable()` が true を返した直後でも権限チェックの失敗だけで
+  `available` まで巻き込んで `false` にしていたため、実際には利用可能
+  なのに「Health Connect isn't installed」と誤表示していた（4値化した
+  狙いと逆方向）。`refreshConnectionHealth`（新設、
+  `services/healthSyncJobPresentation.ts` ではなく画面側に置く——DB/
+  ネイティブ両方に触れるため純粋関数にできない）で、可用性チェックの
+  失敗と権限チェックの失敗を別の `try/catch` にし、権限チェック失敗時は
+  `hasPermission` だけ倒して `available` は変更しないようにした。権限
+  チェックの前に `ensureInitialized()` を呼ぶ（`drainDueJobs` 自身も毎回
+  呼んでいる操作なので、繰り返し呼ぶこと自体はこのコードベースで
+  既に許容されているパターン）
+- **🟡 「HC 未インストール時の Retry now 無効化」が `enabled` しか見ていな
+  かった**：`UnsyncedRow` に渡していたのは `enabled` のみで、
+  `unavailable`/`permission-revoked` の状態（`enabled=true` だが未
+  インストール、または権限取り消し）では Retry now が押せてしまい、
+  `drainDueJobs` が空振りする（未インストールは即 return、権限取り消しは
+  `PERMISSION_DENIED` でバックオフを消費するだけ）押しても無反応な状態が
+  残っていた。`connectionStatus(...) === 'connected'` を `canRetry` として
+  渡すよう変更し、`connected` 以外は理由付きの caption
+  （`RETRY_BLOCKED_CAPTION`）とともに無効化するようにした
+- **🟢 `mountedRef` の初期化位置**：`useRef(true)` の初期値と cleanup での
+  `false` 代入だけだと、React StrictMode の dev-only
+  mount→unmount→remount で永久に `false` に固定されうる（このアプリは
+  StrictMode 未使用のため現状実害は無い）。effect 本体で
+  `mountedRef.current = true` を明示するよう修正
+- **🟢 doc comment の陳腐化（続き）**：`services/ActivityService.ts` の
+  「`SyncWorker`/`HealthConnectService` は Phase 4 で未実装」
+  「`healthConnect.enabled` は常に `false`（UI が無い）」——1巡目の修正で
+  見落としていた。修正した
+- `connectionStatus`/`CONNECTION_STATUS_LABEL`/`RETRY_BLOCKED_CAPTION` は
+  `describeJobAction` と同じ理由（DB/RN 非依存の純粋関数として網羅的に
+  テストする）で `services/healthSyncJobPresentation.ts` に集約——当初は
+  `health-connect.tsx` 内のローカル関数だった
+- 全27スイート・376件パス
+
+#### レビュー3巡目で見つかったもの（いずれも低・必須ではないとの評価込みで指摘）
+
+- **`loaded` がネイティブ呼び出しの完了まで待つ構造だった**：`load()` は
+  DB 読み取りブロックの後に `await refreshConnectionHealth()` してから
+  `finally` で `setLoaded(true)` していたため、D-41 と同じ「cancel も
+  タイムアウトも無い」native module 呼び出しが settle しなければ画面が
+  永久に "Loading…" のまま固まりうる（`loadingRef` も解放されずポーリングも
+  止まる）。`setLoaded(true)` を DB ブロック直後に移し、接続ステータスは
+  後から埋まる progressive enhancement にした
+- **`enabled=false` の間も5秒ごとにネイティブ往復していた**：
+  `connectionStatus` は `!enabled` を最優先で `not-connected` に倒すため
+  `available`/`hasPermission` は表示に無関係なのに、`refreshConnectionHealth`
+  は毎回 `isAvailable`→`ensureInitialized`→`getGrantedPermissions` を
+  素通りさせていた。`enabledRef`（トグルのたびに `load`/interval を
+  再生成しないための ref）で早期 return するようにした
+- `healthSyncJobPresentation.ts` 冒頭の doc に `connectionStatus` 系の説明を
+  追記（`describeJobAction` 専用の説明のままだった）
+- **見送ったもの**：`permission-revoked` からの復帰導線（再許可ボタン/
+  `openHealthConnectSettings()` への導線）は UI/UX §18 に明文が無いため
+  v1 では実装しない（上記 Known gaps に記録）
+
+#### 実機確認（Pixel 11、初回）
+
+`adb install -r` で上書きインストールした際に `table health_sync has no
+column named sync_state`（D-51 より前の古い DB スキーマが端末に残って
+いたため——CLAUDE.md「schema.ts を変更した後の実機テストは、既存アプリを
+一度アンインストールすること」参照）を踏んだが、これはコードの不具合では
+なく実機側のデータが古かっただけ。アンインストール→再インストールで解消し、
+以下をクリーンな状態で確認できた：
+
+- HC ON → OS 権限ダイアログ（要求されるのは「性行為」のみ、「月経周期の
+  管理」等は要求されていないことを実際の OS ダイアログで確認——D-12/D-20
+  「READ 権限を要求しない・WRITE_SEXUAL_ACTIVITY のみ」の実装が実機でも
+  そのとおりであることの確認になった）→ 許可 →「Connected」表示
+- Activity 記録 → 数秒後に自動同期 → Last synced が実際の時刻に更新
+  （`finalizeUpsertSuccess` の `lastSyncedAt` 書き込みを実機で確認）
+- Activity 削除 → delete job → 自動同期 → Last synced が再び更新
+  （`finalizeDeleteSuccess` 側も確認）、Unsynced changes は両方とも
+  「Everything is synced」に戻る
+
+**🟠 実機で新たに発見・修正した不具合**：`healthConnect.enabled` の
+起動時読み込みが非同期のため、この画面をマウントした直後（Settings から
+毎回ナビゲートするたびに新規マウントになる）に `refreshConnectionHealth`
+が走ると、`enabledRef.current` がまだ `useState(false)` の初期値のまま
+（本当に false と確定したわけではなく、単に「まだ読めていない」だけ）で
+早期 return し、`available`/`hasPermission` を false に固定してしまう
+——enabled=true かつ実際に同期成功済みでも "Health Connect isn't
+installed" と表示され、次の5秒ポーリングまで放置される、という形で実機で
+再現した。3巡目レビューで追加した `enabledRef` 早期 return ガード自体が
+生んだ回帰で、ユニットテストでは検出できない類のタイミング依存バグ
+（画面のマウント〜複数 effect の実行順序に依存）だった。
+
+その場しのぎの修正（専用の `enabledKnownRef` を追加）で収めた後、
+レビューで「`enabled` state 自体も相変わらず `boolean` で『未確定』と
+『確定して false』を同一視している——今回たまたま `load()` の DB 読み取り
+（3件＋ジョブ件数ぶんの `buildRow`）が enabled の読み込みより遅いから
+表面化していないだけで、根は同じ」「マウント時に `refreshConnectionHealth`
+が2つの effect から2回走っている」と指摘され、根本から直した：
+`enabled` state・`enabledRef` とも `boolean | null`（`null` = 未読み込み）
+にし、`healthConnect.enabled` の読み込みを別 effect に分けず `load()` の
+DB 読み取りブロックに統合（`enabledRef.current === null` の間だけ読む）。
+これにより①`setLoaded(true)` の時点で enabled は必ず確定済みになり、
+②マウント時のネイティブ往復（isAvailable→ensureInitialized→
+getGrantedPermissions）も1回に減った。render 側も `loaded || enabled ===
+null` の間は描画しないガードを追加し、実行順序が将来崩れても壊れない形に
+した。`enabledKnownRef` という専用 ref との二重管理も、この統合で1本
+（`enabledRef`）に畳まれた。
+
+#### 実機確認（Pixel 11、2回目）
+
+上記修正後、force-stop→再起動直後の初回マウントで即座に「Connected」が
+安定して表示されること（40分アイドル後のコールドスタートでも再現）、
+Settings 画面への連続的な出入り（3回連続）でもステータスが崩れないことを
+確認した。
+
+レビューで「discard は `health_sync` に declined/uncertain を永続化し、
+以後 `planForDelete` の分岐を変える書き込みで UI から元に戻す導線が無い
+ため、実機で一度通しておくべき」と指摘され、確認した：HC を OFF にして
+ジョブを凍結させ（切断してもジョブは破棄しない、§10.5 の性質を利用）、
+「Don't sync」→確認ダイアログ「Don't sync this record? / Solo + Us and
+Health Connect will no longer match.」→確定→ジョブが一覧から消え
+「Everything is synced」に戻ることを確認。あわせて、OFF 中は Retry now が
+無効化され「Turn on Sync to Health Connect to retry these.」の caption が
+出ること（レビュー2巡目で直した canRetry ロジック）も実機で確認できた。
+
+Retry now の実際の再試行、claim 中の無効化表示、delete job が残っている
+状態での OFF 切断警告、`permission-revoked` の実機確認は今回未実施
+（下記 Known gaps に残す）。
+
+**🟢 レビューで認識共有された残り1点（修正・さらにレビューで再指摘）**：
+`healthConnect.enabled` の読み取りが失敗した場合、`enabledRef.current` を
+`false` で確定させていたため、一過性の DB エラーでもこの画面を開いている
+間ずっと "Not connected" にラッチする（裏では `SyncWorkerLoop` が正しく
+同期を続けているにもかかわらず）。失敗時は今回の描画だけ `false` を
+見せつつ `enabledRef.current` は `null` のまま残すよう最初に修正したが、
+**この修正自体が効いていなかった**：`enabledRef` には `enabled` state の
+変化を自動反映する mirror effect（`useEffect(() => { enabledRef.current =
+enabled }, [enabled])`）が既にあり、失敗パスの `setEnabled(false)` が
+`enabled` state を変えるため、直後にこの mirror effect が
+`enabledRef.current` を `false` で上書きしてしまい、「`null` のまま残す」
+という意図を無効化していた——実機では state 変更→effect の実行順序に
+依存するため踏まず、レビューで指摘された（検証するには `getSetting` を
+一時的に throw させる必要がある）。
+
+mirror effect 自体を廃止し、`enabledRef` を更新すべき3箇所（`load()` の
+初回読み込み成功時・`handleEnable`・`disconnect`）でそれぞれ明示的に
+更新する形にした——読み込み失敗パスだけ意図的に触らない、という
+非対称性は、自動追従をやめて書き手を管理する以外に保てない。
+
+#### 実機確認（Pixel 11、3回目）
+
+2回目で未実施のまま残していた項目をすべて確認した（HC 未インストール
+環境の ON 操作は試みたが、Pixel 11 では検証不能と判明——詳細は末尾）。
+claim 中の状態や「未 claim のまま OFF にする」瞬間は
+自然発生ではタイミングが合わないため、`services/HealthConnectService.ts`
+の `upsertActivity`/`deleteActivityRecord` 冒頭に一時的な `await
+new Promise((r) => setTimeout(r, ...))` を差し込んで意図的に外部呼び出しを
+遅延させ、確認後に `git diff` が空になることを確認してから元に戻す、という
+手法で検証した（`services/HealthConnectService.ts` はネイティブ層を持たない
+純粋な TS のため、この差し替えは Metro の Fast Refresh だけで反映され、
+gradle 再ビルドは不要だった）。
+
+- **claim 中の行の無効化表示**：create/update ジョブ・delete ジョブの両方で
+  「Syncing…」表示中は Retry now/Discard 系ボタンがグレーアウトすることを
+  確認
+- **Retry now の実際の再試行**：初回は権限剥奪→復元→即 Retry now という
+  手順で確認したが、自動バックオフ（1回目失敗で5秒後に再試行）と周期
+  drain（10秒間隔）が並走しており、タップした瞬間に処理が始まったのか
+  自動再試行が先んじていたのかを区別できていなかった（レビュー指摘）。
+  `services/SyncWorker.ts` の `not_before IS NOT NULL` という due 判定
+  （`repositories/HealthSyncJobRepository.ts` の `claimNextDueJob`）を
+  踏まえ、`MAX_AUTOMATIC_ATTEMPTS` を一時的に `10`→`1` に変更（TEMP、
+  確認後に `git diff` が空になることを確認して復元）した状態で再検証：
+  1回目の失敗で即座に `not_before = NULL`（自動再試行の対象から構造的に
+  外れる）の手動待ちへ落ちることを確認し、**権限復元後も無操作で
+  35秒以上（切断中20秒＋ Connected 状態で15秒）放置してジョブが
+  一切変化しないこと**を確認したうえで Retry now をタップ→即座に成功
+  （Last synced 更新・ジョブ消滅）。これにより「Retry now が実際に
+  同期を成立させている」ことを自動再試行の関与なしに確認できた
+- **`permission-revoked` の表示**：上記の権限剥奪操作で確認。**発見**：
+  `pm revoke` で Health Connect の permission を取り消すと、対象アプリの
+  プロセスが即座に kill される（ホーム画面に落ちる）——通常の Android
+  runtime permission の revoke と同じ挙動。実機で意図的に権限を消して
+  確認する際は、revoke 直後にプロセスが死ぬ前提で手順を組むこと（今回は
+  再起動後に "Permission needed" 表示が正しく復元されることも合わせて
+  確認できた）
+- **delete job が残っている状態での OFF 切断時の警告と再接続後の再開**：
+  §10.5 の確認ダイアログ「Health Connect has N unsynced deletion(s)」→
+  「Disconnect anyway」で実際に OFF にできること、OFF 中はジョブが
+  `Not connected`/`Turn on Sync to Health Connect to retry these.` の
+  まま保持され続けること、再度 ON にすると自動的に delete が完了し
+  `Last synced` が更新されることを確認した。**注記**：claim 済み（外部
+  呼び出しが in-flight）のジョブに対して OFF にした場合は
+  `SyncCoordinator.runExclusive` がその呼び出しの settle を待ってから
+  `enabled=false` を書き込むため、待っている間にジョブ自体が成功で
+  完了することがある（§9.12 の設計通り——「呼び出し側が諦めても裏で
+  待ち続け、settle してから通常状態に戻す」が disconnect 経路でも
+  そのまま働いている）。ジョブを未 claim のまま OFF できた場合のみ、
+  警告ダイアログ通りに「OFF にしても記録は残る」状態を再現できる
+- **バックグラウンド/フォアグラウンド遷移**：ホーム→復帰を4回連続、
+  加えてバックグラウンドで15秒待機して `dumpsys cpuinfo` の累積値が
+  待機前後で変化しないこと（＝ポーリングが暴走していないこと）を確認。
+  クラッシュ・ログ上のエラーなし
+- **HC 未インストール環境での ON 操作時の表示は、Pixel 11（Android
+  プラットフォーム統合パス）では検証できないことが判明**：`adb shell pm
+  disable-user com.google.android.apps.healthdata` で Health Connect
+  本体アプリを無効化しても、`HealthConnectService.isAvailable()`
+  （`getSdkStatus`）は無効化前と変わらず利用可能を返し続け、Sync トグルを
+  OFF→ON しても `handleEnable` の「Health Connect isn't installed」
+  Alert は一度も出なかった——Android 14 以降は Health Connect がプラット
+  フォーム本体に統合されており、`com.google.android.apps.healthdata` は
+  設定 UI 側のフロントエンドに過ぎず、SDK の可用性はこのアプリの
+  有効/無効に左右されないためと考えられる（確認後、`pm enable` で
+  元の状態に復帰させ、Sync が引き続き正常動作することも確認済み）。
+  この検証は Android 9〜13（Health Connect が Play ストア配布の別アプリ、
+  D-20 と同じ非プラットフォーム統合パス）でなければ意味を持たない
+  ——**D-20 の Pixel 3 実機検証と合わせて実施する**
+
+#### 実機確認（Pixel 3、D-20——Android 9〜13 非プラットフォーム統合パス）
+
+2026-09-21、Pixel 3（Android 12、API 31）で実施。この端末には Health
+Connect が最初から入っていない（Android 13 以下は Play ストア配布の別
+アプリのため）ため、まず上記「HC 未インストール環境での ON 操作」を
+この端末で確認できた：Sync トグル ON →「Health Connect isn't installed」
+「Install Health Connect to sync your records.」の Alert が正しく表示
+され、OK で閉じても状態は Not connected のまま——Pixel 11 では検証不能
+だった項目が、非プラットフォーム統合パスでは想定どおり動くことを確認
+できた。
+
+続けて Play ストアから Health Connect（v2026.08.06.00）をインストールし、
+D-20 本題（存在しない `clientRecordId` への delete）を検証した：
+
+1. Solo + Us で Sync ON →実際の OS 権限フロー（すべて許可 / 性行為の
+   書き込みトグルを個別に ON → 許可）を通す——要求されるのは
+   「性行為の書き込み」のみで、Pixel 11 の platform 経路と同じく
+   READ 権限は要求されないことをこの経路でも確認
+2. Activity を1件記録→自動同期→ Health Connect アプリの「データと
+   アクセス」画面で実レコードが入っていることを確認
+3. **Health Connect アプリ側から直接そのレコードを削除**（外部で
+   先に消えた状態を人為的に再現）
+4. Solo + Us 側で同じ Activity を削除→ delete ジョブ作成→ Retry now
+
+**結果**：`deleteRecordsByUuids` が
+`{"code":"UNDERLYING_ERROR","message":"Request contains invalid UID.",
+"str":"android.os.RemoteException: Request contains invalid UID."}`
+で reject された（一時的に `console.log` を仕込んで実測、確認後に
+`git diff` が空になることを確認してから削除）。`classifyError()` の
+switch に `UNDERLYING_ERROR` は無いため `UNKNOWN` に分類され、§9.6 の
+通常のリトライ・バックオフに乗る——**Android 9〜13 では「存在しない」
+削除は成功にならず、`attempts` が `MAX_AUTOMATIC_ATTEMPTS`（10）に到達
+するまで自動リトライを繰り返した末に手動待ち（Retry now/discard）に
+落ちる。** バックオフ表 `[5,15,60,300,900,3600,21600,86400]` 秒により、
+1回目の失敗から10回目の失敗（手動待ちに落ちる瞬間）まで実時間で約
+55.4 時間（≈2.3 日）かかる——この間ずっと「Not synced to Health
+Connect」相当の表示が残る。これは D-20 の「ラッパーが識別できない場合は
+既知の制限として受け入れる」という想定どおりの帰結で、**`delete`
+ジョブに関しては**実装変更は不要と判断した。「Stop retrying」による
+破棄（確認文言「Stop retrying this deletion? / This record may remain
+in Health Connect.」）も実機で正常に動作し、ジョブが消えて
+「Everything is synced.」に戻ることを確認した。
+
+**この結論の範囲についての注記**（レビュー指摘、2026-09-21）：
+
+- **`recreateActivity`（§9.3.1）への影響は未検証・要注意。**
+  `services/HealthConnectService.ts` の `recreateActivity` は「delete が
+  失敗したら insert せずここで失敗を返す」（D-34）ため、Android 9〜13 で
+  `operation: 'recreate'` のジョブが「外部レコードが実在しない」状態に
+  当たった場合、delete の段階で今回確認した reject を受け続け、**insert
+  に一度も到達できないまま同じ約55時間のサイクルで手動待ちに落ちる**。
+  現状 `operation: 'recreate'` を生成するコードは存在しない（§13.6 は
+  Known gap、未実装）ため実害は出ていないが、D-34 の「`NOT_FOUND` を
+  成功扱いにしている以上、先頭からの再実行は常に安全」という記述は
+  Android 9〜13 では「安全（副作用がない）」は成り立つが「いずれ成功する」
+  は成り立たない——§13.6 実装時に別途判断が必要。詳細は
+  [設計判断記録 D-20](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-20-削除の存在しないを成功として扱いread-権限は追加しない)・
+  D-34 に追記済み
+- **検証したのは「HC アプリ側で直接削除」という1経路のみ。** D-20 が
+  本来想定していたのは「外部 delete に成功した直後・ローカル確定前に
+  クラッシュ」というケースで、これも「対象 UID がもう存在しない」という
+  点では同じはずだが、HC 内部の実装（トゥームストーンの有無等）次第で
+  挙動が完全に一致しない可能性は理論上残る
+- **検証環境は Pixel 3 / Android 12（API 31）/ Health Connect
+  v2026.08.06.00 の1台1バージョンのみ。** Health Connect は単一 APK
+  として配布されるため大きく異なる可能性は低いと考えるが、「Android
+  9〜13 では」という断定は、この1点の検証に基づくものであることを
+  明記しておく
+
+**実機検証中に踏んだ、この端末固有の妨害要因**（アプリのバグではない）：
+検証の後半、Gmail の大量通知により通知シェードが開いたまま固着し、
+adb 経由のタップが吸われて一切効かなくなる状態を繰り返し踏んだ
+（`cmd statusbar collapse`・systemUI 再起動でも解消せず、ユーザーに端末を
+直接操作してもらって解消）。個人の実機を検証機に使う場合、通知量が
+多い端末では同様の症状が起こりうる——再現しない場合は uiautomator の
+タップが本当に届いているか（`dumpsys window | grep mCurrentFocus` が
+自アプリを指しているか）を先に確認すること。
+
+#### Known gaps（次のステップ）
+
+- **§9.11 のリリースビルド分離（`without-health-connect` /
+  `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
+  含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
+  まだ存在しない）
+- **Settings UI の実機確認は完了**（上記「実機確認（Pixel 11、
+  初回/2回目/3回目）」「実機確認（Pixel 3、D-20）」参照）：HC ON→権限
+  ダイアログ→Connected 表示、Activity 記録/削除→HC への反映、Last synced
+  の実際の更新、破棄（confirm ダイアログ＋実際の discard）、OFF 中の
+  Retry now 無効化＋caption、claim 中の行の無効化、Retry now の実際の
+  再試行、delete job が残っている状態での OFF 切断時の警告と再接続後の
+  再開、`permission-revoked` の表示、バックグラウンド/フォアグラウンド
+  遷移でのクラッシュ・無限ループの有無（AppState 配線自体、ステップ4
+  参照）、HC 未インストール環境での ON 操作時の表示（Pixel 3 で確認、
+  Pixel 11 の platform 統合パスでは検証不能）
+- **Android 9〜13（非プラットフォーム統合パス）での D-20 実機検証は
+  `delete` ジョブについて完了**（上記「実機確認（Pixel 3、D-20）」参照）：
+  存在しない `clientRecordId` への delete は `UNDERLYING_ERROR`/
+  「Request contains invalid UID.」で reject され、`UNKNOWN` 分類→通常の
+  リトライ・バックオフ（手動待ちまで約55時間）に乗ることを確認した。
+  設計判断記録 D-20 に確認結果を追記済み。**`recreateActivity`（§13.6/
+  D-34 の recreate 経路）への影響は未検証**——外部レコードが不在の場合、
+  delete 段階で同じ reject を受け続け insert に到達できない可能性が
+  あり、§13.6 実装時に別途判断が必要（詳細は上記「実機確認（Pixel 3、
+  D-20）」の注記参照）
+- **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
+  無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
+  OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、
+  または `openHealthConnectSettings()` への導線）は無い。仕様（UI/UX §18）
+  に明文が無いため v1 は見送り（レビューで指摘・妥当と判断）。実装するなら
+  `HealthConnectService.openHealthConnectSettings` のラッパーが必要
+  （現状未追加）

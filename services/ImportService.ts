@@ -38,6 +38,24 @@ function toActivity(entry: ExportFileV1['activities'][number]): Activity {
  * a stale "Last synced" would recreate exactly the misleading state the
  * allowlist exists to avoid. Device-owned settings (App Lock, HC enabled)
  * are simply never touched here.
+ *
+ * §9.12: when `db` is the live app connection, this is one of the
+ * operations that must run exclusively of `SyncWorker` — wiping
+ * `health_sync_jobs`/`health_sync` while a job is mid-flight to Health
+ * Connect is exactly the race D-32/§9.12 exist to prevent. **This
+ * function deliberately does not call `SyncCoordinator` itself** —
+ * `services/RecoveryService.restoreFromBackup` (§8.8) calls this same
+ * function against a throwaway temporary database (`tempDb`), not the
+ * live app connection; SyncCoordinator is a single process-wide
+ * singleton, so wrapping it here would suspend/resume the *real* worker
+ * for an operation on an unrelated DB, and — worse — risks the same
+ * function later being called from *inside* another `runExclusive` body
+ * on the live DB, which would deadlock (`SyncCoordinator.ts`'s "直列化"
+ * comment explains why nesting isn't supported). Only the caller knows
+ * which `db` this is, so only the caller can decide whether to route
+ * through `SyncCoordinator.runExclusive` — see `app/settings/data.tsx`'s
+ * `handleConfirmReplace`, the one call site that operates on the live
+ * app DB.
  */
 export async function performReplaceImport(db: Transactor, file: ExportFileV1): Promise<ReplaceImportResult> {
   await db.transaction(async (tx) => {

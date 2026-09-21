@@ -820,8 +820,97 @@ note や mood の編集頻度は低く、1件あたりの書き込みも小さ�
 > 3. 削除時に「存在しない」を他のエラーと識別できるか（§9.7）
 > 4. **ネイティブ呼び出しがタイムアウト後も継続するか、明示的に cancel できるか**（§9.12）
 >
-> 1〜3 を満たせない場合、**HC 同期の v1.0 投入を見送る。**
+> **1・2 を満たせない場合、HC 同期の v1.0 投入を見送る。**
+> **3 を満たせない場合は、見送りにはせず D-20・§9.7 の「識別できない場合は既知の制限として
+> 受け入れる」を適用する。**（この既知の制限自体が D-20 で当初から定義済みの代替扱いであり、
+> 「3 が常に満たされる」ことを前提にしていない。）
 > 4 は見送り条件ではないが、cancel できない場合は §9.12 の「in-flight のまま扱う」規則が必須になる。
+>
+> **確認結果（2026-09-19、ソース読解による。実機/エミュレータでの実行検証ではない）**
+>
+> **調査対象バージョン**（導入時に差分がないか再確認すること）：
+> - `react-native-health-connect` v4.1.3（commit `8d72b6a0774326059ce4f3854273a58b5f4d471f`）。
+>   `android/build.gradle:95` で `androidx.health.connect:connect-client:1.1.0` に固定依存。
+> - `androidx.health.connect:connect-client` **1.1.0**（Google Maven の
+>   `connect-client-1.1.0-sources.jar` を直接取得し、実際に配布されているソースを確認。
+>   `androidx-health-connect-release` ブランチ commit `870b85addc984c9b92c3f26cc116ed07af29297f`、
+>   および `androidx-main` 最新版とも同一ロジックであることを照合済み）
+> - platform 側 `android.health.connect`（AOSP `packages/modules/HealthFitness`）。
+>   出荷版タグ `android-14.0.0_r32`（Android 14 リリース時点）と `main` HEAD
+>   `45168a88ae2a7e1abafe1cc81001d97ff00194e2`（2026-09-19 時点の最新開発版）の**両方**で同一の
+>   呼び出し経路を確認。この module は Mainline（Google Play システムアップデート）で
+>   OS バージョンとは別に更新されるため、実機の実装はこの2点の間のどこかにあると考えられるが、
+>   両端で経路が一致することを確認済み。
+>
+> **1・2 とも満たす。** `src/types/metadata.types.ts` の `Metadata` 型が `clientRecordId?: string` /
+> `clientRecordVersion?: number` を公開し、`insertRecords` で渡した値は
+> `HealthConnectUtils.kt#convertMetadataFromJSMap` がそのまま `androidx.health.connect.client`
+> の `Metadata` オブジェクトへ橋渡しする（読み込み側 `convertMetadataToJSMap` も同様に往復可能）。
+> 削除 API は `deleteRecordsByUuids(recordType, recordIdsList, clientRecordIdsList)` として
+> `clientRecordIdsList` を直接受け付ける。この2点は OS バージョンに依存しない（型・JS↔Native 変換層の話のため）。
+>
+> **3 は Android 14（API 34）以降の経路に限り満たす。** ただし「識別できる」のではなく
+> **そもそもエラーにならない**。理由：Health Connect には2つの実行経路があり、挙動の根拠が異なる。
+>
+> - **Android 14 以降（プラットフォーム統合パス、実装まで直接確認済み）：**
+>   `deleteRecordsByUuids` → AndroidX `HealthConnectClientUpsideDownImpl.deleteRecords` が
+>   `clientRecordId` を `RecordIdFilter.fromClientRecordId(...)` に変換 →
+>   platform の `HealthConnectManager.deleteRecords(List<RecordIdFilter>, ...)` を呼ぶ。
+>   この先の実装（AOSP `packages/modules/HealthFitness`
+>   `HealthConnectServiceImpl#deleteUsingFiltersForSelf`）を追うと、`deleteUsingFilters`
+>   （SystemApi 専用の別オーバーロード）と**同じ** private メソッド `deleteUsingFiltersInternal`
+>   に合流し、最終的に `TransactionManager#deleteAllRecords` が対象行を検索してから削除する
+>   SQL 相当の処理を行う——**一致件数 0 件でも例外を投げるコードパスが存在しない**ことを
+>   実装レベルで確認した（Javadoc の記述からの類推ではない）。
+> - **Android 9〜13（API 28〜33、非プラットフォーム統合パス）：未確認。**
+>   この範囲では Health Connect は Play ストア配布の別アプリとして動作し、AndroidX は
+>   `HealthConnectClientImpl`（AIDL 経由でそのアプリのサービスを呼ぶ実装）を使う。
+>   このアプリ自体のサーバー側実装は AOSP に公開されておらず、**ソース読解では確認できない**。
+>   （なお API 24〜27 は Health Connect アプリ自体が対応外のため、この論点は生じない。）
+>
+> **この範囲についての方針（2026-09-19、ユーザー判断）：** 実機/エミュレータでの追加検証は
+> 現時点では行わない。アプリの実装自体は OS バージョンで分岐させない——`deleteRecordsByUuids` が
+> resolve すれば成功、reject すればリトライ、上限到達で手動待ちという単一の処理のままでよい
+> （詳細は §9.7 参照）。**Android 9〜13 では reject されうる（＝「存在しない」を積極的に
+> 成功と決めつけない）という結果面での違いが残る**というだけであり、これが D-20 / §9.7 の
+> 「識別できない場合は既知の制限として受け入れる」に当たる。
+>
+> **4 も確認済み：cancel 不可（2026-09-19、ソース読解による。実機/エミュレータでの実行検証
+> ではない）。したがって JS 側がタイムアウトで待つのをやめても、ネイティブ呼び出しは
+> 止められず継続する（継続を止める手段自体が存在しないため）。**
+>
+> - `react-native-health-connect` v4.1.3（commit `8d72b6a`）：`insertRecords` /
+>   `deleteRecordsByUuids` は `CoroutineScope(Dispatchers.IO).launch { ... }` で起動され、
+>   `Job` は保持されない。ネイティブ側に `cancel` に相当する `@ReactMethod` は存在しない。
+> - **Android 13 以前の経路**（`HealthConnectClientImpl` → 別プロセスの Health Connect
+>   アプリへ AIDL 経由）：根拠は **androidx 側の AIDL インターフェース**（`IHealthDataService`）
+>   に cancellation を渡す引数が無いこと。`IHealthDataService` はアプリに同梱される
+>   `androidx.health.connect:connect-client` 側が定義するインターフェースであり、相手
+>   （非公開実装の Health Connect アプリ）が一方的に変わっても、同梱バージョンの
+>   connect-client からは呼べない。**この結論が変わりうるのは connect-client の更新時のみ**
+>   （下記の platform API とは別に評価する必要がある）。
+> - **Android 14 以降の経路**（`HealthConnectClientUpsideDownImpl` → platform 統合パス）：
+>   根拠は **platform 側の公開 API `android.health.connect.HealthConnectManager` 自体**に
+>   cancellation の契約が存在しないこと。`insertRecords` / `deleteRecords` の全オーバーロードを
+>   AOSP タグ `android-14.0.0_r32` と `main` HEAD の両方で確認したが、`CancellationSignal` を
+>   受け取るものは無く、両者は同一シグネチャだった。androidx 側の実装は
+>   `suspendCancellableCoroutine` を使うが、`invokeOnCancellation` は登録していない。
+>
+> 2つの経路は cancel 不可の根拠が異なる（platform API 自体に契約が無い vs. androidx の AIDL に
+> 手段が無い）ため、一方が将来変わっても他方の結論が自動的に変わるわけではない。詳細・引用箇所は
+> 設計判断記録 D-41 の確認結果を参照。
+>
+> したがって §9.12 の「cancel できない」（タイムアウトは UI の待機打ち切りにのみ使う、
+> **Coordinator は in-flight のまま扱う**）が確定的に適用される。**ラッパー入れ替え時は
+> 再確認すること。**
+>
+> **未調査事項：** Health Connect 側・OS 側に独自のタイムアウトがあるか（ANR、Binder 切断、
+> 別プロセスの Health Connect アプリが kill される等）は調査していない。「外部 Promise が
+> 永久に settle しない」頻度に関わるが、§9.12 は元々そのケースを「アプリ再起動のみが逃げ道」
+> として扱っており、頻度に関わらず規則は変わらない。
+>
+> 未確認のまま残るのは**上記の Android 9〜13 の削除挙動のみ**。見送り条件ではない
+> （3 は元々「満たせない場合の代替扱い」が定義済みのため）。
 >
 > **HealthKit 実装時の確認事項（v1.0 のゲートではない）**
 > - メタデータ述語による削除が書き込み権限のみで可能か（§5.4）
@@ -1044,7 +1133,10 @@ create / update を黙って破棄すると、利用者はローカルと Health
 
 ## 9.7 削除の再実行
 
-Health Connect の削除は完全には冪等ではない。存在しない ID の削除はエラーになりうる。
+Health Connect の削除は冪等でない（存在しない ID の削除がエラーになる）可能性を前提に、
+以下の方針を立てる。**Android 14 以降では §9.4 の確認結果により実際にはエラーにならない
+ことを確認済み**だが、Android 9〜13（非プラットフォーム統合パス）は未確認のため、
+以下の方針はそちらでも安全に成立するように書く。
 
 ```text
 外部の削除に成功
@@ -1072,6 +1164,17 @@ D-12（Manifest から権限を外して審査をクリティカルパスから�
 ラッパーが「存在しない」を識別できない場合は、
 **「削除済みだがローカル確定前に落ちると未同期表示が残る」を既知の制限として受け入れ**、
 §9.6 の operation 別の破棄操作（削除なら「この削除の再試行を停止」）で打ち切る。
+
+> **§9.4 確認結果との対応：実装は OS バージョンで分岐しない。** ワーカーが行うのは
+> 「`deleteRecordsByUuids` が resolve すれば成功としてジョブ削除、reject すればその他の
+> エラーと同じくリトライし、上限到達で手動待ちに回す」という単一の処理だけであり、
+> `Platform.Version` 等で分岐するコードは書かない。OS バージョンによって違うのは
+> **その処理を実行した結果**である。Android 14 以降は「存在しない」がそもそもエラーとして
+> 上がってこない（platform が無視して成功を返す）ため、上表の「成功」行と「存在しない」行は
+> 呼び出し側から見て同じ1つの resolve という結果になる。Android 9〜13 は未確認のため、
+> reject された場合はこれまで通り「その他のエラー」としてリトライに回る——つまり、
+> 「削除済みだがローカル確定前に落ちると未同期表示が残りうる」という**結果としての制限**が
+> この OS 範囲に残る、というだけであり、そのための特別な分岐コードを追加する必要はない。
 
 ## 9.8 記録と同期の関係
 
@@ -1126,7 +1229,9 @@ Health Connect 同期の失敗で Activity 記録自体を失敗させない。U
 
 - Health Connect 側でユーザーが手動削除しても、v1 は HC を読まないため検知できない
 - 置換復元（§13）を実行すると `health_sync` の対応関係は破棄され、HC 上の既存レコードは残る
-- 削除の「存在しない」を識別できないラッパーの場合、未同期表示が残ることがある（§9.7）
+- **Android 9〜13（非プラットフォーム統合パス）** では、削除の「存在しない」が reject
+  されうるため、未同期表示が残ることがある（§9.4・§9.7）。Android 14 以降はソースで
+  確認済みのため該当しない
 
 ## 9.11 リリースビルドの分離
 
@@ -1220,6 +1325,10 @@ mutex 解放            ← 誤り
 | タイムアウト経過 | 破壊的操作を**中止**し、利用者に再試行を案内する |
 | 外部 Promise が未 settle | **Coordinator は in-flight のまま扱う**。ワーカーは再開しない |
 | 実際に settle した | そこで初めて通常状態へ戻す |
+
+**Health Connect（insert / delete）は cancel 不可と確定済み**（§9.4 の確認結果 / 設計判断記録
+D-41 参照）。「cancel をサポートする」行は HealthKit 等、将来 provider を追加する場合のために
+一般規則として残しているが、HC 実装では使わない。
 
 ```text
 30秒経過

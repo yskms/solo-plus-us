@@ -10,10 +10,10 @@
  * `services/ActivityService` combines the two.
  *
  * `services/SyncWorker` / `services/HealthConnectService` (§9.5–§9.7, the
- * actual claim/finalize loop and native provider calls) are Phase 4 and
- * not implemented yet — see README "Known gaps". The claim/finalize
- * primitives below exist now anyway because they're plain SQL with no
- * native dependency, so Phase 4 only has to add the provider calls.
+ * actual claim/finalize loop and native provider calls) are implemented
+ * (Phase 4) — see README "Phase 4 実装状況". The claim/finalize primitives
+ * below were written earlier as plain SQL with no native dependency, ahead
+ * of that loop, but are the same primitives it uses now.
  */
 import { generateId } from '../lib/id';
 import { nowUtcIso } from '../lib/datetime';
@@ -59,6 +59,13 @@ export async function findJob(
     'SELECT * FROM health_sync_jobs WHERE activity_id = ? AND provider = ?',
     [activityId, provider],
   );
+  const row = result.rows?.[0] as unknown as HealthSyncJobDbRow | undefined;
+  return row ? rowToJob(row) : null;
+}
+
+/** Settings > Health Connect's "unsynced changes" list (§10.4) only has job ids to act on — this is how `services/HealthSyncManualActions` looks one back up before deciding what discarding it means (D-51). */
+export async function findJobById(executor: SqlExecutor, jobId: string): Promise<HealthSyncJobRow | null> {
+  const result = await executor.execute('SELECT * FROM health_sync_jobs WHERE id = ?', [jobId]);
   const row = result.rows?.[0] as unknown as HealthSyncJobDbRow | undefined;
   return row ? rowToJob(row) : null;
 }
@@ -138,22 +145,29 @@ export async function clearAllClaims(executor: SqlExecutor): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// The following are DB primitives for the (Phase 4, not yet implemented)
-// SyncWorker claim/finalize loop — §9.5/§9.6. Included now because they're
-// plain SQL with no native dependency.
+// The following are DB primitives for the SyncWorker claim/finalize loop —
+// §9.5/§9.6 (services/SyncWorker.ts). Written as plain SQL with no native
+// dependency ahead of that loop's own implementation.
 // ---------------------------------------------------------------------------
+
+/** Distinguishable from `null` (no due job at all) — a caller (`services/SyncWorker`) that loses the race should try the next due row instead of concluding the queue is empty. */
+export const LOST_CLAIM_RACE = Symbol('LOST_CLAIM_RACE');
 
 /**
  * §9.5 steps 1–2: finds the oldest due, unclaimed job for `provider` and
  * claims it (`claimed_at = now`, `attempts += 1`, `revision += 1` — §9.5.2:
  * attempts increases at claim time, not on failure). Returns `null` if
- * there is no due job, or if a concurrent caller claimed it first.
+ * there is no due job at all, or `LOST_CLAIM_RACE` if a concurrent caller
+ * claimed/replaced it first — the two are deliberately distinguishable so a
+ * caller can retry on the latter instead of treating the whole queue as
+ * empty (v1 has no concurrent worker yet, so this only matters once
+ * something drives `drainDueJobs` from more than one trigger at a time).
  */
 export async function claimNextDueJob(
   executor: SqlExecutor,
   provider: Provider,
   nowIso: string = nowUtcIso(),
-): Promise<HealthSyncJobRow | null> {
+): Promise<HealthSyncJobRow | null | typeof LOST_CLAIM_RACE> {
   const dueResult = await executor.execute(
     `SELECT * FROM health_sync_jobs
      WHERE provider = ? AND claimed_at IS NULL AND not_before IS NOT NULL AND not_before <= ?
@@ -170,12 +184,43 @@ export async function claimNextDueJob(
     [nowIso, dueRow.id, dueRow.revision],
   );
   if (claimResult.rowsAffected === 0) {
-    return null; // lost the race to a concurrent claim/replace
+    return LOST_CLAIM_RACE;
   }
 
   const claimed = await executor.execute('SELECT * FROM health_sync_jobs WHERE id = ?', [dueRow.id]);
   const row = claimed.rows?.[0] as unknown as HealthSyncJobDbRow | undefined;
   return row ? rowToJob(row) : null;
+}
+
+/**
+ * §9.5.1's create/update/recreate race: "create 送信中に編集 → mapping は
+ * 作られる → ジョブは残り、大きい sync_version で送り直す". Unlike a
+ * concurrent delete (which routes through `replaceJob` and bumps
+ * `revision`), an edit while a job is already in flight is a documented
+ * no-op for the job row itself (`services/syncJobPlanner.ts`'s
+ * `planForEdit` — the worker is expected to read current values right
+ * before sending, §9.2). That means `revision` alone cannot detect an edit
+ * that lands *during* the external call, after that read already happened
+ * — the caller must compare the `syncVersion` it actually sent against the
+ * Activity's current one and call this instead of
+ * `deleteJobIfRevisionMatches` when they differ, so the job survives to be
+ * resent with the newer data. Still gated on `revisionAtClaim` (nothing
+ * else should have touched this job row while the Activity exists and
+ * wasn't deleted) — a `false` return here is `services/SyncWorker`'s
+ * §9.5.4 signal.
+ */
+export async function releaseClaimForResend(
+  executor: SqlExecutor,
+  jobId: string,
+  revisionAtClaim: number,
+  notBefore: string,
+): Promise<boolean> {
+  const result = await executor.execute(
+    `UPDATE health_sync_jobs SET claimed_at = NULL, not_before = ?, revision = revision + 1
+     WHERE id = ? AND revision = ?`,
+    [notBefore, jobId, revisionAtClaim],
+  );
+  return (result.rowsAffected ?? 0) > 0;
 }
 
 /**
@@ -270,26 +315,20 @@ export async function requestManualRetry(executor: SqlExecutor, jobId: string): 
 
 /**
  * Settings "discard" (D-35/§9.6) — D-39: refuses if the job is currently
- * claimed.
+ * claimed. Deletes the job row only — this is the raw primitive.
  *
- * Deferred design gap (same nature as `planForEdit`'s, see
- * `services/syncJobPlanner.ts`): discarding a `create` job with
- * `attempts > 0` deletes the row outright, leaving neither a job nor a
- * `health_sync` mapping — even though "may have reached the provider" is
- * exactly what `attempts > 0` means. If the Activity is deleted afterward,
- * `planForDelete(null, false)` sees nothing to do (§10.1 順6) and skips
- * cleanup entirely, even though a copy may genuinely exist on the
- * provider's side. The discard confirmation copy already warns that
- * *this record* may not match Health Connect (D-35); it does not warn
- * that a *later delete* of the same record will also silently skip
- * cleanup — a compounding consequence the person discarding didn't
- * necessarily sign up for.
- *
- * Fixing this for real needs the same "declined/uncertain sync state"
- * concept `planForEdit` is missing — e.g. leaving behind a `health_sync`
- * row with an "unknown" status instead of deleting cleanly, so a later
- * delete still queues a defensive delete job. Left as a Phase 4 design
- * decision rather than guessed at here.
+ * **Does not by itself record `uncertain`/`declined` into `health_sync`
+ * (D-51).** The gap this used to describe (discarding a `create` job with
+ * `attempts > 0` losing all record that "may have reached the provider",
+ * so a later delete silently skips defensive cleanup — §10.1 順6) is
+ * resolved, but not here: `services/HealthSyncManualActions.discardSyncJob`
+ * is the actual entry point Settings calls, and it wraps this primitive
+ * together with `HealthSyncRepository.upsertDeclinedOrUncertainMapping` in
+ * one transaction (this project's convention — Repository functions take a
+ * bare `SqlExecutor`, the caller owns the transaction, same shape as
+ * `ActivityService.deleteActivity`). Call this function directly only for
+ * `delete`/internal-inconsistency jobs, where the Activity is already gone
+ * and no `health_sync` row could exist for it anyway (FK RESTRICT).
  */
 export async function discardJob(executor: SqlExecutor, jobId: string): Promise<boolean> {
   const result = await executor.execute('DELETE FROM health_sync_jobs WHERE id = ? AND claimed_at IS NULL', [jobId]);

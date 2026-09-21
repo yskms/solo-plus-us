@@ -10,10 +10,10 @@
  * (`repositories/ActivityRepository`).
  *
  * `services/SyncWorker` / `services/HealthConnectService` — the code that
- * actually sends a queued job to a provider — are Phase 4 and don't exist
- * yet. In Phase 1, `healthConnect.enabled` is always `false` (no UI sets
- * it yet), so in practice no job rows are created; the queueing logic
- * below is still real and tested so Phase 4 only has to add the sender.
+ * actually sends a queued job to a provider — are implemented (Phase 4).
+ * `healthConnect.enabled` is settable from `app/settings/health-connect.tsx`;
+ * the queueing logic below was written and tested ahead of both, back when
+ * neither existed yet, so Phase 4 only had to add the sender and the toggle.
  */
 import { buildOccurredAtFields, getDeviceTimeZoneId, addSecondsIso, nowUtcIso } from '../lib/datetime';
 import * as ActivityRepository from '../repositories/ActivityRepository';
@@ -21,15 +21,21 @@ import * as HealthSyncRepository from '../repositories/HealthSyncRepository';
 import * as HealthSyncJobRepository from '../repositories/HealthSyncJobRepository';
 import type { SqlExecutor, Transactor } from '../database/SqlExecutor';
 import { getSetting } from './SettingsRepository';
-import { planForDelete, planForEdit, planForRecord, toCurrentJobState } from './syncJobPlanner';
+import { planForDelete, planForEdit, planForRecord, toCurrentJobState, toMappingState } from './syncJobPlanner';
 import type { Activity, ActivityUpdateInput } from '../types/Activity';
 import type { Provider } from '../types/HealthSync';
 
 /** Every provider this app knows about, regardless of whether it's currently enabled — §10 delete cleanup must check all of them (a disabled provider can still hold a leftover mapping, D-45). */
 const ALL_PROVIDERS: readonly Provider[] = ['health_connect', 'healthkit'];
 
-/** §9.6/D-45: only providers the user has turned on get *new* jobs queued on record/edit. HealthKit has no settings toggle yet (not implemented), so it's never active in Phase 1. */
-async function getActiveProviders(executor: SqlExecutor): Promise<Provider[]> {
+/**
+ * §9.6/D-45: only providers the user has turned on get *new* jobs queued on
+ * record/edit. HealthKit has no settings toggle yet (not implemented), so
+ * it's never active in Phase 1. Exported so `services/SyncWorker` can use
+ * the same "is this provider active" check before claiming (§9.5 step 0)
+ * instead of re-deriving it from settings a second way.
+ */
+export async function getActiveProviders(executor: SqlExecutor): Promise<Provider[]> {
   const healthConnectEnabled = await getSetting(executor, 'healthConnect.enabled');
   return healthConnectEnabled ? ['health_connect'] : [];
 }
@@ -98,7 +104,7 @@ export async function updateActivity(db: Transactor, id: string, patch: Activity
         HealthSyncJobRepository.findJob(tx, id, provider),
         HealthSyncRepository.findMapping(tx, id, provider),
       ]);
-      const plan = planForEdit(toCurrentJobState(job), mapping !== null);
+      const plan = planForEdit(toCurrentJobState(job), toMappingState(mapping));
       if (plan.action === 'insert') {
         await HealthSyncJobRepository.insertJob(tx, {
           activityId: id,
@@ -133,7 +139,7 @@ export async function deleteActivity(db: Transactor, id: string): Promise<void> 
         HealthSyncRepository.findMapping(tx, id, provider),
       ]);
       const mappingExists = mapping !== null;
-      const plan = planForDelete(toCurrentJobState(job), mappingExists);
+      const plan = planForDelete(toCurrentJobState(job), toMappingState(mapping));
 
       switch (plan.action) {
         case 'delete-job':

@@ -1,0 +1,532 @@
+/**
+ * `services/SyncWorker` の claim/finalize ループ（§9.5–§9.7）を、実SQLite +
+ * モック化した `services/HealthConnectService` に対して検証する。
+ * `HealthConnectService` 自体の変換・エラー分類は
+ * `services/__tests__/HealthConnectService.test.ts` で検証済みなので、
+ * ここでは「呼ばれた結果（成功/失敗）に対して DB がどう遷移するか」に絞る。
+ */
+const mockUpsertActivity = jest.fn();
+const mockDeleteActivityRecord = jest.fn();
+const mockRecreateActivity = jest.fn();
+const mockEnsureInitialized = jest.fn();
+
+jest.mock('../../services/HealthConnectService', () => ({
+  upsertActivity: (...args: unknown[]) => mockUpsertActivity(...args),
+  deleteActivityRecord: (...args: unknown[]) => mockDeleteActivityRecord(...args),
+  recreateActivity: (...args: unknown[]) => mockRecreateActivity(...args),
+  ensureInitialized: (...args: unknown[]) => mockEnsureInitialized(...args),
+}));
+
+import { createTestDb, type TestDb } from '../support/sqliteTestDb';
+import * as ActivityService from '../../services/ActivityService';
+import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
+import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
+import * as ActivityRepository from '../../repositories/ActivityRepository';
+import { getSetting, setSetting } from '../../services/SettingsRepository';
+import { processNextDueJob, drainDueJobs } from '../../services/SyncWorker';
+import * as SyncCoordinator from '../../services/SyncCoordinator';
+
+let db: TestDb;
+
+beforeEach(async () => {
+  db = createTestDb();
+  jest.resetAllMocks();
+  mockEnsureInitialized.mockResolvedValue(true);
+  await setSetting(db, 'healthConnect.enabled', true);
+  // Seeded explicitly (rather than left unset) so `getSetting` below hits the
+  // "row found" path directly — an unset read falls through to
+  // `resolveLocaleDefaults()` (`SettingsRepository.ts`), which calls
+  // `expo-localization`'s `getCalendars()`; that native module isn't
+  // available in this jest environment and throws, unrelated to anything
+  // this suite is testing.
+  await setSetting(db, 'healthConnect.lastSyncedAt', null);
+  SyncCoordinator.__resetSyncCoordinatorForTests();
+});
+
+afterEach(() => {
+  db.close();
+});
+
+async function recordDueActivity() {
+  const activity = await ActivityService.recordActivity(db, {
+    context: 'solo',
+    instantUtc: new Date('2026-09-14T14:42:00Z'),
+    timezoneId: 'Asia/Tokyo',
+  });
+  // Make the job immediately claimable — recordActivity sets a 5s Undo delay (D-44).
+  const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+  await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE id = ?', ['2000-01-01T00:00:00Z', job!.id]);
+  return activity;
+}
+
+describe('processNextDueJob — no work', () => {
+  it('returns no-due-job when the queue is empty', async () => {
+    expect(await processNextDueJob(db, 'health_connect')).toEqual({ status: 'no-due-job' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe('processNextDueJob — create/update success (§9.5.1)', () => {
+  it('upserts the mapping and deletes the job on success', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result.status).toBe('processed');
+    expect(mockUpsertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ id: activity.id, occurredAtUtc: activity.occurredAtUtc, syncVersion: 1 }),
+    );
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).toBeNull();
+    const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    expect(mapping).not.toBeNull();
+    expect(mapping?.externalRecordId).toBeNull();
+  });
+
+  it('records healthConnect.lastSyncedAt (Settings "Last synced", §18/§10.4) on a successful upsert', async () => {
+    await recordDueActivity();
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).toBeNull();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).not.toBeNull();
+  });
+
+  it('keeps the job (released, not deleted) for resend when the Activity is edited mid-flight — planForEdit leaves an in-flight job\'s revision untouched (§9.3), so finalize must detect this via syncVersion instead, per §9.5.1\'s race table ("create送信中に編集→ジョブは残り、大きいsync_versionで送り直す")', async () => {
+    const activity = await recordDueActivity();
+    expect(activity.syncVersion).toBe(1);
+    mockUpsertActivity.mockImplementation(async () => {
+      // The edit happens *during* the external call — after upsertActivity was
+      // invoked with syncVersion=1, but before it resolves.
+      await ActivityService.updateActivity(db, activity.id, { protectionUsed: true });
+      return { ok: true, externalRecordId: null };
+    });
+
+    await processNextDueJob(db, 'health_connect');
+
+    // The external send with the old (v1) data really did succeed — that fact must survive (§9.5.1).
+    const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    expect(mapping).not.toBeNull();
+
+    // But the job must survive so the edit (now syncVersion=2) gets sent too — not silently dropped.
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).not.toBeNull();
+    expect(job?.operation).toBe('create');
+    expect(job?.claimedAt).toBeNull(); // released, so it's claimable again
+    expect(job?.notBefore).not.toBeNull();
+
+    // And a fresh drain actually resends it with the current (v2) data.
+    mockUpsertActivity.mockReset().mockResolvedValue({ ok: true, externalRecordId: null });
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE id = ?', ['2000-01-01T00:00:00Z', job!.id]);
+    await processNextDueJob(db, 'health_connect');
+    expect(mockUpsertActivity).toHaveBeenCalledWith(expect.objectContaining({ syncVersion: 2 }));
+    expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+  });
+
+  it('logs an internal-inconsistency (§9.5.4) instead of throwing if the job vanishes despite the Activity still existing and syncVersion being unchanged', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockImplementation(async () => {
+      // Something (that shouldn't be able to happen under §9.6's claimed-job guard)
+      // deletes the job row itself while the external call is in flight.
+      await db.execute('DELETE FROM health_sync_jobs WHERE activity_id = ?', [activity.id]);
+      return { ok: true, externalRecordId: null };
+    });
+
+    await expect(processNextDueJob(db, 'health_connect')).resolves.toEqual({
+      status: 'processed',
+      jobId: expect.any(String),
+    });
+    // The mapping must still be recorded even though the job bookkeeping couldn't complete.
+    expect(await HealthSyncRepository.findMapping(db, activity.id, 'health_connect')).not.toBeNull();
+  });
+
+  it('does not create a mapping, and attaches the external id to the replaced delete job, when the Activity was deleted mid-flight (§9.5.1 else, I10)', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockImplementation(async () => {
+      await ActivityService.deleteActivity(db, activity.id);
+      return { ok: true, externalRecordId: null };
+    });
+
+    await processNextDueJob(db, 'health_connect');
+
+    const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    expect(mapping).toBeNull(); // FK RESTRICT — cannot exist once the Activity is gone
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+    // health_connect doesn't need this (§5.4, clientRecordId suffices), but the generic
+    // §9.5.1 "else" bookkeeping should still run without throwing.
+  });
+
+  it('still records healthConnect.lastSyncedAt when the Activity was deleted mid-flight — the external call succeeded regardless of which finalize branch runs (§9.5.1 else, corrected in review)', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockImplementation(async () => {
+      await ActivityService.deleteActivity(db, activity.id);
+      return { ok: true, externalRecordId: null };
+    });
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).not.toBeNull();
+  });
+});
+
+describe('processNextDueJob — failure & backoff (§9.6)', () => {
+  it('backs off with claimed_at cleared and last_error_code recorded, keeping the job', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: false, errorCode: 'UNAVAILABLE' });
+
+    await processNextDueJob(db, 'health_connect');
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).not.toBeNull();
+    expect(job?.claimedAt).toBeNull();
+    expect(job?.lastErrorCode).toBe('UNAVAILABLE');
+    expect(job?.attempts).toBe(1);
+    expect(job?.notBefore).not.toBeNull(); // still within the automatic-retry budget
+  });
+
+  it('switches to manual-retry-only (not_before = null) once attempts reach the cap (10)', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: false, errorCode: 'UNKNOWN' });
+
+    for (let i = 0; i < 10; i++) {
+      await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE activity_id = ?', [
+        '2000-01-01T00:00:00Z',
+        activity.id,
+      ]);
+      await processNextDueJob(db, 'health_connect');
+    }
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.attempts).toBe(10);
+    expect(job?.notBefore).toBeNull();
+  });
+});
+
+describe('processNextDueJob — internal inconsistency (§9.5.3)', () => {
+  it('marks LOCAL_ACTIVITY_NOT_FOUND and stops automatic retries when the Activity is gone but a create/update job still claims to exist (should be unreachable via normal app code paths)', async () => {
+    const activity = await recordDueActivity();
+    // Force the inconsistency directly at the DB layer — normal ActivityService
+    // deletion would have already turned this into a `delete` job (§10.1),
+    // so this specifically exercises the "should never happen" branch.
+    await db.execute('DELETE FROM activities WHERE id = ?', [activity.id]);
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result.status).toBe('processed');
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.lastErrorCode).toBe('LOCAL_ACTIVITY_NOT_FOUND');
+    expect(job?.notBefore).toBeNull();
+  });
+});
+
+describe('processNextDueJob — delete (§9.7)', () => {
+  it('deletes the job on a successful external delete (mapping was already removed synchronously by deleteActivity)', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+    await processNextDueJob(db, 'health_connect'); // land the create first so a mapping exists
+
+    await ActivityService.deleteActivity(db, activity.id);
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE activity_id = ?', [
+      '2000-01-01T00:00:00Z',
+      activity.id,
+    ]);
+    mockDeleteActivityRecord.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result.status).toBe('processed');
+    expect(mockDeleteActivityRecord).toHaveBeenCalledWith(activity.id);
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).toBeNull();
+  });
+
+  it('records healthConnect.lastSyncedAt (Settings "Last synced", §18/§10.4) on a successful delete', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+    await processNextDueJob(db, 'health_connect'); // land the create first so a mapping exists
+    await ActivityService.deleteActivity(db, activity.id);
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE activity_id = ?', [
+      '2000-01-01T00:00:00Z',
+      activity.id,
+    ]);
+    mockDeleteActivityRecord.mockResolvedValue({ ok: true, externalRecordId: null });
+    const lastSyncedAfterCreate = await getSetting(db, 'healthConnect.lastSyncedAt');
+    expect(lastSyncedAfterCreate).not.toBeNull();
+    await setSetting(db, 'healthConnect.lastSyncedAt', null); // isolate this test's own assertion from the create step above
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).not.toBeNull();
+  });
+
+  it('does not treat a rejected delete as an internal-inconsistency Activity-existence check — deletes never re-check Activity existence (it is already gone by definition)', async () => {
+    const activity = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+    await processNextDueJob(db, 'health_connect');
+    await ActivityService.deleteActivity(db, activity.id);
+    await db.execute('UPDATE health_sync_jobs SET not_before = ? WHERE activity_id = ?', [
+      '2000-01-01T00:00:00Z',
+      activity.id,
+    ]);
+    mockDeleteActivityRecord.mockResolvedValue({ ok: false, errorCode: 'UNKNOWN' });
+
+    await processNextDueJob(db, 'health_connect');
+
+    expect(ActivityRepository.findActivityById(db, activity.id)).resolves.toBeNull();
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete');
+    expect(job?.lastErrorCode).toBe('UNKNOWN');
+  });
+});
+
+describe('processNextDueJob — recreate (§9.3.1)', () => {
+  it('upserts the mapping and deletes the job on success, same as create/update', async () => {
+    await setSetting(db, 'healthConnect.enabled', false); // recreate isn't queued by normal record/edit flows
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await HealthSyncJobRepository.insertJob(db, {
+      activityId: activity.id,
+      provider: 'health_connect',
+      operation: 'recreate',
+      notBefore: '2000-01-01T00:00:00Z',
+    });
+    mockRecreateActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result.status).toBe('processed');
+    expect(mockRecreateActivity).toHaveBeenCalledWith(expect.objectContaining({ id: activity.id }));
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).toBeNull();
+    const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    expect(mapping).not.toBeNull();
+  });
+});
+
+describe('drainDueJobs', () => {
+  it('processes every due job across multiple Activities in one call', async () => {
+    const a = await recordDueActivity();
+    const b = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const result = await drainDueJobs(db, 'health_connect');
+
+    expect(result).toEqual({ processedCount: 2, stoppedReason: 'drained' });
+    expect(await HealthSyncJobRepository.findJob(db, a.id, 'health_connect')).toBeNull();
+    expect(await HealthSyncJobRepository.findJob(db, b.id, 'health_connect')).toBeNull();
+  });
+
+  it('does nothing when Health Connect is disabled (D-45: jobs are kept, just not claimed)', async () => {
+    await recordDueActivity();
+    await setSetting(db, 'healthConnect.enabled', false);
+
+    const result = await drainDueJobs(db, 'health_connect');
+
+    expect(result).toEqual({ processedCount: 0, stoppedReason: 'provider-disabled' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the SDK fails to initialize, without burning through job attempts', async () => {
+    await recordDueActivity();
+    mockEnsureInitialized.mockResolvedValue(false);
+
+    const result = await drainDueJobs(db, 'health_connect');
+
+    expect(result).toEqual({ processedCount: 0, stoppedReason: 'provider-unavailable' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+  });
+
+  it('does not stop the whole drain when ensureInitialized() rejects — treats it the same as returning false', async () => {
+    await recordDueActivity();
+    mockEnsureInitialized.mockRejectedValue(new Error('not installed'));
+
+    await expect(drainDueJobs(db, 'health_connect')).resolves.toEqual({
+      processedCount: 0,
+      stoppedReason: 'provider-unavailable',
+    });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+  });
+
+  it('keeps draining the rest of the queue after losing a claim race on one job, instead of stopping early (a lost race is not "queue empty")', async () => {
+    const a = await recordDueActivity();
+    const b = await recordDueActivity();
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const originalClaimNextDueJob = HealthSyncJobRepository.claimNextDueJob.bind(HealthSyncJobRepository);
+    const claimSpy = jest.spyOn(HealthSyncJobRepository, 'claimNextDueJob');
+    claimSpy.mockResolvedValueOnce(HealthSyncJobRepository.LOST_CLAIM_RACE);
+    claimSpy.mockImplementation((executor, provider, nowIso) => originalClaimNextDueJob(executor, provider, nowIso));
+
+    const result = await drainDueJobs(db, 'health_connect');
+
+    // Only 2 Activities were actually due; the lost-race call doesn't count as "processed".
+    expect(result.processedCount).toBe(2);
+    expect(result.stoppedReason).toBe('drained');
+    expect(await HealthSyncJobRepository.findJob(db, a.id, 'health_connect')).toBeNull();
+    expect(await HealthSyncJobRepository.findJob(db, b.id, 'health_connect')).toBeNull();
+
+    claimSpy.mockRestore();
+  });
+
+  describe('shouldContinue (§9.5.4 AppState gate)', () => {
+    it('stops before claiming a new job once shouldContinue returns false, reporting "backgrounded"', async () => {
+      const a = await recordDueActivity();
+      const b = await recordDueActivity();
+      mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+      let allow = true;
+      const result = await drainDueJobs(db, 'health_connect', {
+        shouldContinue: () => {
+          const wasAllowed = allow;
+          allow = false; // flip off after the first check, so only one job gets processed
+          return wasAllowed;
+        },
+      });
+
+      expect(result.stoppedReason).toBe('backgrounded');
+      expect(result.processedCount).toBe(1);
+      // One of the two is still due, untouched.
+      const remaining = [
+        await HealthSyncJobRepository.findJob(db, a.id, 'health_connect'),
+        await HealthSyncJobRepository.findJob(db, b.id, 'health_connect'),
+      ].filter((j) => j !== null);
+      expect(remaining).toHaveLength(1);
+    });
+
+    it('does not abort a job already past the shouldContinue check, even if it flips false mid-flight (an in-flight cycle always runs to completion)', async () => {
+      const activity = await recordDueActivity();
+      let reachedExternalCall!: () => void;
+      const reachedExternalCallPromise = new Promise<void>((resolve) => {
+        reachedExternalCall = resolve;
+      });
+      let allow = true;
+      mockUpsertActivity.mockImplementation(async () => {
+        allow = false; // background the app while this job's external call is in flight
+        reachedExternalCall();
+        return { ok: true, externalRecordId: null };
+      });
+
+      const draining = drainDueJobs(db, 'health_connect', { shouldContinue: () => allow });
+      await reachedExternalCallPromise;
+
+      const result = await draining;
+      expect(result.processedCount).toBe(1); // the in-flight job still completed
+      expect(result.stoppedReason).toBe('backgrounded'); // but no further job would be claimed after it
+      expect(await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect')).toBeNull();
+    });
+
+    it('defaults to always continuing when no shouldContinue is given', async () => {
+      await recordDueActivity();
+      mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+      const result = await drainDueJobs(db, 'health_connect');
+      expect(result.stoppedReason).toBe('drained');
+    });
+  });
+});
+
+describe('processNextDueJob — lost claim race', () => {
+  it('reports lost-claim-race distinctly from no-due-job', async () => {
+    await recordDueActivity();
+    const claimSpy = jest
+      .spyOn(HealthSyncJobRepository, 'claimNextDueJob')
+      .mockResolvedValueOnce(HealthSyncJobRepository.LOST_CLAIM_RACE);
+
+    await expect(processNextDueJob(db, 'health_connect')).resolves.toEqual({ status: 'lost-claim-race' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+
+    claimSpy.mockRestore();
+  });
+});
+
+describe('processNextDueJob — SyncCoordinator (§9.12, §17.3 I14)', () => {
+  it('does not claim at all while suspended (checked before claimNextDueJob)', async () => {
+    const activity = await recordDueActivity();
+    await SyncCoordinator.__testHooks.suspend();
+
+    const result = await processNextDueJob(db, 'health_connect');
+
+    expect(result).toEqual({ status: 'suspended' });
+    expect(mockUpsertActivity).not.toHaveBeenCalled();
+    // Untouched — never claimed, so attempts/claimedAt are exactly as recordDueActivity left them.
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.attempts).toBe(0);
+    expect(job?.claimedAt).toBeNull();
+
+    SyncCoordinator.__testHooks.resume();
+  });
+
+  it("protects the claim itself, not just the external call — a suspend() that starts while claimNextDueJob is still awaited waits for the whole cycle (2回目のレビューで指摘、finding 1)", async () => {
+    const activity = await recordDueActivity();
+
+    let resolveClaimSelect!: () => void;
+    const originalClaimNextDueJob = HealthSyncJobRepository.claimNextDueJob.bind(HealthSyncJobRepository);
+    const claimSpy = jest.spyOn(HealthSyncJobRepository, 'claimNextDueJob').mockImplementation(async (...args) => {
+      await new Promise<void>((resolve) => {
+        resolveClaimSelect = resolve;
+      });
+      return originalClaimNextDueJob(...args);
+    });
+
+    mockUpsertActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+
+    const processing = processNextDueJob(db, 'health_connect');
+    await Promise.resolve(); // let processNextDueJob reach claimNextDueJob and register with trackSyncCycle
+
+    let suspendResolved = false;
+    const suspending = SyncCoordinator.__testHooks.suspend().then(() => {
+      suspendResolved = true;
+    });
+    await Promise.resolve();
+    expect(suspendResolved).toBe(false); // claim hasn't even happened yet — must still wait
+
+    resolveClaimSelect(); // let the claim (and the rest of the cycle) proceed
+    await processing;
+    await suspending;
+    expect(suspendResolved).toBe(true);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job).toBeNull(); // the job completed normally — claim was never left dangling mid-transaction
+
+    claimSpy.mockRestore();
+    SyncCoordinator.__testHooks.resume();
+  });
+
+  it('registers the whole claim-to-finalize cycle with SyncCoordinator.trackSyncCycle so a concurrent suspend() waits for it (I12/I13/I20)', async () => {
+    await recordDueActivity();
+    let resolveUpsert!: (value: { ok: true; externalRecordId: null }) => void;
+    let reachedExternalCall!: () => void;
+    const reachedExternalCallPromise = new Promise<void>((resolve) => {
+      reachedExternalCall = resolve;
+    });
+    mockUpsertActivity.mockImplementation(() => {
+      reachedExternalCall();
+      return new Promise((resolve) => {
+        resolveUpsert = resolve;
+      });
+    });
+
+    const processing = processNextDueJob(db, 'health_connect');
+    // Real DB awaits (claim, Activity existence check) happen before the
+    // external call — wait for an actual signal that it was reached rather
+    // than guessing a microtask-tick count.
+    await reachedExternalCallPromise;
+
+    let suspendResolved = false;
+    const suspending = SyncCoordinator.__testHooks.suspend().then(() => {
+      suspendResolved = true;
+    });
+    await Promise.resolve();
+    expect(suspendResolved).toBe(false); // must not resolve while the claimed job's external call is still pending
+
+    resolveUpsert({ ok: true, externalRecordId: null });
+    await processing;
+    await suspending;
+    expect(suspendResolved).toBe(true);
+
+    SyncCoordinator.__testHooks.resume();
+  });
+});

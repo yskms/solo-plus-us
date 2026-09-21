@@ -25,6 +25,7 @@ import { shareExportFile } from '../../services/ExportSharingService';
 import { performSafetyExport } from '../../services/SafetyExportService';
 import { validateExportFile } from '../../services/importValidation';
 import { performReplaceImport, performAppendImport } from '../../services/ImportService';
+import * as SyncCoordinator from '../../services/SyncCoordinator';
 import { countAllActivities } from '../../repositories/ActivityRepository';
 import { SafetyExportFailedError } from '../../lib/errors';
 import { logError } from '../../lib/log';
@@ -179,7 +180,11 @@ export default function DataSettingsScreen() {
 
     setStep({ kind: 'busy', label: 'Replacing your data…' });
     try {
-      const result = await performReplaceImport(db, file);
+      // §9.12: this is the one call site that runs performReplaceImport
+      // against the *live* app DB — must go through SyncCoordinator so it
+      // can't race SyncWorker (see ImportService.performReplaceImport's
+      // doc comment for why the wrapping lives here, not in that function).
+      const result = await SyncCoordinator.runExclusive(() => performReplaceImport(db, file));
       bump();
       setStep({ kind: 'menu' });
       Alert.alert('Import complete', `${result.importedCount} activities restored. ${safetyExportLocationShortNotice()}`);

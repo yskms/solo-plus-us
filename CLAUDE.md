@@ -24,6 +24,37 @@
 止めず、まず Android 側で検証し、iOS は上記の制約を明示したうえで
 保留にする。
 
+### schema.ts を変更した後の実機テストは、既存アプリを一度アンインストールすること
+
+v1 は未リリースのため D-11「ALTER TABLE のみ」はまだ適用されず、
+`database/schema.ts` を直接編集する方針（README 各所に記載）。これは
+「新規インストール前提」の設計であり、**過去に一度でもインストールした
+実機/エミュレータの DB ファイルは、`schema.ts` に後から追加された列を
+自動では持たない**（`adb install -r` はアプリデータを保持したまま
+アップグレードするため、DB ファイルは古いスキーマのまま残る）。
+
+実際に、D-51（`health_sync.sync_state` 列追加）より前からテストに使って
+いた Pixel 11 に最新ビルドを `-r` で上書きインストールしたところ、
+`table health_sync has no column named sync_state` という SQLite
+エラーが `SyncWorker` の finalize で発生し続けた（Settings 画面の
+接続ステータスが不安定に見えるなど、無関係に見える副作用も伴った——
+Health Connect Settings UI 実装時に実際に踏んだ）。
+
+**`schema.ts` を変更した回のブランチ/コミットを実機でテストする際は、
+`adb uninstall <applicationId>` してから `adb install` し直すこと。**
+`-r`（保持アップグレード）で踏むと、コードのバグと勘違いして無駄に
+調査することになる。
+
+### adb での実機 UI 操作時、LogBox の警告バナーがタップを奪うことがある
+
+開発ビルドで LogBox の警告バナー（「Open debugger to view warnings」等）が画面下部に
+出ている間、`adb shell input tap` でその帯と重なる位置（Save ボタン等）をタップしても
+**ネイティブの overlay に吸われて何も起こらない**——ログも出ず、画面遷移もしない。
+一見「保存処理がサイレントに失敗している」ように見えるため、これを実際のアプリの
+不具合と誤診しかけたことがある（Activity Detail の DATE & TIME 編集、2026-09-21）。
+adb でのタップが理由なく無反応に見えたら、まず `uiautomator dump` でバナーの有無を
+確認し、バナーの「X」を閉じてから再現し直すこと。
+
 ### スクリーンショットに関する方針
 
 スクリーンショットおよび画面録画は、デフォルトでは禁止しないこと。
@@ -54,6 +85,51 @@ comment）。ネイティブ picker はタイムゾーンを意識できず、�
 誤りで、記録時のゾーンと端末の現在ゾーンが異なる場合に表示・保存がずれる不具合を
 再発させる。変更する際は必ず `resolveOccurredAtEdit`／`nowAsZonedDigits` の doc
 comment を先に読むこと。
+
+### Health Connect 同期の排他制御（`SyncWorker`/`SyncCoordinator`/`SyncWorkerLoop`）
+
+`services/SyncWorker.ts` は「v1 はプロセス内単一ワーカー」（§6.2/D-36）を
+前提に書かれているが、**この前提はコード自身では守られず、呼び出し側が
+守る責務**になっている。実際に一度、この前提が壊れて
+「cannot start a transaction within a transaction」（`db.transaction` の
+衝突）と「claim が解放されずに次回起動まで残る」の両方を実機相当の
+再現で踏んだ（`contexts/SyncWorkerLoop.tsx` のレビュー時）。
+
+- **drain のトリガを増やすときは、必ず `contexts/SyncWorkerLoop.tsx` の
+  `drainingRef`/`rerunRequestedRef` による直列化を経由すること。**
+  `drainDueJobs` を独自のタイマーやイベントから直接呼ぶコードを新設しない。
+- **破壊的操作（置換復元・全削除・HC切断等）は必ず
+  `SyncCoordinator.runExclusive` 経由で呼ぶこと。** そして
+  `runExclusive` に渡す関数の**内側**から `drainDueJobs`/`useSyncWorkerLoop`
+  相当の処理を呼ばないこと——`SyncCoordinator` の直列化キューは同一
+  呼び出しスタック内でのネストに対応できず、デッドロックする
+  （`services/SyncCoordinator.ts` の「直列化」節参照）。
+
+Settings UI（HC の ON/OFF・手動再試行/破棄）を実装する際は、新しい
+drain トリガや破壊的操作を追加することになるため、この2点を必ず踏まえる
+こと。詳細な経緯は README「Phase 4 実装状況」のレビュー履歴参照。
+
+### `react-native-health-connect` は iOS で「呼ぶと必ず throw する Proxy」
+
+`node_modules/react-native-health-connect/lib/commonjs/index.js` は iOS/未対応
+プラットフォーム向けに `HealthConnectModule` を「どのメソッドを呼んでも
+`throw` する `Proxy`」にしている（`moduleProxy`）。つまり
+`HealthConnectService.isAvailable()`/`ensureInitialized()` 等は iOS では
+**毎回確実に reject する**——一時的なエラーではなく恒常的な状態。
+
+これを他の非同期処理（特に DB 読み取り）と同じ `Promise.all` に入れると、
+その `Promise.all` 全体が常に失敗扱いになる。Settings > Health Connect 画面
+（`app/settings/health-connect.tsx`）の初版でこの事故を実際に踏んだ——DB
+読み取り4件とまとめていたため、iOS では毎回「何も同期されていない」ように
+見えるだけでなく、未処理の delete job が残っていても件数が0件に見え、
+§10.5「未処理が残っている間は件数を表示し続ける」に違反していた。
+
+- Health Connect のネイティブ呼び出しは、DB 読み取りとは別の `try/catch`
+  に分離すること（`services/SyncWorker.ts` の `drainDueJobs` が
+  `ensureInitialized()` の reject を個別に扱っているのと同じ形）。
+- 根本的な対策は `app/settings/index.tsx` の HEALTH セクションを
+  `Platform.OS === 'android'` でガードすること——Health Connect は
+  Android 専用機能（§9.11）なので、iOS でこの画面自体を表示しない。
 
 ### Android のダーク/ライト切替まわりの落とし穴
 

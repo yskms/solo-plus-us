@@ -1,22 +1,33 @@
 /**
  * UI/UX §17 Screen 07 — Settings. Only the sections that actually have a
- * working destination are listed here; the rest of §17's mockup (Health
- * Connect, Activity Details, Preferences, About) ships as its own row
- * once each is built, rather than linking to placeholders now. DATA is a
- * single "Export & Import" row rather than §17's separate Export/Import/
- * Delete rows — `settings/data.tsx` covers Export and Import; Delete
- * (§10.6) isn't built yet, so the mockup's three-row split isn't followed
- * literally (see README). "Hide App Preview" (§18 画面マスク) links to an
- * informational screen, not a toggle — see `lib/screenMask.ts`. "Block
- * Screenshots" is a real opt-in toggle (default off), added 2026-09-18
- * when always-on screenshot blocking was reversed to opt-in — see
- * CLAUDE.md's「スクリーンショットに関する方針」and `lib/screenMask.ts`.
- * PREFERENCES has only "Appearance" — §17's mockup also lists First Day of
- * Week / Time Format there, but those aren't built yet, so (same rule as
- * above) they don't get placeholder rows.
+ * working destination are listed here; the rest of §17's mockup (Activity
+ * Details, Preferences, About) ships as its own row once each is built,
+ * rather than linking to placeholders now. DATA is a single "Export &
+ * Import" row rather than §17's separate Export/Import/Delete rows —
+ * `settings/data.tsx` covers Export and Import; Delete (§10.6) isn't built
+ * yet, so the mockup's three-row split isn't followed literally (see
+ * README). "Hide App Preview" (§18 画面マスク) links to an informational
+ * screen, not a toggle — see `lib/screenMask.ts`. "Block Screenshots" is a
+ * real opt-in toggle (default off), added 2026-09-18 when always-on
+ * screenshot blocking was reversed to opt-in — see CLAUDE.md's「スクリーン
+ * ショットに関する方針」and `lib/screenMask.ts`. HEALTH's "Health Connect"
+ * row (§18 Screen 08) covers ON/OFF and the unsynced-changes retry/discard
+ * flow (§9.6/§10.4/§10.5) — see `settings/health-connect.tsx`'s doc comment
+ * for its intentional deviations from the §18 mockup. That section is
+ * `Platform.OS === 'android'`-only (レビュー指摘) — Health Connect itself is
+ * Android-only (§9.11) and the iOS counterpart (`healthkit` provider) isn't
+ * implemented, so on iOS there is nothing this row could actually do; showing
+ * it there would open a screen whose every action (`HealthConnectService.
+ * isAvailable()`/`ensureInitialized()`/etc., all backed by a Proxy that
+ * throws on iOS — see `node_modules/react-native-health-connect/lib/
+ * commonjs/index.js`'s `moduleProxy`) fails, matching this file's own rule
+ * of not showing rows for things that don't work here. PREFERENCES has
+ * only "Appearance" — §17's mockup also lists First Day of Week / Time
+ * Format there, but those aren't built yet, so (same rule as above) they
+ * don't get placeholder rows.
  */
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
@@ -63,6 +74,13 @@ export default function SettingsIndexScreen() {
             { label: 'Block Screenshots', onPress: () => router.push('/settings/block-screenshots') },
           ]}
         />
+
+        {Platform.OS === 'android' && (
+          <>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>HEALTH</Text>
+            <SettingsGroup rows={[{ label: 'Health Connect', onPress: () => router.push('/settings/health-connect') }]} />
+          </>
+        )}
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
         <SettingsGroup rows={[{ label: 'Export & Import', onPress: () => router.push('/settings/data') }]} />
