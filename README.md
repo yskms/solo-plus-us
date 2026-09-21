@@ -85,7 +85,7 @@ DB を触るコードを書く前に確定が必要なもの（すべて DB フ�
 - [x] 同期確定処理の3分岐と `recreate` 操作
 - [x] アプリ設定の保存先（暗号化 DB 内の `app_settings`）
 - [x] Health Connect ラッパーが `clientRecordId` と `clientRecordVersion` を露出しているか
-- [x] 削除時の「存在しない」を成功として扱えるか（Android 14 以降のみソースで確認。9〜13 は未確認のため既知の制限を適用）
+- [x] 削除時の「存在しない」を成功として扱えるか（Android 14 以降のみソースで確認。9〜13 は当時未確認のため既知の制限を適用——2026-09-21 の実機確認で reject されることを確認済み。「実機確認（Pixel 3、D-20）」参照）
 - [x] ネイティブ呼び出しの cancel/タイムアウト（§9.12）——全経路で cancel 不可と確認（14以降は platform API、9〜13 は androidx の AIDL が根拠）
 
 2026-09-19、`react-native-health-connect` v4.1.3 を対象にソース読解で調査（実機/エミュレータでの
@@ -2366,7 +2366,11 @@ integration.test.ts` に、claim 競合時の drain 継続・§9.5.4 検出は
   判断した。§10.6 全Activity削除等、新しい破壊的操作を追加する際にこの
   判断が今も妥当か再検討すること
 
-### ステップ4: AppState 配線（実装完了。実機確認は未実施）
+### ステップ4: AppState 配線（実装完了。実機確認済み）
+
+バックグラウンド/フォアグラウンド遷移でのクラッシュ・無限ループの有無は
+「Settings UI の実機確認」の一環として Pixel 11 で確認済み（下記 Known
+gaps および「実機確認（Pixel 11、初回/2回目/3回目）」参照）。
 
 - [contexts/SyncWorkerLoop.tsx](contexts/SyncWorkerLoop.tsx)：「いつ
   `drainDueJobs` を呼ぶか」（§9.5.4 の AppState 表：`active`→開始・
@@ -2508,7 +2512,7 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
 
 いずれも設計判断記録 D-51 に訂正の経緯を追記済み。
 
-### ステップ6: Settings 画面の Health Connect UI（実装完了。実機確認は未実施）
+### ステップ6: Settings 画面の Health Connect UI（実装完了。実機確認済み）
 
 基本設計 §9.6（再試行/破棄の operation 別文言）・§10.4（未同期の変更の可視化）・
 §10.5（切断時の警告）・§9.12（切断は `SyncCoordinator.runExclusive` 経由）、
@@ -3079,8 +3083,10 @@ Phase 4 に残っていた唯一の機能実装。置換復元（`services/Impor
 
 #### 実機確認（Pixel 3、`recreateActivity` の insert-after-delete-failure、2026-09-21）
 
-D-20 と同じ Android 12（Pixel 3、Health Connect v2026.08.06.00）で、
-`recreateActivity` の delete 失敗→insert 進行の経路を確認した。
+D-20 と同じ Android 12（API 31、ビルド `SP1A.210812.016.C1`、セキュリティ
+パッチ 2021-10-05、Google Play システムアップデート 2026-07-01、Health
+Connect アプリ v2026.08.06.00.release）で、`recreateActivity` の delete
+失敗→insert 進行の経路を確認した。
 
 **手順**：Health Connect アプリ側で対象 Activity の性行為エントリを直接
 削除（「接続されているアプリが、このデータにアクセスできなくなります」の
@@ -3102,7 +3108,13 @@ Health Connect?」）→SYNC。
   外部レコードが復元されたことの直接証拠
 
 これにより、Known gaps に残っていた「`recreateActivity` の
-insert-after-delete-failure 経路の実機検証」は解消。
+insert-after-delete-failure 経路の実機検証」は解消。設計判断記録 D-20/D-34
+にも追記済み。
+
+**この確認の限界**（D-20 の「実機確認結果」に記載した限界がそのまま
+当てはまる）：検証したのは「Health Connect アプリ側で直接削除して
+外部レコード不在を再現する」という1経路のみ。検証環境は上記の Pixel 3
+1台1バージョンのみ。
 
 **実機検証中に踏んだ、この端末固有の妨害要因**（アプリのバグではない）：
 「Hide App Preview」が Android 12 では常時 ON 固定のため（上記 CLAUDE.md
@@ -3112,9 +3124,11 @@ insert-after-delete-failure 経路の実機検証」は解消。
 
 #### 実機確認（Pixel 11、置換復元→同意画面→Sync→Settings 反映、2026-09-21）
 
-Android 14+ のプラットフォーム統合パス（Pixel 11）で、§13.6 の主要
-ユースケース（置換復元→`offerResync`→Health Connect 再同期）を一気通貫で
-確認した。
+Android 17（API 37、ビルド `CD1A.260905.001.B1`、セキュリティパッチ
+2026-09-01、Google Play システムアップデート 2026-07-01、Health Connect
+アプリ v2026.08.06.00.release）のプラットフォーム統合パス（Pixel 11）で、
+§13.6 の主要ユースケース（置換復元→`offerResync`→Health Connect 再同期）を
+一気通貫で確認した。
 
 **手順**：Activity を1件記録（自動同期で HC にも反映）→ Settings > Data >
 Export JSON でバックアップを作成→同じファイルを Import from a backup で
@@ -3131,20 +3145,27 @@ Export JSON でバックアップを作成→同じファイルを Import from a
   「Import complete」の Alert まで到達
 - Settings > Health Connect で Last synced が実行直後の時刻に更新され、
   Unsynced changes が「Everything is synced.」に戻った
-- Health Connect アプリ側で該当エントリ（12:49・Solo + Us）が実在する
-  ことを確認。**同じ日に無関係な孤立レコード（1:21・Solo + Us）が1件
-  存在していたが、これは調査の結果、今回のテストとは無関係と判明**——
-  HC の「最近のアクセス」ログ（過去24時間）に Solo + Us からの書き込みは
-  12:49（記録時の自動同期）と 12:57（再同期の finalize）の2件しかなく、
-  1:21 台のアクセスは存在しない。アプリの `firstInstallTime` が本日
-  01:25:03 であることから、この孤立レコードは本日の再インストール以前の
-  別セッションで作成され、その後ローカル側は入れ替わったが HC 側には
-  残り続けているもの（app は READ 権限を持たないため検知・清掃できない、
-  D-12/D-20 の原則通り）と判断した。今回の置換復元テストが重複レコードを
-  作っていないことは、ローカルの Activity 件数（1件）と HC の「今日」の
-  Solo + Us 書き込みアクセス件数（12:49 の1回きり、recreate の
-  delete+insert を合わせても1回として記録される）が一致していることから
-  確認できる
+- Health Connect アプリ側の性行為エントリ一覧（今日）を確認したところ
+  `occurredAt = 12:49` の Solo + Us エントリが1件だけ存在し、12:49 近傍の
+  重複エントリは無かった——**これが recreateActivity（delete→insert）が
+  二重レコードを作っていないことの直接的な証拠**。また「最近のアクセス」
+  ログ（過去24時間）には Solo + Us からの書き込みが 12:49（記録時の
+  自動同期）・12:57（再同期の finalize）の2件のみ記録されており、これは
+  「新規作成→再同期での delete+insert（1ジョブとして finalize）」という
+  今回の操作回数と一致する。今回のテストの非重複性の根拠はこの2点のみ。
+- **同じ画面にもう1件、無関係と思われる孤立レコード（`occurredAt = 1:21`・
+  Solo + Us）があったが、その由来は特定できていない——**当初「アクセス
+  ログの過去24時間に 1:21 台の書き込みが無いことから、本日の再インストール
+  （`firstInstallTime` 01:25:03）以前の無関係な残留データと確認した」と
+  記録したが、これは誤った推論だった：エントリ一覧が表示するのは
+  `occurredAt`（記録時刻）であり書き込み（アクセスログ）時刻ではないため、
+  両者を突き合わせても由来は判定できない。それどころか、`occurredAt` と
+  書き込み時刻が近いと仮定すると `firstInstallTime` とほぼ同時刻の書き込みが
+  24時間ログに現れないという矛盾が生じ、「アクセスログが網羅的でない」か
+  「occurredAt と書き込み時刻は無関係」のどちらかを示しているに過ぎない。
+  **このレコードの起源は未確認のまま**とする——ただし上記の通り、今回の
+  テストの非重複性の結論はこの孤立レコードの解釈に依存しないため、
+  別途調査するまで Known gaps として残す（下記参照）
 
 これにより、Known gaps に残っていた「置換復元→同意画面→Sync のフロー
 確認」も解消。Phase 4 の実機確認タスクは完了。
@@ -3172,3 +3193,19 @@ Android の SAF がルート直下や標準ディレクトリ（`Download` 等�
   押した直後は既に同期済みだった Activity まで一時的に Unsynced changes
   に並ぶ**——drain されるまでの一過性で仕様違反ではないが、この Known
   gap が顕在化しやすくなる方向の変更である
+- **Pixel 11 の Health Connect に起源未確認の孤立レコードが1件ある**
+  （上記「実機確認（Pixel 11、置換復元→同意画面→Sync→Settings 反映）」
+  参照、`occurredAt = 1:21`・Solo + Us）。今回のテストの結論には影響しない
+  ことは確認済みだが、由来自体は未調査のまま。再調査する場合は
+  Health Connect アプリの「アクセス」タブ（レコード単位の権限アクセス
+  履歴、今回は「最近のアクセス」というアプリ単位のログしか見ていない）
+  も合わせて確認すること
+- **置換復元の安全バックアップ保存先で SAF がルート/標準ディレクトリ直下を
+  拒否する場合、原因がユーザーに伝わらない**：`app/settings/data.tsx` の
+  文言は "you'll be asked to choose a folder" とだけ述べ、フォルダ選択が
+  拒否された場合のヒントが無い。拒否は OS のピッカー内で起きるため
+  ユーザーはキャンセルするしかなく、結果としてアプリ側には
+  [services/SafetyExportService.ts](services/SafetyExportService.ts) の
+  "Choose a save location to continue" が出るだけで原因不明に見える
+  （実機確認時は「新規フォルダを作成」で回避——上記手順参照）。v1 必須では
+  ないが、UI 文言の改善課題として残す

@@ -630,6 +630,22 @@ note や mood の編集頻度は低く、最適化の価値が分岐のコスト
 >   差は考えにくいが、上記の「Android 9〜13 では」という記述はこの1点の
 >   実測に基づく
 
+> **実機確認結果（2026-09-21、Pixel 3 / Android 12、同一環境）：
+> 上記「未検証」だった `recreateActivity` の insert-after-delete-failure
+> 経路も実機で検証済み。** D-34「§13.6 実装時の結論」で `recreateActivity`
+> を「delete が `UNKNOWN` 分類で失敗した場合は insert へ進む」よう修正した
+> 後、Health Connect アプリ側で対象レコードを直接削除して外部レコード
+> 不在を再現し、「Sync everything to Health Connect」で recreate ジョブを
+> 実行したところ、delete が本確認結果どおり reject（`UNKNOWN`）された後
+> insert へ進み、レコードが実際に再作成されることを確認した（README
+> 「Phase 4 実装状況」の「実機確認（Pixel 3、`recreateActivity` の
+> insert-after-delete-failure）」参照）。**この確認の限界は上記「この結論の
+> 範囲」の2・3項（検証したのは直接削除による不在再現の1経路のみ／
+> Pixel 3 の1台1バージョンのみ）とそのまま同じ。** 加えて、Pixel 11
+> （Android 17、プラットフォーム統合パス）で置換復元→`offerResync`→
+> Sync の一連の流れも実機確認済み（同 README「実機確認（Pixel 11、
+> 置換復元→同意画面→Sync→Settings 反映）」参照）。
+
 ---
 
 ## D-21 削除フローは同期状態によって分岐する
@@ -1128,6 +1144,14 @@ NOT_FOUND を成功扱いにしている以上、先頭からの再実行は常�
 >    共有する読み取り専用プレビュー）を追加した。
 >
 > これにより本 D-34 の「§13.6実装時に別途判断すること」は解消済み。
+
+> **実機確認（2026-09-21）：** 上記の delete-then-insert 修正を Pixel 3
+> （Android 12、D-20 と同一環境）で、delete が `UNKNOWN` 分類で reject
+> された後 insert へ進みレコードが実際に再作成されることを確認した。また
+> 置換復元→`offerResync`→Sync の一連の流れを Pixel 11（Android 17、
+> プラットフォーム統合パス）で確認した。詳細・確認の限界は D-20 の
+> 「実機確認結果」追記および README「Phase 4 実装状況」の該当セクション
+> 参照。
 
 **却下した案**
 
