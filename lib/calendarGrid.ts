@@ -5,7 +5,12 @@
  *
  * Leading/trailing cells are `null` (blank), not adjacent-month dates —
  * the §13 mockup shows blank cells before day 1, not August's tail end.
+ *
+ * `weekdayHeaderLabels`/`monthLabel` take a `TFunction` (react-i18next's
+ * `t`) rather than importing `lib/i18n` directly — see `lib/timeFormat.ts`'s
+ * doc comment for why.
  */
+import type { TFunction } from 'i18next';
 import type { FirstDayOfWeek } from '../types/Settings';
 
 export interface CalendarCell {
@@ -42,10 +47,11 @@ export function buildMonthGrid(year: number, month: number, firstDayOfWeek: Firs
   return cells;
 }
 
-export function weekdayHeaderLabels(firstDayOfWeek: FirstDayOfWeek): string[] {
-  const mondayFirst = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const sundayFirst = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  return firstDayOfWeek === 'sunday' ? sundayFirst : mondayFirst;
+/** `common.weekdayInitials` is Sunday-first (index 0 = Sunday), matching `Date.getUTCDay()`. */
+export function weekdayHeaderLabels(t: TFunction, firstDayOfWeek: FirstDayOfWeek): string[] {
+  const sundayFirst = t('common.weekdayInitials', { returnObjects: true }) as unknown as string[];
+  if (firstDayOfWeek === 'sunday') return sundayFirst;
+  return [...sundayFirst.slice(1), sundayFirst[0]];
 }
 
 /** `month` is 1-12; `delta` may be any integer (e.g. -1/+1 for prev/next, or a larger jump). Wraps the year correctly in both directions. */
@@ -56,13 +62,9 @@ export function shiftMonth(year: number, month: number, delta: number): { year: 
   return { year: newYear, month: newMonth + 1 };
 }
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-export function monthLabel(year: number, month: number): string {
-  return `${MONTH_NAMES[month - 1]} ${year}`;
+export function monthLabel(t: TFunction, year: number, month: number): string {
+  const monthsFull = t('common.monthsFull', { returnObjects: true }) as unknown as string[];
+  return t('calendar.monthLabel', { month: monthsFull[month - 1], year });
 }
 
 export function localDateRangeForMonth(year: number, month: number): { fromLocalDate: string; toLocalDate: string } {

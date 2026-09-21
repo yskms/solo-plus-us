@@ -54,6 +54,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { useDatabase } from '../../contexts/DatabaseContext';
@@ -68,8 +70,8 @@ import { queueResync, countPendingResync } from '../../services/HealthSyncResync
 import {
   describeJobAction,
   connectionStatus,
-  CONNECTION_STATUS_LABEL,
-  RETRY_BLOCKED_CAPTION,
+  connectionStatusLabel,
+  retryBlockedCaption,
   type JobActionCopy,
 } from '../../services/healthSyncJobPresentation';
 import { ActivityBadge } from '../../components/ActivityBadge';
@@ -82,8 +84,8 @@ import type { Activity, ActivityContext } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
 
 /** §10.4/§9.6 の「現在処理中です」— claim 中のジョブに手動操作が競合した場合。 */
-function showStillInProgressAlert() {
-  Alert.alert('Still in progress', 'Please try again after it finishes.');
+function showStillInProgressAlert(t: TFunction) {
+  Alert.alert(t('settings.healthConnect.stillInProgressTitle'), t('settings.healthConnect.stillInProgressMessage'));
 }
 
 function localDateFromUtcIso(utcIso: string): string {
@@ -92,12 +94,12 @@ function localDateFromUtcIso(utcIso: string): string {
   return deriveLocalDateTime(instant, offset).localDate;
 }
 
-function formatLastSyncedAt(utcIso: string, timeFormat: TimeFormat): string {
+function formatLastSyncedAt(t: TFunction, utcIso: string, timeFormat: TimeFormat): string {
   const instant = parseStrictUtcIso(utcIso);
   const offset = resolveOffsetMinutesForZone(getDeviceTimeZoneId(), instant);
   const { localDate, localTime } = deriveLocalDateTime(instant, offset);
   const [year, month, day] = localDate.split('-').map(Number);
-  return formatCalendarDateTime(year, month - 1, day, localTime, timeFormat);
+  return formatCalendarDateTime(t, year, month - 1, day, localTime, timeFormat);
 }
 
 interface UnsyncedRowData {
@@ -114,15 +116,15 @@ interface UnsyncedRowData {
  * (N+1, re-run on every 5s poll tick). One `findAllActivities` call in
  * `load()` below replaces all of those round trips with a single query.
  */
-function buildRow(job: HealthSyncJobRow, activitiesById: ReadonlyMap<string, Activity>): UnsyncedRowData {
+function buildRow(t: TFunction, job: HealthSyncJobRow, activitiesById: ReadonlyMap<string, Activity>): UnsyncedRowData {
   const canHaveActivity = job.operation !== 'delete' && job.lastErrorCode !== 'LOCAL_ACTIVITY_NOT_FOUND';
   if (canHaveActivity) {
     const activity = activitiesById.get(job.activityId);
     if (activity) {
-      return { job, dateLabel: formatMonthDay(activity.occurredLocalDate), context: activity.context };
+      return { job, dateLabel: formatMonthDay(t, activity.occurredLocalDate), context: activity.context };
     }
   }
-  return { job, dateLabel: formatMonthDay(localDateFromUtcIso(job.createdAt)), context: null };
+  return { job, dateLabel: formatMonthDay(t, localDateFromUtcIso(job.createdAt)), context: null };
 }
 
 function UnsyncedRow({
@@ -146,7 +148,8 @@ function UnsyncedRow({
   onDiscard: (copy: JobActionCopy) => void;
 }) {
   const { colors } = useTheme();
-  const copy = describeJobAction(row.job);
+  const { t } = useTranslation();
+  const copy = describeJobAction(t, row.job);
   const claimed = row.job.claimedAt !== null;
   const discardDisabled = claimed || busy;
   const retryDisabled = discardDisabled || !canRetry;
@@ -157,7 +160,7 @@ function UnsyncedRow({
         <Text style={[styles.jobDate, { color: colors.textSecondary }]}>{row.dateLabel}</Text>
         {row.context && <ActivityBadge context={row.context} />}
       </View>
-      <Text style={[styles.jobStatus, { color: colors.textTertiary }]}>{claimed ? 'Syncing…' : copy.statusText}</Text>
+      <Text style={[styles.jobStatus, { color: colors.textTertiary }]}>{claimed ? t('settings.healthConnect.job.syncing') : copy.statusText}</Text>
       <View style={styles.jobActions}>
         {copy.retryLabel !== null && (
           <Pressable
@@ -205,6 +208,7 @@ export default function HealthConnectSettingsScreen() {
 
 function HealthConnectSettingsScreenInner() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { revision, bump } = useDataRevision();
 
@@ -402,7 +406,7 @@ function HealthConnectSettingsScreenInner() {
           jobRows.length > 0
             ? new Map((await ActivityRepository.findAllActivities(db)).map((activity) => [activity.id, activity]))
             : new Map<string, Activity>();
-        const rows = jobRows.map((job) => buildRow(job, activitiesById));
+        const rows = jobRows.map((job) => buildRow(t, job, activitiesById));
         if (mountedRef.current) {
           setLastSyncedAt(lastSyncedValue);
           setTimeFormat(timeFormatValue);
@@ -434,7 +438,17 @@ function HealthConnectSettingsScreenInner() {
         load();
       }
     }
-  }, [db, refreshConnectionHealth]);
+    // `t` in deps: `buildRow` bakes a translated `dateLabel` into
+    // `UnsyncedRowData` state (see its doc comment on avoiding an N+1
+    // `findActivityById` per row) rather than re-deriving it at render
+    // time, so a language switch has to re-run this to pick up the new
+    // language — otherwise the unsynced-jobs list would stay in whatever
+    // language was active when it last loaded. This does mean a language
+    // switch triggers a DB re-query + full `findAllActivities` map build
+    // on top of this screen's existing 5s poll (reviewed, accepted:
+    // language switches are rare, user-initiated, and the poll already
+    // pays this same cost every 5s regardless).
+  }, [db, refreshConnectionHealth, t]);
 
   useEffect(() => {
     load();
@@ -480,13 +494,13 @@ function HealthConnectSettingsScreenInner() {
     try {
       const ok = await HealthSyncJobRepository.requestManualRetry(db, jobId);
       if (!ok) {
-        showStillInProgressAlert(); // D-39: claim 中に競合した
+        showStillInProgressAlert(t); // D-39: claim 中に競合した
         return;
       }
       bump(); // SyncWorkerLoop.tsx: 手動再試行直後に drain の機会を作る
     } catch (error) {
       logError('Health Connect manual retry failed', error);
-      Alert.alert('Could not retry', 'Please try again.');
+      Alert.alert(t('settings.healthConnect.couldNotRetry'), t('common.pleaseTryAgain'));
     } finally {
       if (mountedRef.current) setPendingJobId(null);
     }
@@ -497,13 +511,13 @@ function HealthConnectSettingsScreenInner() {
     try {
       const result = await HealthSyncManualActions.discardSyncJob(db, jobId);
       if (result === 'not-found-or-claimed') {
-        showStillInProgressAlert(); // D-39: claim 中に競合した
+        showStillInProgressAlert(t); // D-39: claim 中に競合した
         return;
       }
       bump();
     } catch (error) {
       logError('Health Connect discard failed', error);
-      Alert.alert('Could not complete', 'Please try again.');
+      Alert.alert(t('settings.healthConnect.couldNotComplete'), t('common.pleaseTryAgain'));
     } finally {
       if (mountedRef.current) setPendingJobId(null);
     }
@@ -515,7 +529,7 @@ function HealthConnectSettingsScreenInner() {
       return;
     }
     Alert.alert(copy.discardConfirm.title, copy.discardConfirm.message, [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
       { text: copy.discardLabel, style: 'destructive', onPress: () => performDiscard(job.id) },
     ]);
   };
@@ -525,13 +539,13 @@ function HealthConnectSettingsScreenInner() {
     try {
       const isAvailable = await HealthConnectService.isAvailable();
       if (!isAvailable) {
-        Alert.alert("Health Connect isn't installed", 'Install Health Connect to sync your records.');
+        Alert.alert(t('settings.healthConnect.notInstalledTitle'), t('settings.healthConnect.notInstalledMessage'));
         return;
       }
       await HealthConnectService.ensureInitialized();
       const granted = await HealthConnectService.requestWritePermission();
       if (!granted) {
-        Alert.alert('Permission needed', 'Solo + Us needs permission to write to Health Connect.');
+        Alert.alert(t('settings.healthConnect.permissionNeededTitle'), t('settings.healthConnect.permissionNeededMessage'));
         return;
       }
       await setSetting(db, 'healthConnect.enabled', true);
@@ -544,7 +558,7 @@ function HealthConnectSettingsScreenInner() {
       bump(); // §10.5: 再接続で、残っている delete ジョブの再開を早める
     } catch (error) {
       logError('Enabling Health Connect failed', error);
-      Alert.alert('Could not connect', 'Please try again.');
+      Alert.alert(t('settings.healthConnect.couldNotConnect'), t('common.pleaseTryAgain'));
     } finally {
       if (mountedRef.current) setToggleAction(null);
     }
@@ -561,7 +575,7 @@ function HealthConnectSettingsScreenInner() {
       if (mountedRef.current) setEnabled(false); // §10.5: ジョブ自体は破棄しない——ここでは enabled のみ変更
     } catch (error) {
       logError('Disconnecting Health Connect failed', error);
-      Alert.alert('Could not disconnect', 'Please try again.');
+      Alert.alert(t('settings.healthConnect.couldNotDisconnect'), t('common.pleaseTryAgain'));
     } finally {
       if (mountedRef.current) setToggleAction(null);
     }
@@ -573,11 +587,11 @@ function HealthConnectSettingsScreenInner() {
     if (pendingDeleteCount > 0) {
       // §10.5: 未処理の delete job が残っている場合は必ず警告する。
       Alert.alert(
-        `Health Connect has ${pendingDeleteCount} unsynced deletion${pendingDeleteCount > 1 ? 's' : ''}`,
-        'If you disconnect, these records will remain in Health Connect. Reconnecting lets you resume the pending deletions.',
+        t('settings.healthConnect.unsyncedDeletionsTitle', { count: pendingDeleteCount }),
+        t('settings.healthConnect.unsyncedDeletionsMessage'),
         [
-          { text: 'Handle first', style: 'cancel' },
-          { text: 'Disconnect anyway', style: 'destructive', onPress: disconnect },
+          { text: t('settings.healthConnect.handleFirst'), style: 'cancel' },
+          { text: t('settings.healthConnect.disconnectAnyway'), style: 'destructive', onPress: disconnect },
         ],
       );
       return;
@@ -616,16 +630,16 @@ function HealthConnectSettingsScreenInner() {
       if (result.queuedCount === 0) {
         // Only reachable if something else (another job, another mapping)
         // changed between handleResyncEverything's count and this call.
-        Alert.alert('Nothing to sync', 'Every activity is already syncing, or was intentionally excluded from sync.');
+        Alert.alert(t('settings.healthConnect.nothingToSyncTitle'), t('settings.healthConnect.nothingToSyncMessage'));
       } else {
         Alert.alert(
-          'Sync queued',
-          `${result.queuedCount} activit${result.queuedCount === 1 ? 'y' : 'ies'} queued to sync. Check progress below.`,
+          t('settings.healthConnect.syncQueuedTitle'),
+          t('settings.healthConnect.syncQueuedMessage', { count: result.queuedCount }),
         );
       }
     } catch (error) {
       logError('queueResync (manual re-sync from Settings) failed', error);
-      Alert.alert('Could not queue sync', 'Please try again.');
+      Alert.alert(t('settings.healthConnect.couldNotQueueSync'), t('common.pleaseTryAgain'));
     } finally {
       if (mountedRef.current) setResyncing(false);
     }
@@ -644,19 +658,19 @@ function HealthConnectSettingsScreenInner() {
       pendingCount = await countPendingResync(db);
     } catch (error) {
       logError('countPendingResync failed', error);
-      Alert.alert('Could not check sync status', 'Please try again.');
+      Alert.alert(t('settings.healthConnect.couldNotCheckSyncStatus'), t('common.pleaseTryAgain'));
       return;
     }
     if (pendingCount === 0) {
-      Alert.alert('Nothing to sync', 'Every activity is already syncing, or was intentionally excluded from sync.');
+      Alert.alert(t('settings.healthConnect.nothingToSyncTitle'), t('settings.healthConnect.nothingToSyncMessage'));
       return;
     }
     Alert.alert(
-      `Sync ${pendingCount} activit${pendingCount === 1 ? 'y' : 'ies'} to Health Connect?`,
-      "This resends everything that isn't already syncing, replacing what's in Health Connect for any that already exist there.",
+      t('settings.healthConnect.resyncConfirmTitle', { count: pendingCount }),
+      t('settings.healthConnect.resyncConfirmMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sync', onPress: performResyncEverything },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('settings.healthConnect.sync'), onPress: performResyncEverything },
       ],
     );
   };
@@ -670,7 +684,7 @@ function HealthConnectSettingsScreenInner() {
   if (!loaded || enabled === null) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -688,14 +702,14 @@ function HealthConnectSettingsScreenInner() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
-          <Text style={[styles.statusText, { color: colors.textPrimary }]}>{CONNECTION_STATUS_LABEL[status]}</Text>
+          <Text style={[styles.statusText, { color: colors.textPrimary }]}>{connectionStatusLabel(t, status)}</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>SYNC TO HEALTH CONNECT</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.healthConnect.syncToggleSectionLabel')}</Text>
           <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.toggleRow}>
-              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Sync to Health Connect</Text>
+              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.healthConnect.syncToggleLabel')}</Text>
               <Switch value={enabled} onValueChange={handleToggle} disabled={toggleAction !== null} />
             </View>
           </View>
@@ -703,39 +717,32 @@ function HealthConnectSettingsScreenInner() {
             <View style={styles.busyRow}>
               <ActivityIndicator color={colors.textSecondary} />
               <Text style={[styles.caption, { color: colors.textSecondary }]}>
-                {toggleAction === 'enable' ? 'Connecting…' : 'Disconnecting… this can take a moment if a sync is in progress.'}
+                {toggleAction === 'enable' ? t('settings.healthConnect.connecting') : t('settings.healthConnect.disconnecting')}
               </Text>
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ABOUT SYNCHRONIZATION</Text>
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            Health Connect only stores the date and time you recorded, and whether protection was used.
-          </Text>
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            Solo/Partnered, Orgasm, Mood, and Notes stay in Solo + Us only.
-          </Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.healthConnect.aboutSectionLabel')}</Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.aboutWhatIsSynced')}</Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.aboutWhatStaysLocal')}</Text>
         </View>
 
         <View style={styles.section}>
           <View style={styles.lastSyncedRow}>
-            <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Last synced</Text>
+            <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.healthConnect.lastSynced')}</Text>
             <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              {lastSyncedAt ? formatLastSyncedAt(lastSyncedAt, timeFormat) : 'Never'}
+              {lastSyncedAt ? formatLastSyncedAt(t, lastSyncedAt, timeFormat) : t('settings.healthConnect.never')}
             </Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>RE-SYNC</Text>
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            If some records were never sent to Health Connect, or were removed there without Solo + Us knowing — for
-            example, after restoring a backup — you can resend everything now.
-          </Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.healthConnect.resyncSectionLabel')}</Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.resyncExplanation')}</Text>
           {!enabled && (
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>Turn on Sync to Health Connect first.</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.resyncNeedsSyncOn')}</Text>
           )}
           <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Pressable
@@ -744,27 +751,29 @@ function HealthConnectSettingsScreenInner() {
               style={[styles.optionRow, { opacity: !enabled || resyncing ? 0.4 : 1 }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Sync everything to Health Connect</Text>
+              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.healthConnect.resyncButton')}</Text>
             </Pressable>
           </View>
           {resyncing && (
             <View style={styles.busyRow}>
               <ActivityIndicator color={colors.textSecondary} />
-              <Text style={[styles.caption, { color: colors.textSecondary }]}>Queuing…</Text>
+              <Text style={[styles.caption, { color: colors.textSecondary }]}>{t('settings.healthConnect.queuing')}</Text>
             </View>
           )}
         </View>
 
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            UNSYNCED CHANGES{jobs.length > 0 ? `  ${jobs.length}` : ''}
+            {jobs.length > 0
+              ? t('settings.healthConnect.unsyncedChangesSectionLabelWithCount', { count: jobs.length })
+              : t('settings.healthConnect.unsyncedChangesSectionLabel')}
           </Text>
           {jobs.length === 0 ? (
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>Everything is synced.</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.everythingSynced')}</Text>
           ) : (
             <>
               {!canRetry && (
-                <Text style={[styles.caption, { color: colors.textTertiary }]}>{RETRY_BLOCKED_CAPTION[status]}</Text>
+                <Text style={[styles.caption, { color: colors.textTertiary }]}>{retryBlockedCaption(t, status)}</Text>
               )}
               <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 {jobs.map((row, index) => (

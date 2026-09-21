@@ -6,7 +6,7 @@
  *
  * - `describeJobAction`：「未同期の変更」一覧で、1件のジョブをどう見せるか
  *   （文言・破棄の確認文の要否）。§9.6 の表（次のコメント参照）
- * - `connectionStatus`/`CONNECTION_STATUS_LABEL`/`RETRY_BLOCKED_CAPTION`：
+ * - `connectionStatus`/`connectionStatusLabel`/`retryBlockedCaption`：
  *   画面ヘッダーの接続ステータス（§18）と、それに応じて Retry now を
  *   無効化する理由の文言
  *
@@ -22,7 +22,13 @@
  * 優先1を先に見る理由：内部不整合は `operation` が create/update/recreate
  * のいずれであっても起こりうる（Activity 自体が消えている）ため、
  * `operation` 分岐より先に判定しないと通常の確認文が出てしまう。
+ *
+ * すべて `t`（react-i18next の `TFunction`）を第一引数に取る——このファイルは
+ * `services/` にあり React コンポーネントではないため、呼び出し元
+ * （`app/settings/health-connect.tsx`）の `useTranslation()` から渡す。
+ * `lib/timeFormat.ts` の doc comment と同じ「依存を明示的に渡す」作法。
  */
+import type { TFunction } from 'i18next';
 import type { HealthSyncJobRow } from '../types/HealthSync';
 
 export interface JobActionCopy {
@@ -42,38 +48,36 @@ export interface JobActionCopy {
   discardConfirm: { title: string; message: string } | null;
 }
 
-const RETRY_LABEL = 'Retry now';
-
-export function describeJobAction(job: Pick<HealthSyncJobRow, 'operation' | 'lastErrorCode'>): JobActionCopy {
+export function describeJobAction(t: TFunction, job: Pick<HealthSyncJobRow, 'operation' | 'lastErrorCode'>): JobActionCopy {
   if (job.lastErrorCode === 'LOCAL_ACTIVITY_NOT_FOUND') {
     return {
-      statusText: 'Sync error',
+      statusText: t('settings.healthConnect.job.internalError.status'),
       retryLabel: null,
-      discardLabel: 'Dismiss this error',
+      discardLabel: t('settings.healthConnect.job.internalError.discardLabel'),
       discardConfirm: null,
     };
   }
 
   if (job.operation === 'delete') {
     return {
-      statusText: 'Deletion not applied',
-      retryLabel: RETRY_LABEL,
-      discardLabel: 'Stop retrying',
+      statusText: t('settings.healthConnect.job.delete.status'),
+      retryLabel: t('settings.healthConnect.job.retryNow'),
+      discardLabel: t('settings.healthConnect.job.delete.discardLabel'),
       discardConfirm: {
-        title: 'Stop retrying this deletion?',
-        message: 'This record may remain in Health Connect.',
+        title: t('settings.healthConnect.job.delete.discardConfirmTitle'),
+        message: t('settings.healthConnect.job.delete.discardConfirmMessage'),
       },
     };
   }
 
   // create / update / recreate
   return {
-    statusText: 'Not synced to Health Connect',
-    retryLabel: RETRY_LABEL,
-    discardLabel: "Don't sync",
+    statusText: t('settings.healthConnect.job.notSynced.status'),
+    retryLabel: t('settings.healthConnect.job.retryNow'),
+    discardLabel: t('settings.healthConnect.job.notSynced.discardLabel'),
     discardConfirm: {
-      title: "Don't sync this record?",
-      message: 'Solo + Us and Health Connect will no longer match.',
+      title: t('settings.healthConnect.job.notSynced.discardConfirmTitle'),
+      message: t('settings.healthConnect.job.notSynced.discardConfirmMessage'),
     },
   };
 }
@@ -95,21 +99,31 @@ export function connectionStatus(enabled: boolean, available: boolean, hasPermis
   return 'connected';
 }
 
-export const CONNECTION_STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connected: 'Connected',
-  'not-connected': 'Not connected',
-  unavailable: "Health Connect isn't installed",
-  'permission-revoked': 'Permission needed',
-};
+export function connectionStatusLabel(t: TFunction, status: ConnectionStatus): string {
+  switch (status) {
+    case 'connected':
+      return t('settings.healthConnect.status.connected');
+    case 'not-connected':
+      return t('settings.healthConnect.status.notConnected');
+    case 'unavailable':
+      return t('settings.healthConnect.status.unavailable');
+    case 'permission-revoked':
+      return t('settings.healthConnect.status.permissionRevoked');
+  }
+}
 
 /**
  * §10.4 の Unsynced changes 見出し下に出す、Retry now が無効な理由
- * （`connected` では表示しない——呼び出し側は `status !== 'connected'` の
+ * （`connected` では呼ばれない——呼び出し側は `status !== 'connected'` の
  * ときだけ参照する）。
  */
-export const RETRY_BLOCKED_CAPTION: Record<ConnectionStatus, string> = {
-  connected: '',
-  'not-connected': 'Turn on Sync to Health Connect to retry these.',
-  unavailable: "Health Connect isn't installed. Install it to retry these.",
-  'permission-revoked': 'Health Connect permission is needed to retry these.',
-};
+export function retryBlockedCaption(t: TFunction, status: Exclude<ConnectionStatus, 'connected'>): string {
+  switch (status) {
+    case 'not-connected':
+      return t('settings.healthConnect.retryBlocked.notConnected');
+    case 'unavailable':
+      return t('settings.healthConnect.retryBlocked.unavailable');
+    case 'permission-revoked':
+      return t('settings.healthConnect.retryBlocked.permissionRevoked');
+  }
+}

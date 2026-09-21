@@ -1,0 +1,471 @@
+{
+  "common": {
+    "ok": "OK",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "delete": "削除",
+    "couldNotSave": "保存できませんでした",
+    "pleaseTryAgain": "もう一度お試しください。",
+    "done": "完了",
+    "loading": "読み込み中…",
+    "listSeparator": "、",
+    "am": "午前",
+    "pm": "午後",
+    "months": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+    "monthsFull": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+    "weekdayInitials": ["日", "月", "火", "水", "木", "金", "土"],
+    "weekdaysFull": ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"]
+  },
+  "dateFormat": {
+    "time12h": "{{period}}{{hour}}:{{minute}}",
+    "time24h": "{{hour}}:{{minute}}",
+    "monthDay": "{{month}}{{day}}日",
+    "calendarDateTime": "{{year}}年{{month}}{{day}}日 {{time}}"
+  },
+  "settings": {
+    "language": {
+      "system": "端末の設定に従う",
+      "caption": "「端末の設定に従う」を選ぶと、この端末の言語設定に自動で追従します。"
+    },
+    "appearance": {
+      "system": "端末の設定に従う",
+      "light": "ライト",
+      "dark": "ダーク",
+      "caption": "「端末の設定に従う」を選ぶと、この端末のライト/ダーク設定に自動で追従します。"
+    },
+    "index": {
+      "privacy": "プライバシー",
+      "appLock": "アプリロック",
+      "hideAppPreview": "アプリプレビューを隠す",
+      "blockScreenshots": "スクリーンショットをブロック",
+      "health": "ヘルスケア",
+      "healthConnect": "Health Connect",
+      "data": "データ",
+      "exportImport": "エクスポートとインポート",
+      "deleteData": "データを削除",
+      "tracking": "トラッキング",
+      "activityDetails": "記録の項目",
+      "preferences": "基本設定",
+      "firstDayOfWeek": "週の開始日",
+      "timeFormat": "時刻表示",
+      "appearance": "外観",
+      "language": "言語",
+      "about": "アプリ情報",
+      "aboutApp": "Solo + Us について",
+      "version": "バージョン"
+    },
+    "appLock": {
+      "useAppLock": "アプリロックを使う",
+      "unlockWithSectionLabel": "解除方法",
+      "deviceAuthentication": "端末認証",
+      "deviceAuthCaption": "生体認証、または利用できない場合は端末のパスコード。",
+      "lockSectionLabel": "ロックのタイミング",
+      "timing": {
+        "immediately": "すぐに",
+        "after1m": "1分後",
+        "after5m": "5分後"
+      },
+      "noDeviceAuthTitle": "端末認証が設定されていません",
+      "noDeviceAuthMessage": "アプリロックをオンにする前に、この端末でパスコード・指紋・顔認証のいずれかを設定してください。",
+      "confirmTurnOffReason": "アプリロックをオフにするには認証してください"
+    },
+    "blockScreenshots": {
+      "androidLegacyCaption": "このバージョンの Android では、スクリーンショットと画面収録だけを個別にブロックできません——最近使ったアプリのプレビューを隠す機能が、副作用としてすでにこれらをブロックしています。",
+      "caption": "Solo + Us を開いている間、スクリーンショットと画面収録を防ぎます。"
+    },
+    "firstDayOfWeek": {
+      "monday": "月曜日",
+      "sunday": "日曜日"
+    },
+    "timeFormat": {
+      "option12h": "12時間表示（午後1:30）",
+      "option24h": "24時間表示（13:30）"
+    },
+    "about": {
+      "tagline": "パーソナルなセクシュアルウェルネスの記録",
+      "intro": "Solo + Us は、あなたの記録を長期にわたって、プライベートに、評価を下すことなく残せるアプリです。",
+      "principlesSectionLabel": "大切にしていること",
+      "principles": {
+        "judgmentFree": { "title": "評価しない", "body": "Solo + Us は、あなたの記録を多い・少ない・良い・悪いで評価しません。" },
+        "noStreakPressure": { "title": "連続記録のプレッシャーがない", "body": "連続記録のカウンターはなく、維持しなければならないものもありません。" },
+        "lowFriction": { "title": "手軽に記録できる", "body": "記録はワンタップだけ—種類を選べば、現在時刻とともに記録されます。" },
+        "privacyFirst": { "title": "プライバシー第一", "body": "デリケートな情報のため、既定ではこの端末の中だけに保存されます。" },
+        "longTermData": { "title": "長期的な記録のために", "body": "短期的な習慣づくりではなく、何年にもわたる記録のために作られています。" }
+      },
+      "privacyFacts": {
+        "noAccount": "アカウント登録は不要",
+        "encryptedOnDevice": "記録データは暗号化され、この端末に保存されます",
+        "noServer": "記録データを受け取るサーバーは運用していません",
+        "healthConnectSubset": "Health Connect との同期をオンにすると、日時と避妊具の使用有無もそちらに書き込まれます",
+        "exportsNotEncrypted": "エクスポートしたファイルは暗号化されません",
+        "noAdvertising": "あなたのデータが広告に使われることはありません",
+        "noAnalytics": "このバージョンには、分析やクラッシュレポートの SDK は含まれていません"
+      }
+    },
+    "data": {
+      "exportSectionLabel": "エクスポート",
+      "exportCaption": "Solo + Us に記録したすべてのデータをエクスポートします。",
+      "exportPlaintextNotice": "これらのファイルは暗号化されません。ファイルにアクセスできる人は誰でも内容を読めるため、共有や保管には注意してください。",
+      "exportJson": "JSON をエクスポート",
+      "exportJsonSubLabel": "完全なバックアップ",
+      "exportCsv": "CSV をエクスポート",
+      "exportCsvSubLabel": "表計算・分析向け",
+      "importSectionLabel": "インポート",
+      "importCaption": "Solo + Us の JSON バックアップから復元します。",
+      "importFromBackup": "バックアップからインポート",
+      "foundInBackup_other": "このバックアップに{{count}}件の記録が見つかりました。",
+      "currentlyHave_other": "現在、この端末には{{count}}件の記録があります。",
+      "addOnlyNewRecords": "新しい記録だけを追加",
+      "replaceAllData": "すべてのデータを置き換え",
+      "willBeImported_other": "{{count}}件の記録がインポートされます。",
+      "willBeReplaced_other": "現在の{{count}}件の記録は完全に置き換えられます。",
+      "activitiesRestored_other": "{{count}}件の記録を復元しました。",
+      "offerResyncExplanation1": "この端末では Health Connect との同期がオンになっていますが、Solo + Us は復元したデータを自動的には再送信しません。",
+      "offerResyncExplanation2": "続けると、復元されたすべての記録が Health Connect へ再送信され、現在そこにある内容が置き換えられます。",
+      "offerResyncExplanation3": "一部の記録は手動での再試行が必要になる場合があります—進捗はいつでも Settings › Health Connect で確認できます。",
+      "syncToHealthConnect": "Health Connect に同期",
+      "notNow": "今はしない",
+      "checkingBackupFile": "バックアップファイルを確認中…",
+      "addingNewRecords": "新しい記録を追加中…",
+      "creatingSafetyBackup": "安全のためのバックアップを作成中…",
+      "replacingYourData": "データを置き換え中…",
+      "queuingHealthConnectSync": "Health Connect への同期をキューに追加中…",
+      "importCompleteTitle": "インポート完了",
+      "appendImportAdded_other": "{{count}}件の新しい記録を追加しました。",
+      "appendImportSkipped_other": "{{count}}件はすでに存在していたためスキップされました。",
+      "replaceImportResult_other": "{{count}}件の記録を復元しました。{{notice}}",
+      "healthConnectSyncQueued": "Health Connect への同期をキューに追加しました。進捗はいつでも Settings › Health Connect で確認できます。",
+      "couldNotExport": "エクスポートできませんでした",
+      "couldNotOpenFilePicker": "ファイル選択を開けませんでした",
+      "couldNotReadFile": "ファイルを読み込めませんでした",
+      "notValidJson": "このファイルは有効な JSON ではありません。",
+      "doesntLookLikeBackup": "バックアップファイルではないようです",
+      "notABackup": "Solo + Us のバックアップファイルではないようです:\n{{errors}}{{more}}",
+      "andNMore": "\n…ほか{{count}}件",
+      "couldNotImport": "インポートできませんでした",
+      "couldNotReplaceData": "データを置き換えられませんでした",
+      "couldNotQueueHealthConnectSync": "Health Connect への同期をキューに追加できませんでした",
+      "safetyExportLocationNotice": {
+        "android": "置き換える前に、現在のデータの安全のためのバックアップを保存するフォルダを選ぶよう求められます。",
+        "ios": "置き換える前に、現在のデータの安全のためのバックアップがこの端末の Solo + Us 専用のストレージに保存されます。ファイル App には表示されませんが、アプリ本体のデータベースとは異なり、このバックアップがこの端末に残っている間は、端末の iCloud/iTunes バックアップに暗号化されていないファイルとして含まれます。"
+      },
+      "safetyExportLocationShortNotice": {
+        "android": "以前のデータの安全のためのバックアップを、選択したフォルダに保存しました。",
+        "ios": "以前のデータの安全のためのバックアップを、このアプリ専用のストレージに保存しました（この端末の iCloud/iTunes バックアップに含まれます）。"
+      },
+      "safetyExportError": {
+        "generic": "安全のためのバックアップを作成できませんでした。もう一度お試しください。",
+        "noLocationChosen": "続けるには保存先を選んでください—データを置き換えるには、検証済みのバックアップが先に必要です。",
+        "writeFailed": "安全のためのバックアップを保存できませんでした。",
+        "readBackFailed": "保存後に、安全のためのバックアップを読み直せませんでした。",
+        "verificationMismatch": "保存後に、安全のためのバックアップを検証できませんでした（{{expected}}件のはずが{{actual}}件でした）。もう一度お試しください。",
+        "noneFound": "0"
+      }
+    },
+    "deleteData": {
+      "confirmTitle": "すべてのデータを削除しますか？",
+      "confirmCaption": "この端末上のすべての記録が即座に削除されます。",
+      "androidCaption": "すでに Health Connect へ送信済みの記録は、時間をかけてそちらからも削除されます。完了する前に Solo + Us を閉じると削除は一時停止し、次にアプリを開いたときに再開します。完了する前に Solo + Us をアンインストールすると、それらの記録は Health Connect に残ります。",
+      "cannotBeUndoneCaption": "この操作は取り消せません。控えを残したい場合は、先に Settings › Export & Import でデータをエクスポートしてください。",
+      "deleteAllData": "すべてのデータを削除",
+      "deleting": "削除中…",
+      "allDataDeletedTitle": "すべてのデータを削除しました",
+      "allDataDeletedMessage": "すべての記録が完全に削除されました。",
+      "deletedFromDeviceTitle": "この端末から削除しました",
+      "cannotSyncMessage_other": "この端末上のすべての記録を削除しました。このバージョンのアプリは、未送信の Health Connect への削除{{count}}件を同期できません—Health Connect に対応した更新がこの端末に届いた時点で自動的に送信されます。",
+      "stillSendingMessage_other": "この端末上のすべての記録を削除しました。{{count}}件の削除がまだ Health Connect へ送信中です—進捗はいつでも Settings › Health Connect で確認できます。",
+      "waitingMessage_other": "この端末上のすべての記録を削除しました。Health Connect には{{count}}件の削除が保留中です—Settings › Health Connect で再接続すると再開します。",
+      "couldNotDelete": "削除できませんでした"
+    },
+    "activityDetails": {
+      "intro": "記録する項目を選んでください。いつでも変更できます。",
+      "sectionLabel": "記録する項目",
+      "caption": "すでに記録済みの値は、オフにしても常に表示されます。Protection は Partnered の記録でも常に表示されます。"
+    },
+    "healthConnect": {
+      "status": {
+        "connected": "接続済み",
+        "notConnected": "未接続",
+        "unavailable": "Health Connect がインストールされていません",
+        "permissionRevoked": "権限が必要です"
+      },
+      "retryBlocked": {
+        "notConnected": "再試行するには「Health Connect と同期」をオンにしてください。",
+        "unavailable": "Health Connect がインストールされていません。再試行するにはインストールしてください。",
+        "permissionRevoked": "再試行するには Health Connect の権限が必要です。"
+      },
+      "job": {
+        "retryNow": "今すぐ再試行",
+        "syncing": "同期中…",
+        "internalError": {
+          "status": "同期エラー",
+          "discardLabel": "このエラーを無視"
+        },
+        "delete": {
+          "status": "削除が未反映",
+          "discardLabel": "再試行を停止",
+          "discardConfirmTitle": "この削除の再試行を停止しますか？",
+          "discardConfirmMessage": "この記録は Health Connect 上に残る可能性があります。"
+        },
+        "notSynced": {
+          "status": "Health Connect に未同期",
+          "discardLabel": "同期しない",
+          "discardConfirmTitle": "この記録を同期しませんか？",
+          "discardConfirmMessage": "Solo + Us と Health Connect の内容が一致しなくなります。"
+        }
+      },
+      "stillInProgressTitle": "処理中です",
+      "stillInProgressMessage": "完了後にもう一度お試しください。",
+      "couldNotRetry": "再試行できませんでした",
+      "couldNotComplete": "完了できませんでした",
+      "notInstalledTitle": "Health Connect がインストールされていません",
+      "notInstalledMessage": "記録を同期するには Health Connect をインストールしてください。",
+      "permissionNeededTitle": "権限が必要です",
+      "permissionNeededMessage": "Solo + Us が Health Connect に書き込むには権限が必要です。",
+      "couldNotConnect": "接続できませんでした",
+      "couldNotDisconnect": "切断できませんでした",
+      "unsyncedDeletionsTitle_other": "Health Connect に未送信の削除が{{count}}件あります",
+      "unsyncedDeletionsMessage": "切断すると、これらの記録は Health Connect に残ったままになります。再接続すると、保留中の削除を再開できます。",
+      "handleFirst": "先に対応する",
+      "disconnectAnyway": "そのまま切断",
+      "nothingToSyncTitle": "同期する記録はありません",
+      "nothingToSyncMessage": "すべての記録がすでに同期済みか、意図的に同期対象から外されています。",
+      "syncQueuedTitle": "同期をキューに追加しました",
+      "syncQueuedMessage_other": "{{count}}件の記録を同期キューに追加しました。進捗は下で確認できます。",
+      "couldNotQueueSync": "同期をキューに追加できませんでした",
+      "couldNotCheckSyncStatus": "同期状況を確認できませんでした",
+      "resyncConfirmTitle_other": "{{count}}件の記録を Health Connect に同期しますか？",
+      "resyncConfirmMessage": "まだ同期されていないすべての記録を再送信します。すでに Health Connect に存在するものは上書きされます。",
+      "sync": "同期",
+      "syncToggleSectionLabel": "HEALTH CONNECT との同期",
+      "syncToggleLabel": "Health Connect と同期",
+      "connecting": "接続中…",
+      "disconnecting": "切断中…同期が進行中の場合、少し時間がかかることがあります。",
+      "aboutSectionLabel": "同期について",
+      "aboutWhatIsSynced": "Health Connect には、記録した日時と、避妊具を使用したかどうかのみが保存されます。",
+      "aboutWhatStaysLocal": "Solo/Partnered、オーガズム、気分、メモは Solo + Us にのみ保存されます。",
+      "lastSynced": "最終同期",
+      "never": "未同期",
+      "resyncSectionLabel": "再同期",
+      "resyncExplanation": "一部の記録が Health Connect へ送信されていない場合や、Solo + Us が知らないところで Health Connect 側から削除された場合（バックアップの復元後など）は、今すぐすべてを再送信できます。",
+      "resyncNeedsSyncOn": "先に「Health Connect と同期」をオンにしてください。",
+      "resyncButton": "すべてを Health Connect に同期",
+      "queuing": "キューに追加中…",
+      "unsyncedChangesSectionLabel": "未同期の変更",
+      "unsyncedChangesSectionLabelWithCount": "未同期の変更　{{count}}",
+      "everythingSynced": "すべて同期済みです。"
+    },
+    "hideAppPreview": {
+      "alwaysOn": "常時オン",
+      "hideAppPreview": "アプリプレビューを隠す",
+      "checking": "確認中",
+      "enabled": "有効",
+      "couldNotEnable": "有効にできませんでした",
+      "alwaysHidesCaption": "Solo + Us は、アプリ切り替え画面から記録を常に隠します。これはオフにできません。",
+      "androidLegacySideEffect": "このバージョンの Android では、その副作用としてスクリーンショットと画面収録もブロックされます。",
+      "couldNotEnableWithReason": "有効にできませんでした：{{reason}}",
+      "whatThisDoes": "この機能について",
+      "androidExplanation": "Android 13 以降では、最近使ったアプリのプレビューが空白の画面に置き換わり、Block Screenshots をオンにしない限りスクリーンショットと画面収録は許可されます。Android 12 以前では、最近使ったアプリのプレビューを隠すにはスクリーンショットと画面収録のブロックも必要になるため、この端末では Block Screenshots をオフにできません。",
+      "iosExplanation": "iOS では、アプリ切り替え画面がぼかして表示されます。Block Screenshots をオンにしない限り、スクリーンショットと画面収録は許可されます。"
+    }
+  },
+  "navigation": {
+    "notFound": "ページが見つかりません",
+    "activity": "記録",
+    "settings": "設定",
+    "appLock": "アプリロック",
+    "hideAppPreview": "アプリプレビューを隠す",
+    "blockScreenshots": "スクリーンショットをブロック",
+    "healthConnect": "Health Connect",
+    "data": "データ",
+    "deleteData": "データを削除",
+    "activityDetails": "記録の項目",
+    "appearance": "外観",
+    "language": "言語",
+    "firstDayOfWeek": "週の開始日",
+    "timeFormat": "時刻表示",
+    "about": "Solo + Us について",
+    "tabs": {
+      "today": "今日",
+      "calendar": "カレンダー",
+      "insights": "サマリー"
+    }
+  },
+  "notFound": {
+    "title": "この画面は存在しません。",
+    "goToToday": "今日に戻る"
+  },
+  "relativeDate": {
+    "today": "今日",
+    "yesterday": "昨日",
+    "daysAgo_other": "{{count}}日前"
+  },
+  "calendar": {
+    "monthLabel": "{{year}}年{{month}}",
+    "previousMonth": "前の月",
+    "nextMonth": "次の月",
+    "loadError": "カレンダーを読み込めませんでした。このタブを開き直すと再試行されます。",
+    "dayCellA11y": {
+      "noActivities": "{{date}}、記録なし",
+      "withActivities": "{{date}}、{{parts}}",
+      "countPart_other": "{{label}}{{count}}件"
+    },
+    "activityRowA11y": "{{time}}、{{context}}の記録"
+  },
+  "statistics": {
+    "minutes_other": "{{value}}分",
+    "hours_other": "{{value}}時間",
+    "days_other": "{{value}}日"
+  },
+  "activityDetailsFields": {
+    "orgasm": "オーガズム",
+    "ejaculation": "射精",
+    "protection": "避妊",
+    "duration": "所要時間",
+    "mood": "気分（前 / 後）",
+    "note": "メモ"
+  },
+  "activityContext": {
+    "solo": {
+      "label": "ソロ",
+      "caption": "自分だけの記録"
+    },
+    "partnered": {
+      "label": "パートナーと",
+      "caption": "パートナーとの記録"
+    }
+  },
+  "lockScreen": {
+    "lockoutError": "試行回数が多すぎます。しばらくしてから再試行するか、端末のパスコードを使ってください。",
+    "genericError": "認証に失敗しました。タップして再試行してください。",
+    "unlockWithDevice": "端末認証で\nロック解除",
+    "unlockA11y": "端末認証でロック解除"
+  },
+  "errors": {
+    "screenMask": {
+      "blurFailed": "アプリ切り替え画面のぼかしに失敗しました",
+      "hidePreviewFailed": "最近使ったアプリのプレビュー非表示に失敗しました",
+      "supportCheckFailed": "この端末で対応状況を確認できませんでした",
+      "notAvailable": "この端末では利用できません"
+    }
+  },
+  "today": {
+    "dateHeader": "{{month}}{{day}}日({{weekdayShort}})",
+    "thisMonth": "今月",
+    "activities_other": "件",
+    "lastActivity": "直近の記録",
+    "recent": "最近の記録",
+    "recordActivityA11y": "記録する"
+  },
+  "components": {
+    "activityRow": {
+      "a11yLabel": "{{date}}、{{context}}の記録"
+    }
+  },
+  "undoSnackbar": {
+    "recorded": "✓ {{context}}の記録を保存しました",
+    "undo": "取り消す",
+    "undoFailedTitle": "取り消せませんでした",
+    "undoFailedMessage": "記録は削除されませんでした。記録の詳細画面から削除をお試しください。"
+  },
+  "appLock": {
+    "turnedOffTitle": "アプリロックをオフにしました",
+    "turnedOffMessage": "この端末にパスコード・指紋・顔認証のいずれも設定されていないため、記録にアクセスできるようアプリロックをオフにしました。",
+    "unlockPromptReason": "Solo + Us のロックを解除"
+  },
+  "emptyState": {
+    "title": "まだ記録がありません。",
+    "subtitle": "最初の記録から履歴が始まります。"
+  },
+  "insights": {
+    "allTime": "全期間",
+    "loadError": "サマリーを読み込めませんでした。このタブを開き直すと再試行されます。",
+    "totalActivities": "合計",
+    "yourPatterns": "傾向",
+    "averageInterval": "平均間隔"
+  },
+  "record": {
+    "title": "記録を追加",
+    "close": "閉じる",
+    "prompt": "どのように記録しますか？",
+    "justNow": "たった今",
+    "changeDateTime": "日時を変更",
+    "changeDateTimeA11y": "日時を変更する",
+    "useNowInstead": "現在時刻を使う",
+    "useNowInsteadA11y": "現在時刻を使う",
+    "couldNotRecord": "記録できませんでした"
+  },
+  "activityDetail": {
+    "notRecorded": "未記録",
+    "yes": "あり",
+    "no": "なし",
+    "dateTimeLabel": "日時",
+    "dateTimeHint": "日時を変更するピッカーを開きます",
+    "durationLabel": "所要時間（分）",
+    "durationRoundedCaption": "実際は{{seconds}}秒として記録されており、ここでは{{minutes}}分と表示しています。この項目を編集すると、分単位の値で上書きされます。",
+    "moodBefore": "行為前の気分",
+    "moodAfter": "行為後の気分",
+    "notePlaceholder": "メモを追加",
+    "addMoreDetails": "＋ ほかの項目を追加",
+    "deleteActivity": "記録を削除",
+    "invalidDurationTitle": "所要時間が正しくありません",
+    "invalidDurationMessage": "分単位で入力するか、空欄のままにしてください。",
+    "couldNotSaveMessage": "変更を保存できませんでした。もう一度お試しください。",
+    "deleteConfirmTitle": "この記録を削除しますか？",
+    "deleteConfirmMessage": "このアプリから記録が削除されます。",
+    "couldNotDelete": "削除できませんでした"
+  },
+  "addMoreDetailsSheet": {
+    "dismiss": "閉じる",
+    "title": "ほかの項目を追加"
+  },
+  "dateTimePickerSheet": {
+    "dismiss": "日時ピッカーを閉じる"
+  },
+  "migrationRestoredBanner": {
+    "message": "Solo + Us の最近の更新を適用できませんでした。既存の記録は無事ですが、この問題が解決するまで、アプリは以前のデータ形式で動作します。"
+  },
+  "loadErrorOverlay": {
+    "message": "Solo + Us がアプリロックの設定を確認できませんでした。",
+    "tryAgain": "再試行"
+  },
+  "databaseContext": {
+    "couldNotOpenHeadline": "Solo + Us はこの端末でデータベースを開けませんでした。",
+    "migrationRestoreFailedHeadline": "Solo + Us はデータベースを更新できず、その試みを元に戻すこともできませんでした。",
+    "schemaTooNewDetail": "このデータベースは新しいバージョンの Solo + Us（v{{current}}）で作成されています。このアプリが対応しているのは v{{max}} までです。続けるにはアプリを更新してください。",
+    "migrationRestoreFailedDetail": "更新に失敗し、以前のバージョンへ戻すことにも失敗しました。サポートにお問い合わせください。",
+    "unknownErrorDetail": "データベースを開く際に問題が発生しました。もう一度お試しください。"
+  },
+  "recoveryScreen": {
+    "headline": "Solo + Us はこの端末の記録のロックを解除できませんでした。",
+    "body": "これは新しい端末に移行した場合やバックアップから復元した場合に起こることがあります——暗号化キーが失われた可能性があります。",
+    "working": "処理中…",
+    "restoreFromBackup": "バックアップから復元",
+    "deleteAndStartOver": "削除して最初からやり直す",
+    "confirmDeleteBody": "この端末上の記録が完全に削除されます。この操作は取り消せません。",
+    "restoredTitle": "復元しました",
+    "restoredMessage_other": "バックアップから{{count}}件の記録を復元しました。",
+    "couldNotRestoreBackup": "バックアップを復元できませんでした",
+    "couldNotDelete": "削除できませんでした",
+    "verificationFailed": "復元したデータを検証できませんでした。もう一度お試しください。",
+    "somethingWentWrong": "このファイルの処理中に問題が発生しました。もう一度お試しください。"
+  },
+  "onboarding": {
+    "privacy": {
+      "tagline": "あなたの記録を、これから先も。",
+      "belongsLine": "あなたのプライベートな記録は、あなただけのものです。",
+      "points": {
+        "storedOnDevice": "この端末の中に保存",
+        "noAccount": "アカウント登録は不要",
+        "noAdvertising": "広告には使用しません",
+        "healthOptional": "Health Connect との連携は任意"
+      },
+      "continue": "続ける",
+      "somethingWentWrong": "問題が発生しました",
+      "protectEntriesTitle": "記録を保護しますか？",
+      "protectEntriesMessage": "Settings でアプリロックをオンにすると、アプリを開く前に端末認証が必要になります。",
+      "notNow": "後で",
+      "goToSettings": "設定へ移動"
+    }
+  }
+}

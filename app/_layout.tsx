@@ -5,7 +5,9 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import 'react-native-reanimated';
+import '../lib/i18n';
 
 import { DatabaseProvider, useNeedsOnboarding } from '../contexts/DatabaseContext';
 import { DataRevisionProvider } from '../contexts/DataRevision';
@@ -13,6 +15,7 @@ import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
 import { AppLockProvider } from '../contexts/AppLock';
 import { ScreenshotBlockProvider } from '../contexts/ScreenshotBlock';
 import { AppearanceProvider } from '../contexts/Appearance';
+import { LanguageProvider } from '../contexts/Language';
 import { useSyncWorkerLoop } from '../contexts/SyncWorkerLoop';
 import { UndoSnackbar } from '../components/UndoSnackbar';
 import { MigrationRestoredBanner } from '../components/MigrationRestoredBanner';
@@ -44,6 +47,7 @@ function OnboardingRedirect() {
  */
 function AppShell() {
   const { colors, scheme } = useTheme();
+  const { t } = useTranslation();
   // §9.5.4: starts/stops SyncWorker draining on AppState transitions and
   // DataRevision bumps. No JSX/visible output — see contexts/SyncWorkerLoop.tsx.
   useSyncWorkerLoop();
@@ -103,19 +107,20 @@ function AppShell() {
             this screen's own close animation. UI/UX §8 allows either
             ("Bottom Sheet または Modal") — this isn't a spec deviation. */}
         <Stack.Screen name="record" options={{ headerShown: false }} />
-        <Stack.Screen name="activity/[id]" options={{ title: 'Activity' }} />
-        <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
-        <Stack.Screen name="settings/app-lock" options={{ title: 'App Lock' }} />
-        <Stack.Screen name="settings/hide-app-preview" options={{ title: 'Hide App Preview' }} />
-        <Stack.Screen name="settings/block-screenshots" options={{ title: 'Block Screenshots' }} />
-        <Stack.Screen name="settings/health-connect" options={{ title: 'Health Connect' }} />
-        <Stack.Screen name="settings/data" options={{ title: 'Data' }} />
-        <Stack.Screen name="settings/delete-data" options={{ title: 'Delete Data' }} />
-        <Stack.Screen name="settings/activity-details" options={{ title: 'Activity Details' }} />
-        <Stack.Screen name="settings/appearance" options={{ title: 'Appearance' }} />
-        <Stack.Screen name="settings/first-day-of-week" options={{ title: 'First Day of Week' }} />
-        <Stack.Screen name="settings/time-format" options={{ title: 'Time Format' }} />
-        <Stack.Screen name="settings/about" options={{ title: 'About Solo + Us' }} />
+        <Stack.Screen name="activity/[id]" options={{ title: t('navigation.activity') }} />
+        <Stack.Screen name="settings/index" options={{ title: t('navigation.settings') }} />
+        <Stack.Screen name="settings/app-lock" options={{ title: t('navigation.appLock') }} />
+        <Stack.Screen name="settings/hide-app-preview" options={{ title: t('navigation.hideAppPreview') }} />
+        <Stack.Screen name="settings/block-screenshots" options={{ title: t('navigation.blockScreenshots') }} />
+        <Stack.Screen name="settings/health-connect" options={{ title: t('navigation.healthConnect') }} />
+        <Stack.Screen name="settings/data" options={{ title: t('navigation.data') }} />
+        <Stack.Screen name="settings/delete-data" options={{ title: t('navigation.deleteData') }} />
+        <Stack.Screen name="settings/activity-details" options={{ title: t('navigation.activityDetails') }} />
+        <Stack.Screen name="settings/appearance" options={{ title: t('navigation.appearance') }} />
+        <Stack.Screen name="settings/language" options={{ title: t('navigation.language') }} />
+        <Stack.Screen name="settings/first-day-of-week" options={{ title: t('navigation.firstDayOfWeek') }} />
+        <Stack.Screen name="settings/time-format" options={{ title: t('navigation.timeFormat') }} />
+        <Stack.Screen name="settings/about" options={{ title: t('navigation.about') }} />
       </Stack>
       <UndoSnackbar />
     </View>
@@ -156,13 +161,15 @@ export default function RootLayout() {
     <DatabaseProvider>
       <DataRevisionProvider>
         <AppearanceProvider>
-          <RecordFeedbackProvider>
-            <ScreenshotBlockProvider>
-              <AppLockProvider>
-                <AppShell />
-              </AppLockProvider>
-            </ScreenshotBlockProvider>
-          </RecordFeedbackProvider>
+          <LanguageProvider>
+            <RecordFeedbackProvider>
+              <ScreenshotBlockProvider>
+                <AppLockProvider>
+                  <AppShell />
+                </AppLockProvider>
+              </ScreenshotBlockProvider>
+            </RecordFeedbackProvider>
+          </LanguageProvider>
         </AppearanceProvider>
       </DataRevisionProvider>
     </DatabaseProvider>

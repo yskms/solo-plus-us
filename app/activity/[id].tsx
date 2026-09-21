@@ -57,6 +57,8 @@ import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAppLockActions } from '../../contexts/AppLock';
@@ -70,16 +72,16 @@ import { contextLabel } from '../../lib/labels';
 import { formatCalendarDateTime, formatPickedDateTime } from '../../lib/timeFormat';
 import { getDeviceTimeZoneId, nowAsZonedDigits, resolveOccurredAtEdit } from '../../lib/datetime';
 import { logError } from '../../lib/log';
-import { ACTIVITY_DETAIL_FIELDS, isFieldVisible, type ActivityDetailField } from '../../lib/activityDetailsFields';
+import { ACTIVITY_DETAIL_FIELDS, activityDetailFieldLabel, isFieldVisible, type ActivityDetailField } from '../../lib/activityDetailsFields';
 import type { Activity } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
 
 type ActivityDetailSettingKey = (typeof ACTIVITY_DETAIL_FIELDS)[number]['settingKey'];
 type DetailSettings = Record<ActivityDetailSettingKey, boolean>;
 
-function formatDateTime(activity: Activity, timeFormat: TimeFormat): string {
+function formatDateTime(t: TFunction, activity: Activity, timeFormat: TimeFormat): string {
   const [y, m, d] = activity.occurredLocalDate.split('-').map(Number);
-  return formatCalendarDateTime(y, m - 1, d, activity.occurredLocalTime, timeFormat);
+  return formatCalendarDateTime(t, y, m - 1, d, activity.occurredLocalTime, timeFormat);
 }
 
 /**
@@ -110,10 +112,11 @@ function TriState({
   onChange: (v: boolean | null) => void;
   colors: ReturnType<typeof useTheme>['colors'];
 }) {
+  const { t } = useTranslation();
   const options: { key: string; value: boolean | null; text: string }[] = [
-    { key: 'unset', value: null, text: 'Not recorded' },
-    { key: 'yes', value: true, text: 'Yes' },
-    { key: 'no', value: false, text: 'No' },
+    { key: 'unset', value: null, text: t('activityDetail.notRecorded') },
+    { key: 'yes', value: true, text: t('activityDetail.yes') },
+    { key: 'no', value: false, text: t('activityDetail.no') },
   ];
   return (
     <View style={styles.fieldBlock}>
@@ -177,6 +180,7 @@ function MoodRow({
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { isLocked } = useAppLockActions();
 
@@ -238,7 +242,7 @@ export default function ActivityDetailScreen() {
   if (!activity || !detailSettings) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -267,7 +271,7 @@ export default function ActivityDetailScreen() {
     } else {
       const parsedMinutes = Number(durationMinutes);
       if (!Number.isFinite(parsedMinutes) || parsedMinutes <= 0) {
-        Alert.alert('Invalid duration', 'Enter a duration in minutes, or leave it blank.');
+        Alert.alert(t('activityDetail.invalidDurationTitle'), t('activityDetail.invalidDurationMessage'));
         return;
       }
       durationSeconds = Math.round(parsedMinutes * 60);
@@ -294,7 +298,7 @@ export default function ActivityDetailScreen() {
       });
       router.back();
     } catch (error) {
-      Alert.alert('Could not save', 'Your changes were not saved. Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('activityDetail.couldNotSaveMessage'));
       logError('updateActivity failed', error);
     } finally {
       setSaving(false);
@@ -302,10 +306,10 @@ export default function ActivityDetailScreen() {
   };
 
   const confirmDelete = () => {
-    Alert.alert('Delete this activity?', 'This will remove the record from this app.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('activityDetail.deleteConfirmTitle'), t('activityDetail.deleteConfirmMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
           // This Alert is a system dialog — it renders above the App
@@ -320,7 +324,7 @@ export default function ActivityDetailScreen() {
             await ActivityService.deleteActivity(db, activity.id);
             router.back();
           } catch (error) {
-            Alert.alert('Could not delete', 'Please try again.');
+            Alert.alert(t('activityDetail.couldNotDelete'), t('common.pleaseTryAgain'));
             logError('deleteActivity failed', error);
           }
         },
@@ -328,7 +332,7 @@ export default function ActivityDetailScreen() {
     ]);
   };
 
-  const dateTimeText = customInstant ? formatPickedDateTime(customInstant, timeFormat) : formatDateTime(activity, timeFormat);
+  const dateTimeText = customInstant ? formatPickedDateTime(t, customInstant, timeFormat) : formatDateTime(t, activity, timeFormat);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -337,34 +341,46 @@ export default function ActivityDetailScreen() {
         accessibilityElementsHidden={addMoreVisible}
         importantForAccessibility={addMoreVisible ? 'no-hide-descendants' : 'auto'}
       >
-        <Text style={[styles.contextTitle, { color: colors.textPrimary }]}>{contextLabel(activity.context)}</Text>
+        <Text style={[styles.contextTitle, { color: colors.textPrimary }]}>{contextLabel(t, activity.context)}</Text>
 
         <View style={styles.fieldBlock}>
-          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>DATE & TIME</Text>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{t('activityDetail.dateTimeLabel')}</Text>
           <Pressable
             onPress={open}
             disabled={saving}
             style={({ pressed }) => [styles.dateTimeRow, { opacity: pressed ? 0.7 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel={dateTimeText}
-            accessibilityHint="Opens a date and time picker to change when this happened"
+            accessibilityHint={t('activityDetail.dateTimeHint')}
           >
             <Text style={[styles.dateTimeText, { color: colors.textPrimary }]}>{dateTimeText}</Text>
             <Text style={[styles.dateTimeChevron, { color: colors.textTertiary }]}>›</Text>
           </Pressable>
         </View>
 
-        {visible.orgasm && <TriState label="Orgasm" value={orgasm} onChange={setOrgasm} colors={colors} />}
+        {visible.orgasm && (
+          <TriState label={activityDetailFieldLabel(t, 'orgasm')} value={orgasm} onChange={setOrgasm} colors={colors} />
+        )}
         {visible.ejaculation && (
-          <TriState label="Ejaculation" value={ejaculation} onChange={setEjaculation} colors={colors} />
+          <TriState
+            label={activityDetailFieldLabel(t, 'ejaculation')}
+            value={ejaculation}
+            onChange={setEjaculation}
+            colors={colors}
+          />
         )}
         {visible.protection && (
-          <TriState label="Protection" value={protectionUsed} onChange={setProtectionUsed} colors={colors} />
+          <TriState
+            label={activityDetailFieldLabel(t, 'protection')}
+            value={protectionUsed}
+            onChange={setProtectionUsed}
+            colors={colors}
+          />
         )}
 
         {visible.duration && (
           <View style={styles.fieldBlock}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Duration (minutes)</Text>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{t('activityDetail.durationLabel')}</Text>
             <TextInput
               value={durationMinutes}
               onChangeText={(value) => {
@@ -372,7 +388,7 @@ export default function ActivityDetailScreen() {
                 setDurationTouched(true);
               }}
               keyboardType="number-pad"
-              placeholder="Not recorded"
+              placeholder={t('activityDetail.notRecorded')}
               placeholderTextColor={colors.textTertiary}
               style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border }]}
             />
@@ -384,9 +400,10 @@ export default function ActivityDetailScreen() {
               // recorded. Untouched, saving still keeps the exact original
               // value (see `durationTouched` above); this is display-only.
               <Text style={[styles.fieldCaption, { color: colors.textTertiary }]}>
-                Recorded as {activity.durationSeconds} seconds, shown here as{' '}
-                {Math.round(activity.durationSeconds / 60)} min. Editing this field will replace it with a whole
-                number of minutes.
+                {t('activityDetail.durationRoundedCaption', {
+                  seconds: activity.durationSeconds,
+                  minutes: Math.round(activity.durationSeconds / 60),
+                })}
               </Text>
             )}
           </View>
@@ -394,19 +411,19 @@ export default function ActivityDetailScreen() {
 
         {visible.mood && (
           <>
-            <MoodRow label="Mood before" value={moodBefore} onChange={setMoodBefore} colors={colors} />
-            <MoodRow label="Mood after" value={moodAfter} onChange={setMoodAfter} colors={colors} />
+            <MoodRow label={t('activityDetail.moodBefore')} value={moodBefore} onChange={setMoodBefore} colors={colors} />
+            <MoodRow label={t('activityDetail.moodAfter')} value={moodAfter} onChange={setMoodAfter} colors={colors} />
           </>
         )}
 
         {visible.note && (
           <View style={styles.fieldBlock}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Notes</Text>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{activityDetailFieldLabel(t, 'note')}</Text>
             <TextInput
               value={note}
               onChangeText={setNote}
               multiline
-              placeholder="Add a note"
+              placeholder={t('activityDetail.notePlaceholder')}
               placeholderTextColor={colors.textTertiary}
               style={[styles.textArea, { color: colors.textPrimary, borderColor: colors.border }]}
             />
@@ -419,7 +436,7 @@ export default function ActivityDetailScreen() {
             style={styles.addMoreRow}
             accessibilityRole="button"
           >
-            <Text style={[styles.addMoreLink, { color: colors.solo }]}>+ Add more details</Text>
+            <Text style={[styles.addMoreLink, { color: colors.solo }]}>{t('activityDetail.addMoreDetails')}</Text>
           </Pressable>
         )}
 
@@ -428,11 +445,11 @@ export default function ActivityDetailScreen() {
           disabled={saving}
           style={[styles.saveButton, { backgroundColor: colors.solo, opacity: saving ? 0.7 : 1 }]}
         >
-          <Text style={[styles.saveButtonText, { color: colors.background }]}>Save</Text>
+          <Text style={[styles.saveButtonText, { color: colors.background }]}>{t('common.save')}</Text>
         </Pressable>
 
         <Pressable onPress={confirmDelete} style={styles.deleteButton}>
-          <Text style={[styles.deleteButtonText, { color: colors.destructive }]}>Delete Activity</Text>
+          <Text style={[styles.deleteButtonText, { color: colors.destructive }]}>{t('activityDetail.deleteActivity')}</Text>
         </Pressable>
       </ScrollView>
 

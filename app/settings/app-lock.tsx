@@ -8,6 +8,7 @@ import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAppLockActions } from '../../contexts/AppLock';
@@ -16,15 +17,16 @@ import { hasDeviceAuthEnrolled } from '../../lib/deviceAuthEnrollment';
 import { logError } from '../../lib/log';
 import type { AppLockTiming } from '../../types/Settings';
 
-const TIMING_OPTIONS: { value: AppLockTiming; label: string }[] = [
-  { value: 'immediately', label: 'Immediately' },
-  { value: '1m', label: 'After 1 minute' },
-  { value: '5m', label: 'After 5 minutes' },
-];
-
 export default function AppLockSettingsScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
+
+  const TIMING_OPTIONS: { value: AppLockTiming; label: string }[] = [
+    { value: 'immediately', label: t('settings.appLock.timing.immediately') },
+    { value: '1m', label: t('settings.appLock.timing.after1m') },
+    { value: '5m', label: t('settings.appLock.timing.after5m') },
+  ];
   const { refreshAppLockSettings, authenticate } = useAppLockActions();
 
   const [enabled, setEnabled] = useState(false);
@@ -52,10 +54,7 @@ export default function AppLockSettingsScreen() {
       // is deliberately no app-level PIN or fallback to offer instead
       // (see contexts/AppLock.tsx). Refuse rather than let that happen.
       if (!(await hasDeviceAuthEnrolled())) {
-        Alert.alert(
-          'No device authentication set up',
-          'Set up a passcode, fingerprint, or face unlock on this device before turning on App Lock.',
-        );
+        Alert.alert(t('settings.appLock.noDeviceAuthTitle'), t('settings.appLock.noDeviceAuthMessage'));
         return;
       }
     } else {
@@ -70,7 +69,7 @@ export default function AppLockSettingsScreen() {
       // event on Android, whose passcode fallback is a separate Activity)
       // would be mistaken for the person leaving the app, re-locking it
       // right as this authentication succeeds.
-      const success = await authenticate('Confirm to turn off App Lock');
+      const success = await authenticate(t('settings.appLock.confirmTurnOffReason'));
       if (!success) return;
     }
     setBusy(true);
@@ -80,7 +79,7 @@ export default function AppLockSettingsScreen() {
       await refreshAppLockSettings();
     } catch (error) {
       logError('Saving appLock.enabled failed', error);
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
     } finally {
       setBusy(false);
     }
@@ -94,7 +93,7 @@ export default function AppLockSettingsScreen() {
       await refreshAppLockSettings();
     } catch (error) {
       logError('Saving appLock.timing failed', error);
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
     } finally {
       setBusy(false);
     }
@@ -103,7 +102,7 @@ export default function AppLockSettingsScreen() {
   if (!loaded) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -112,26 +111,24 @@ export default function AppLockSettingsScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.row, { borderColor: colors.border }]}>
-          <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>Use App Lock</Text>
+          <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{t('settings.appLock.useAppLock')}</Text>
           <Switch value={enabled} onValueChange={persistEnabled} disabled={busy} />
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>UNLOCK WITH</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.appLock.unlockWithSectionLabel')}</Text>
           <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.optionRow}>
-              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Device authentication</Text>
+              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.appLock.deviceAuthentication')}</Text>
               <Text style={[styles.checkmark, { color: colors.solo }]}>✓</Text>
             </View>
           </View>
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            Biometrics, or your device passcode if unavailable.
-          </Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.appLock.deviceAuthCaption')}</Text>
         </View>
 
         {enabled && (
           <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>LOCK</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.appLock.lockSectionLabel')}</Text>
             <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               {TIMING_OPTIONS.map((option, i) => (
                 <Pressable

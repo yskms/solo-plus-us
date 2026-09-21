@@ -1,4 +1,8 @@
-import { hasRecordedValue, isFieldVisible, ACTIVITY_DETAIL_FIELDS } from '../activityDetailsFields';
+import i18n from '../i18n';
+import { activityDetailFieldLabel, hasRecordedValue, isFieldVisible, ACTIVITY_DETAIL_FIELDS } from '../activityDetailsFields';
+
+const en = i18n.getFixedT('en');
+const ja = i18n.getFixedT('ja');
 
 const blankActivity = {
   orgasm: null,
@@ -33,6 +37,15 @@ describe('hasRecordedValue', () => {
     // re-normalize an external JSON's `note: ""` — both must count as unset.
     expect(hasRecordedValue('note', { ...blankActivity, note: '' })).toBe(false);
     expect(hasRecordedValue('note', { ...blankActivity, note: 'hi' })).toBe(true);
+  });
+});
+
+describe('activityDetailFieldLabel', () => {
+  it('has a translated label for every field, in both languages', () => {
+    for (const { field } of ACTIVITY_DETAIL_FIELDS) {
+      expect(activityDetailFieldLabel(en, field)).toBeTruthy();
+      expect(activityDetailFieldLabel(ja, field)).toBeTruthy();
+    }
   });
 });
 

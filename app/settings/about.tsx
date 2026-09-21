@@ -9,15 +9,19 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing } from '../../constants/theme';
 
-const PRINCIPLES = [
-  { title: 'Judgment-free', body: "Solo + Us doesn't rate your activity as high, low, good, or bad." },
-  { title: 'No streak pressure', body: "There's no streak counter and nothing to keep up." },
-  { title: 'Low friction', body: "Recording a moment takes one tap — pick a type, and it's logged with the current time." },
-  { title: 'Privacy first', body: 'Your data is sensitive, so it stays on this device by default.' },
-  { title: 'Long-term data', body: "Built for keeping records over years, not just building a short-term habit." },
-];
+function principles(t: TFunction): { key: string; title: string; body: string }[] {
+  return [
+    { key: 'judgmentFree', title: t('settings.about.principles.judgmentFree.title'), body: t('settings.about.principles.judgmentFree.body') },
+    { key: 'noStreakPressure', title: t('settings.about.principles.noStreakPressure.title'), body: t('settings.about.principles.noStreakPressure.body') },
+    { key: 'lowFriction', title: t('settings.about.principles.lowFriction.title'), body: t('settings.about.principles.lowFriction.body') },
+    { key: 'privacyFirst', title: t('settings.about.principles.privacyFirst.title'), body: t('settings.about.principles.privacyFirst.body') },
+    { key: 'longTermData', title: t('settings.about.principles.longTermData.title'), body: t('settings.about.principles.longTermData.body') },
+  ];
+}
 
 /**
  * §19.1's basics, plus two exceptions to "stays on this device" that a
@@ -27,32 +31,35 @@ const PRINCIPLES = [
  * — see `app/settings/health-connect.tsx`/`app/settings/data.tsx` for the
  * screens that state this at the point of action; this is only a summary).
  */
-const PRIVACY_FACTS = [
-  'No account required',
-  'Your activity data is encrypted and stored on this device',
-  "We don't run a server that receives your activity data",
-  'If you turn on Health Connect sync, the date/time and whether protection was used are also written there',
-  'Files you export are not encrypted',
-  'Your data is never used for advertising',
-  'No analytics or crash reporting SDKs in this version',
-];
+function privacyFacts(t: TFunction): string[] {
+  return [
+    t('settings.about.privacyFacts.noAccount'),
+    t('settings.about.privacyFacts.encryptedOnDevice'),
+    t('settings.about.privacyFacts.noServer'),
+    t('settings.about.privacyFacts.healthConnectSubset'),
+    t('settings.about.privacyFacts.exportsNotEncrypted'),
+    t('settings.about.privacyFacts.noAdvertising'),
+    t('settings.about.privacyFacts.noAnalytics'),
+  ];
+}
 
 export default function AboutScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
+  const principleItems = principles(t);
+  const factItems = privacyFacts(t);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.tagline, { color: colors.textPrimary }]}>Personal Sexual Wellness Log</Text>
-        <Text style={[styles.intro, { color: colors.textSecondary }]}>
-          Solo + Us is a private, judgment-free way to keep track of your activity over the long term.
-        </Text>
+        <Text style={[styles.tagline, { color: colors.textPrimary }]}>{t('settings.about.tagline')}</Text>
+        <Text style={[styles.intro, { color: colors.textSecondary }]}>{t('settings.about.intro')}</Text>
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRINCIPLES</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.about.principlesSectionLabel')}</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {PRINCIPLES.map((item, index) => (
+          {principleItems.map((item, index) => (
             <View
-              key={item.title}
+              key={item.key}
               style={[styles.principleRow, { borderColor: colors.border }, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth }]}
             >
               <Text style={[styles.principleTitle, { color: colors.textPrimary }]}>{item.title}</Text>
@@ -61,9 +68,9 @@ export default function AboutScreen() {
           ))}
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRIVACY</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.privacy')}</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {PRIVACY_FACTS.map((fact, index) => (
+          {factItems.map((fact, index) => (
             <View
               key={fact}
               style={[styles.factRow, { borderColor: colors.border }, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth }]}

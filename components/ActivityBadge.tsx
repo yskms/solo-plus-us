@@ -4,18 +4,20 @@
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../constants/theme';
 import { contextLabel } from '../lib/labels';
 import type { ActivityContext } from '../types/Activity';
 
 export function ActivityBadge({ context }: { context: ActivityContext }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const dotColor = context === 'solo' ? colors.solo : colors.partneredStrong;
 
   return (
     <View style={styles.row}>
       <View style={[styles.dot, { backgroundColor: dotColor }]} />
-      <Text style={[styles.label, { color: colors.textPrimary }]}>{contextLabel(context)}</Text>
+      <Text style={[styles.label, { color: colors.textPrimary }]}>{contextLabel(t, context)}</Text>
     </View>
   );
 }

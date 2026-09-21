@@ -1,4 +1,8 @@
+import i18n from '../i18n';
 import { buildMonthGrid, weekdayHeaderLabels, shiftMonth, monthLabel, localDateRangeForMonth } from '../calendarGrid';
+
+const en = i18n.getFixedT('en');
+const ja = i18n.getFixedT('ja');
 
 describe('buildMonthGrid', () => {
   it('pads leading blanks so day 1 lands in the correct Monday-first column', () => {
@@ -55,10 +59,14 @@ describe('buildMonthGrid', () => {
 
 describe('weekdayHeaderLabels', () => {
   it('starts with M for Monday-first', () => {
-    expect(weekdayHeaderLabels('monday')).toEqual(['M', 'T', 'W', 'T', 'F', 'S', 'S']);
+    expect(weekdayHeaderLabels(en, 'monday')).toEqual(['M', 'T', 'W', 'T', 'F', 'S', 'S']);
   });
   it('starts with S for Sunday-first', () => {
-    expect(weekdayHeaderLabels('sunday')).toEqual(['S', 'M', 'T', 'W', 'T', 'F', 'S']);
+    expect(weekdayHeaderLabels(en, 'sunday')).toEqual(['S', 'M', 'T', 'W', 'T', 'F', 'S']);
+  });
+  it('translates to Japanese single-kanji weekday initials', () => {
+    expect(weekdayHeaderLabels(ja, 'sunday')).toEqual(['日', '月', '火', '水', '木', '金', '土']);
+    expect(weekdayHeaderLabels(ja, 'monday')).toEqual(['月', '火', '水', '木', '金', '土', '日']);
   });
 });
 
@@ -82,7 +90,10 @@ describe('shiftMonth', () => {
 
 describe('monthLabel', () => {
   it('formats the full month name and year', () => {
-    expect(monthLabel(2026, 9)).toBe('September 2026');
+    expect(monthLabel(en, 2026, 9)).toBe('September 2026');
+  });
+  it('formats year-first with 月 in Japanese', () => {
+    expect(monthLabel(ja, 2026, 9)).toBe('2026年9月');
   });
 });
 

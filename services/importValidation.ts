@@ -221,6 +221,8 @@ function isSettingValueValid(key: SettingKey, value: unknown): boolean {
       return value === '12h' || value === '24h';
     case 'preferences.appearance':
       return value === 'system' || value === 'light' || value === 'dark';
+    case 'preferences.language':
+      return value === 'system' || value === 'ja' || value === 'en';
     default:
       return false;
   }

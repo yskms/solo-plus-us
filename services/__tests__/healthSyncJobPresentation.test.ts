@@ -1,11 +1,15 @@
-import { describeJobAction, connectionStatus } from '../healthSyncJobPresentation';
+import i18n from '../../lib/i18n';
+import { describeJobAction, connectionStatus, connectionStatusLabel, retryBlockedCaption } from '../healthSyncJobPresentation';
 import type { JobOperation, SyncErrorCode } from '../../types/HealthSync';
+
+const en = i18n.getFixedT('en');
+const ja = i18n.getFixedT('ja');
 
 describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
   it.each<[JobOperation]>([['create'], ['update'], ['recreate']])(
     'operation=%s は "Not synced to Health Connect" / "Don\'t sync" と確認文を返す',
     (operation) => {
-      const copy = describeJobAction({ operation, lastErrorCode: null });
+      const copy = describeJobAction(en, { operation, lastErrorCode: null });
       expect(copy.statusText).toBe('Not synced to Health Connect');
       expect(copy.discardLabel).toBe("Don't sync");
       expect(copy.discardConfirm).toEqual({
@@ -16,7 +20,7 @@ describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
   );
 
   it('operation=delete は "Deletion not applied" / "Stop retrying" と確認文を返す', () => {
-    const copy = describeJobAction({ operation: 'delete', lastErrorCode: null });
+    const copy = describeJobAction(en, { operation: 'delete', lastErrorCode: null });
     expect(copy.statusText).toBe('Deletion not applied');
     expect(copy.discardLabel).toBe('Stop retrying');
     expect(copy.discardConfirm).toEqual({
@@ -28,7 +32,7 @@ describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
   it.each<[JobOperation]>([['create'], ['update'], ['recreate'], ['delete']])(
     'lastErrorCode=LOCAL_ACTIVITY_NOT_FOUND は operation=%s によらず内部不整合の文言（確認文なし・再試行なし）を優先する',
     (operation) => {
-      const copy = describeJobAction({ operation, lastErrorCode: 'LOCAL_ACTIVITY_NOT_FOUND' });
+      const copy = describeJobAction(en, { operation, lastErrorCode: 'LOCAL_ACTIVITY_NOT_FOUND' });
       expect(copy.statusText).toBe('Sync error');
       expect(copy.discardLabel).toBe('Dismiss this error');
       expect(copy.discardConfirm).toBeNull();
@@ -41,15 +45,39 @@ describe('describeJobAction (§9.6 の破棄文言テーブル)', () => {
   it.each<[SyncErrorCode]>([['PERMISSION_DENIED'], ['UNAVAILABLE'], ['NOT_FOUND'], ['RATE_LIMITED'], ['UNKNOWN']])(
     'lastErrorCode=%s（内部不整合以外）は通常の operation 別分岐を使う',
     (lastErrorCode) => {
-      const copy = describeJobAction({ operation: 'update', lastErrorCode });
+      const copy = describeJobAction(en, { operation: 'update', lastErrorCode });
       expect(copy.statusText).toBe('Not synced to Health Connect');
       expect(copy.discardConfirm).not.toBeNull();
     },
   );
 
   it('retryLabel は内部不整合以外のどのケースでも共通', () => {
-    expect(describeJobAction({ operation: 'delete', lastErrorCode: null }).retryLabel).toBe('Retry now');
-    expect(describeJobAction({ operation: 'create', lastErrorCode: null }).retryLabel).toBe('Retry now');
+    expect(describeJobAction(en, { operation: 'delete', lastErrorCode: null }).retryLabel).toBe('Retry now');
+    expect(describeJobAction(en, { operation: 'create', lastErrorCode: null }).retryLabel).toBe('Retry now');
+  });
+
+  it('日本語に翻訳される', () => {
+    const copy = describeJobAction(ja, { operation: 'delete', lastErrorCode: null });
+    expect(copy.statusText).toBe('削除が未反映');
+    expect(copy.discardLabel).toBe('再試行を停止');
+  });
+});
+
+describe('connectionStatusLabel / retryBlockedCaption', () => {
+  it('has a label for every status, in both languages', () => {
+    const statuses = ['connected', 'not-connected', 'unavailable', 'permission-revoked'] as const;
+    for (const status of statuses) {
+      expect(connectionStatusLabel(en, status)).toBeTruthy();
+      expect(connectionStatusLabel(ja, status)).toBeTruthy();
+    }
+  });
+
+  it('has a retry-blocked caption for every non-connected status, in both languages', () => {
+    const statuses = ['not-connected', 'unavailable', 'permission-revoked'] as const;
+    for (const status of statuses) {
+      expect(retryBlockedCaption(en, status)).toBeTruthy();
+      expect(retryBlockedCaption(ja, status)).toBeTruthy();
+    }
   });
 });
 

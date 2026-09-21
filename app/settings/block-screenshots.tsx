@@ -18,6 +18,7 @@
 import React, { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useScreenshotBlockSetting } from '../../contexts/ScreenshotBlock';
 import { logError } from '../../lib/log';
@@ -26,6 +27,7 @@ const ANDROID_LEGACY_FORCED_ON = Platform.OS === 'android' && Platform.Version <
 
 export default function BlockScreenshotsSettingsScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const { enabled, loaded, setEnabled } = useScreenshotBlockSetting();
   const [busy, setBusy] = useState(false);
 
@@ -38,7 +40,7 @@ export default function BlockScreenshotsSettingsScreen() {
       // so the Switch — bound directly to it — naturally reverts to the
       // last actually-applied value without any extra state here.
       logError('Saving privacy.blockScreenshots failed', error);
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
     } finally {
       setBusy(false);
     }
@@ -47,7 +49,7 @@ export default function BlockScreenshotsSettingsScreen() {
   if (!loaded) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -56,7 +58,7 @@ export default function BlockScreenshotsSettingsScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.row, { borderColor: colors.border }]}>
-          <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>Block Screenshots</Text>
+          <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{t('settings.index.blockScreenshots')}</Text>
           <Switch
             value={ANDROID_LEGACY_FORCED_ON || enabled}
             onValueChange={persist}
@@ -65,8 +67,8 @@ export default function BlockScreenshotsSettingsScreen() {
         </View>
         <Text style={[styles.caption, { color: colors.textTertiary }]}>
           {ANDROID_LEGACY_FORCED_ON
-            ? "Screenshots and screen recordings can't be blocked separately on this version of Android — hiding your Recent Apps preview already blocks them as a side effect."
-            : 'Prevent screenshots and screen recordings while Solo + Us is open.'}
+            ? t('settings.blockScreenshots.androidLegacyCaption')
+            : t('settings.blockScreenshots.caption')}
         </Text>
       </ScrollView>
     </SafeAreaView>

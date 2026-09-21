@@ -1,0 +1,492 @@
+{
+  "common": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "couldNotSave": "Could not save",
+    "pleaseTryAgain": "Please try again.",
+    "done": "Done",
+    "loading": "Loading…",
+    "listSeparator": ", ",
+    "am": "AM",
+    "pm": "PM",
+    "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "monthsFull": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    "weekdayInitials": ["S", "M", "T", "W", "T", "F", "S"],
+    "weekdaysFull": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+  },
+  "dateFormat": {
+    "time12h": "{{hour}}:{{minute}} {{period}}",
+    "time24h": "{{hour}}:{{minute}}",
+    "monthDay": "{{month}} {{day}}",
+    "calendarDateTime": "{{month}} {{day}}, {{year}} · {{time}}"
+  },
+  "settings": {
+    "language": {
+      "system": "System",
+      "caption": "System follows this device's own language setting."
+    },
+    "appearance": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "caption": "System follows this device's own Light/Dark setting."
+    },
+    "index": {
+      "privacy": "PRIVACY",
+      "appLock": "App Lock",
+      "hideAppPreview": "Hide App Preview",
+      "blockScreenshots": "Block Screenshots",
+      "health": "HEALTH",
+      "healthConnect": "Health Connect",
+      "data": "DATA",
+      "exportImport": "Export & Import",
+      "deleteData": "Delete Data",
+      "tracking": "TRACKING",
+      "activityDetails": "Activity Details",
+      "preferences": "PREFERENCES",
+      "firstDayOfWeek": "First Day of Week",
+      "timeFormat": "Time Format",
+      "appearance": "Appearance",
+      "language": "Language",
+      "about": "ABOUT",
+      "aboutApp": "About Solo + Us",
+      "version": "Version"
+    },
+    "appLock": {
+      "useAppLock": "Use App Lock",
+      "unlockWithSectionLabel": "UNLOCK WITH",
+      "deviceAuthentication": "Device authentication",
+      "deviceAuthCaption": "Biometrics, or your device passcode if unavailable.",
+      "lockSectionLabel": "LOCK",
+      "timing": {
+        "immediately": "Immediately",
+        "after1m": "After 1 minute",
+        "after5m": "After 5 minutes"
+      },
+      "noDeviceAuthTitle": "No device authentication set up",
+      "noDeviceAuthMessage": "Set up a passcode, fingerprint, or face unlock on this device before turning on App Lock.",
+      "confirmTurnOffReason": "Confirm to turn off App Lock"
+    },
+    "blockScreenshots": {
+      "androidLegacyCaption": "Screenshots and screen recordings can't be blocked separately on this version of Android — hiding your Recent Apps preview already blocks them as a side effect.",
+      "caption": "Prevent screenshots and screen recordings while Solo + Us is open."
+    },
+    "firstDayOfWeek": {
+      "monday": "Monday",
+      "sunday": "Sunday"
+    },
+    "timeFormat": {
+      "option12h": "12-hour (1:30 PM)",
+      "option24h": "24-hour (13:30)"
+    },
+    "about": {
+      "tagline": "Personal Sexual Wellness Log",
+      "intro": "Solo + Us is a private, judgment-free way to keep track of your activity over the long term.",
+      "principlesSectionLabel": "PRINCIPLES",
+      "principles": {
+        "judgmentFree": { "title": "Judgment-free", "body": "Solo + Us doesn't rate your activity as high, low, good, or bad." },
+        "noStreakPressure": { "title": "No streak pressure", "body": "There's no streak counter and nothing to keep up." },
+        "lowFriction": { "title": "Low friction", "body": "Recording a moment takes one tap — pick a type, and it's logged with the current time." },
+        "privacyFirst": { "title": "Privacy first", "body": "Your data is sensitive, so it stays on this device by default." },
+        "longTermData": { "title": "Long-term data", "body": "Built for keeping records over years, not just building a short-term habit." }
+      },
+      "privacyFacts": {
+        "noAccount": "No account required",
+        "encryptedOnDevice": "Your activity data is encrypted and stored on this device",
+        "noServer": "We don't run a server that receives your activity data",
+        "healthConnectSubset": "If you turn on Health Connect sync, the date/time and whether protection was used are also written there",
+        "exportsNotEncrypted": "Files you export are not encrypted",
+        "noAdvertising": "Your data is never used for advertising",
+        "noAnalytics": "No analytics or crash reporting SDKs in this version"
+      }
+    },
+    "data": {
+      "exportSectionLabel": "EXPORT",
+      "exportCaption": "Export everything you've recorded in Solo + Us.",
+      "exportPlaintextNotice": "These files are not encrypted. Anyone with access to them can read everything in them — share and store them carefully.",
+      "exportJson": "Export JSON",
+      "exportJsonSubLabel": "Complete backup",
+      "exportCsv": "Export CSV",
+      "exportCsvSubLabel": "For spreadsheets and analysis",
+      "importSectionLabel": "IMPORT",
+      "importCaption": "Restore from a Solo + Us JSON backup.",
+      "importFromBackup": "Import from a backup",
+      "foundInBackup_one": "{{count}} activity found in this backup.",
+      "foundInBackup_other": "{{count}} activities found in this backup.",
+      "currentlyHave_one": "You currently have {{count}} activity recorded on this device.",
+      "currentlyHave_other": "You currently have {{count}} activities recorded on this device.",
+      "addOnlyNewRecords": "Add only new records",
+      "replaceAllData": "Replace all data",
+      "willBeImported_one": "{{count}} activity will be imported.",
+      "willBeImported_other": "{{count}} activities will be imported.",
+      "willBeReplaced_one": "Your current {{count}} activity will be permanently replaced.",
+      "willBeReplaced_other": "Your current {{count}} activities will be permanently replaced.",
+      "activitiesRestored_one": "{{count}} activity restored.",
+      "activitiesRestored_other": "{{count}} activities restored.",
+      "offerResyncExplanation1": "Health Connect sync is on for this device, but Solo + Us doesn't automatically resend restored data.",
+      "offerResyncExplanation2": "If you continue, every restored activity will be resent to Health Connect, replacing what's there now.",
+      "offerResyncExplanation3": "A few records may need a manual retry — you can check progress anytime in Settings › Health Connect.",
+      "syncToHealthConnect": "Sync to Health Connect",
+      "notNow": "Not now",
+      "checkingBackupFile": "Checking backup file…",
+      "addingNewRecords": "Adding new records…",
+      "creatingSafetyBackup": "Creating a safety backup…",
+      "replacingYourData": "Replacing your data…",
+      "queuingHealthConnectSync": "Queuing Health Connect sync…",
+      "importCompleteTitle": "Import complete",
+      "appendImportAdded_one": "{{count}} new activity added.",
+      "appendImportAdded_other": "{{count}} new activities added.",
+      "appendImportSkipped_one": " {{count}} already existed and was skipped.",
+      "appendImportSkipped_other": " {{count}} already existed and were skipped.",
+      "replaceImportResult_one": "{{count}} activity restored. {{notice}}",
+      "replaceImportResult_other": "{{count}} activities restored. {{notice}}",
+      "healthConnectSyncQueued": "Health Connect sync has been queued. Check progress anytime in Settings › Health Connect.",
+      "couldNotExport": "Could not export",
+      "couldNotOpenFilePicker": "Could not open file picker",
+      "couldNotReadFile": "Could not read file",
+      "notValidJson": "This file is not valid JSON.",
+      "doesntLookLikeBackup": "This file doesn't look like a backup",
+      "notABackup": "This file doesn't look like a Solo + Us backup:\n{{errors}}{{more}}",
+      "andNMore": "\n…and {{count}} more",
+      "couldNotImport": "Could not import",
+      "couldNotReplaceData": "Could not replace data",
+      "couldNotQueueHealthConnectSync": "Could not queue Health Connect sync",
+      "safetyExportLocationNotice": {
+        "android": "Before replacing anything, you'll be asked to choose a folder to save a safety backup of your current data.",
+        "ios": "Before replacing anything, a safety backup of your current data will be saved in Solo + Us's private storage on this device. It isn't visible in the Files app, but — unlike the app's own database — it's included in this device's iCloud/iTunes backup as an unencrypted file for as long as it remains on this device."
+      },
+      "safetyExportLocationShortNotice": {
+        "android": "A safety backup of your previous data was saved to the folder you chose.",
+        "ios": "A safety backup of your previous data was saved in this app's private storage (included in this device's iCloud/iTunes backup)."
+      },
+      "safetyExportError": {
+        "generic": "Could not create a safety backup. Please try again.",
+        "noLocationChosen": "Choose a save location to continue — replacing your data requires a verified backup first.",
+        "writeFailed": "Could not save the safety backup.",
+        "readBackFailed": "The safety backup could not be read back after saving.",
+        "verificationMismatch": "The safety backup couldn't be verified after saving (expected {{expected}} rows, found {{actual}}). Please try again.",
+        "noneFound": "none"
+      }
+    },
+    "deleteData": {
+      "confirmTitle": "Delete all data?",
+      "confirmCaption": "Every activity on this device will be deleted immediately.",
+      "androidCaption": "Records already sent to Health Connect will be deleted there too, over time. If you close Solo + Us before that finishes, deletion pauses and picks up again the next time you open the app. If you uninstall Solo + Us before it finishes, those records will remain in Health Connect.",
+      "cannotBeUndoneCaption": "This can't be undone. If you want to keep a copy, export your data first — Settings › Export & Import.",
+      "deleteAllData": "Delete All Data",
+      "deleting": "Deleting…",
+      "allDataDeletedTitle": "All data deleted",
+      "allDataDeletedMessage": "Every activity has been permanently deleted.",
+      "deletedFromDeviceTitle": "Deleted from this device",
+      "cannotSyncMessage_one": "Every activity has been deleted from this device. This version of the app can't sync {{count}} pending Health Connect deletion — they'll be sent automatically if this device gets an update with Health Connect support.",
+      "cannotSyncMessage_other": "Every activity has been deleted from this device. This version of the app can't sync {{count}} pending Health Connect deletions — they'll be sent automatically if this device gets an update with Health Connect support.",
+      "stillSendingMessage_one": "Every activity has been deleted from this device. {{count}} deletion is still being sent to Health Connect — check progress anytime in Settings › Health Connect.",
+      "stillSendingMessage_other": "Every activity has been deleted from this device. {{count}} deletions are still being sent to Health Connect — check progress anytime in Settings › Health Connect.",
+      "waitingMessage_one": "Every activity has been deleted from this device. Health Connect has {{count}} deletion waiting — reconnect in Settings › Health Connect to resume.",
+      "waitingMessage_other": "Every activity has been deleted from this device. Health Connect has {{count}} deletions waiting — reconnect in Settings › Health Connect to resume.",
+      "couldNotDelete": "Could not delete"
+    },
+    "activityDetails": {
+      "intro": "Choose what you want to track. You can change this anytime.",
+      "sectionLabel": "TRACKING DETAILS",
+      "caption": "Values you have already recorded are always shown, even if turned off. Protection is also always shown for partnered activities."
+    },
+    "healthConnect": {
+      "status": {
+        "connected": "Connected",
+        "notConnected": "Not connected",
+        "unavailable": "Health Connect isn't installed",
+        "permissionRevoked": "Permission needed"
+      },
+      "retryBlocked": {
+        "notConnected": "Turn on Sync to Health Connect to retry these.",
+        "unavailable": "Health Connect isn't installed. Install it to retry these.",
+        "permissionRevoked": "Health Connect permission is needed to retry these."
+      },
+      "job": {
+        "retryNow": "Retry now",
+        "syncing": "Syncing…",
+        "internalError": {
+          "status": "Sync error",
+          "discardLabel": "Dismiss this error"
+        },
+        "delete": {
+          "status": "Deletion not applied",
+          "discardLabel": "Stop retrying",
+          "discardConfirmTitle": "Stop retrying this deletion?",
+          "discardConfirmMessage": "This record may remain in Health Connect."
+        },
+        "notSynced": {
+          "status": "Not synced to Health Connect",
+          "discardLabel": "Don't sync",
+          "discardConfirmTitle": "Don't sync this record?",
+          "discardConfirmMessage": "Solo + Us and Health Connect will no longer match."
+        }
+      },
+      "stillInProgressTitle": "Still in progress",
+      "stillInProgressMessage": "Please try again after it finishes.",
+      "couldNotRetry": "Could not retry",
+      "couldNotComplete": "Could not complete",
+      "notInstalledTitle": "Health Connect isn't installed",
+      "notInstalledMessage": "Install Health Connect to sync your records.",
+      "permissionNeededTitle": "Permission needed",
+      "permissionNeededMessage": "Solo + Us needs permission to write to Health Connect.",
+      "couldNotConnect": "Could not connect",
+      "couldNotDisconnect": "Could not disconnect",
+      "unsyncedDeletionsTitle_one": "Health Connect has {{count}} unsynced deletion",
+      "unsyncedDeletionsTitle_other": "Health Connect has {{count}} unsynced deletions",
+      "unsyncedDeletionsMessage": "If you disconnect, these records will remain in Health Connect. Reconnecting lets you resume the pending deletions.",
+      "handleFirst": "Handle first",
+      "disconnectAnyway": "Disconnect anyway",
+      "nothingToSyncTitle": "Nothing to sync",
+      "nothingToSyncMessage": "Every activity is already syncing, or was intentionally excluded from sync.",
+      "syncQueuedTitle": "Sync queued",
+      "syncQueuedMessage_one": "{{count}} activity queued to sync. Check progress below.",
+      "syncQueuedMessage_other": "{{count}} activities queued to sync. Check progress below.",
+      "couldNotQueueSync": "Could not queue sync",
+      "couldNotCheckSyncStatus": "Could not check sync status",
+      "resyncConfirmTitle_one": "Sync {{count}} activity to Health Connect?",
+      "resyncConfirmTitle_other": "Sync {{count}} activities to Health Connect?",
+      "resyncConfirmMessage": "This resends everything that isn't already syncing, replacing what's in Health Connect for any that already exist there.",
+      "sync": "Sync",
+      "syncToggleSectionLabel": "SYNC TO HEALTH CONNECT",
+      "syncToggleLabel": "Sync to Health Connect",
+      "connecting": "Connecting…",
+      "disconnecting": "Disconnecting… this can take a moment if a sync is in progress.",
+      "aboutSectionLabel": "ABOUT SYNCHRONIZATION",
+      "aboutWhatIsSynced": "Health Connect only stores the date and time you recorded, and whether protection was used.",
+      "aboutWhatStaysLocal": "Solo/Partnered, Orgasm, Mood, and Notes stay in Solo + Us only.",
+      "lastSynced": "Last synced",
+      "never": "Never",
+      "resyncSectionLabel": "RE-SYNC",
+      "resyncExplanation": "If some records were never sent to Health Connect, or were removed there without Solo + Us knowing — for example, after restoring a backup — you can resend everything now.",
+      "resyncNeedsSyncOn": "Turn on Sync to Health Connect first.",
+      "resyncButton": "Sync everything to Health Connect",
+      "queuing": "Queuing…",
+      "unsyncedChangesSectionLabel": "UNSYNCED CHANGES",
+      "unsyncedChangesSectionLabelWithCount": "UNSYNCED CHANGES  {{count}}",
+      "everythingSynced": "Everything is synced."
+    },
+    "hideAppPreview": {
+      "alwaysOn": "ALWAYS ON",
+      "hideAppPreview": "Hide app preview",
+      "checking": "Checking",
+      "enabled": "Enabled",
+      "couldNotEnable": "Could not enable",
+      "alwaysHidesCaption": "Solo + Us always hides your records from the app switcher — this can't be turned off.",
+      "androidLegacySideEffect": " On this version of Android, that also blocks screenshots and screen recordings as a side effect.",
+      "couldNotEnableWithReason": "Could not enable: {{reason}}.",
+      "whatThisDoes": "WHAT THIS DOES",
+      "androidExplanation": "On Android 13 and later, the Recent Apps preview is replaced with a blank screen, and screenshots and screen recordings are allowed unless you turn on Block Screenshots. On Android 12 and earlier, hiding the Recent Apps preview requires blocking screenshots and screen recordings too, so Block Screenshots can't be turned off there.",
+      "iosExplanation": "On iOS, the app switcher preview is blurred. Screenshots and screen recordings are allowed unless you turn on Block Screenshots."
+    }
+  },
+  "navigation": {
+    "notFound": "Not found",
+    "activity": "Activity",
+    "settings": "Settings",
+    "appLock": "App Lock",
+    "hideAppPreview": "Hide App Preview",
+    "blockScreenshots": "Block Screenshots",
+    "healthConnect": "Health Connect",
+    "data": "Data",
+    "deleteData": "Delete Data",
+    "activityDetails": "Activity Details",
+    "appearance": "Appearance",
+    "language": "Language",
+    "firstDayOfWeek": "First Day of Week",
+    "timeFormat": "Time Format",
+    "about": "About Solo + Us",
+    "tabs": {
+      "today": "Today",
+      "calendar": "Calendar",
+      "insights": "Insights"
+    }
+  },
+  "notFound": {
+    "title": "This screen doesn't exist.",
+    "goToToday": "Go to Today"
+  },
+  "relativeDate": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago"
+  },
+  "calendar": {
+    "monthLabel": "{{month}} {{year}}",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "loadError": "Couldn't load your calendar. Leaving and reopening this tab will try again.",
+    "dayCellA11y": {
+      "noActivities": "{{date}}, no activities",
+      "withActivities": "{{date}}, {{parts}}",
+      "countPart_one": "{{count}} {{label}}",
+      "countPart_other": "{{count}} {{label}}"
+    },
+    "activityRowA11y": "{{context}} activity, {{time}}"
+  },
+  "statistics": {
+    "minutes_one": "{{value}} minute",
+    "minutes_other": "{{value}} minutes",
+    "hours_one": "{{value}} hour",
+    "hours_other": "{{value}} hours",
+    "days_one": "{{value}} day",
+    "days_other": "{{value}} days"
+  },
+  "activityDetailsFields": {
+    "orgasm": "Orgasm",
+    "ejaculation": "Ejaculation",
+    "protection": "Protection",
+    "duration": "Duration",
+    "mood": "Mood before / after",
+    "note": "Notes"
+  },
+  "activityContext": {
+    "solo": {
+      "label": "Solo",
+      "caption": "Personal activity"
+    },
+    "partnered": {
+      "label": "Partnered",
+      "caption": "With someone"
+    }
+  },
+  "lockScreen": {
+    "lockoutError": "Too many attempts. Try again later, or use your device passcode.",
+    "genericError": "Authentication failed. Tap to try again.",
+    "unlockWithDevice": "Unlock with device\nauthentication",
+    "unlockA11y": "Unlock with device authentication"
+  },
+  "errors": {
+    "screenMask": {
+      "blurFailed": "could not blur the app switcher preview",
+      "hidePreviewFailed": "could not hide the Recent Apps preview",
+      "supportCheckFailed": "support could not be checked on this device",
+      "notAvailable": "not available on this device"
+    }
+  },
+  "today": {
+    "dateHeader": "{{weekdayFull}}, {{month}} {{day}}",
+    "thisMonth": "THIS MONTH",
+    "activities_one": "activity",
+    "activities_other": "activities",
+    "lastActivity": "LAST ACTIVITY",
+    "recent": "RECENT",
+    "recordActivityA11y": "Record activity"
+  },
+  "components": {
+    "activityRow": {
+      "a11yLabel": "{{context}} activity, {{date}}"
+    }
+  },
+  "undoSnackbar": {
+    "recorded": "✓ {{context}} activity recorded",
+    "undo": "Undo",
+    "undoFailedTitle": "Undo failed",
+    "undoFailedMessage": "The record was not removed. Please try deleting it from its detail page."
+  },
+  "appLock": {
+    "turnedOffTitle": "App Lock turned off",
+    "turnedOffMessage": "This device no longer has a passcode, fingerprint, or face unlock set up, so App Lock has been turned off to keep your records accessible.",
+    "unlockPromptReason": "Unlock Solo + Us"
+  },
+  "emptyState": {
+    "title": "No activities recorded yet.",
+    "subtitle": "Your history starts with your first entry."
+  },
+  "insights": {
+    "allTime": "All time",
+    "loadError": "Couldn't load your insights. Leaving and reopening this tab will try again.",
+    "totalActivities": "TOTAL ACTIVITIES",
+    "yourPatterns": "YOUR PATTERNS",
+    "averageInterval": "Average interval"
+  },
+  "record": {
+    "title": "Add Activity",
+    "close": "Close",
+    "prompt": "How would you like to log?",
+    "justNow": "Just now",
+    "changeDateTime": "Change date & time",
+    "changeDateTimeA11y": "Change date and time",
+    "useNowInstead": "Use now instead",
+    "useNowInsteadA11y": "Use current time instead",
+    "couldNotRecord": "Could not record"
+  },
+  "activityDetail": {
+    "notRecorded": "Not recorded",
+    "yes": "Yes",
+    "no": "No",
+    "dateTimeLabel": "DATE & TIME",
+    "dateTimeHint": "Opens a date and time picker to change when this happened",
+    "durationLabel": "Duration (minutes)",
+    "durationRoundedCaption": "Recorded as {{seconds}} seconds, shown here as {{minutes}} min. Editing this field will replace it with a whole number of minutes.",
+    "moodBefore": "Mood before",
+    "moodAfter": "Mood after",
+    "notePlaceholder": "Add a note",
+    "addMoreDetails": "+ Add more details",
+    "deleteActivity": "Delete Activity",
+    "invalidDurationTitle": "Invalid duration",
+    "invalidDurationMessage": "Enter a duration in minutes, or leave it blank.",
+    "couldNotSaveMessage": "Your changes were not saved. Please try again.",
+    "deleteConfirmTitle": "Delete this activity?",
+    "deleteConfirmMessage": "This will remove the record from this app.",
+    "couldNotDelete": "Could not delete"
+  },
+  "addMoreDetailsSheet": {
+    "dismiss": "Dismiss",
+    "title": "Add more details"
+  },
+  "dateTimePickerSheet": {
+    "dismiss": "Dismiss date picker"
+  },
+  "migrationRestoredBanner": {
+    "message": "A recent update to Solo + Us couldn't be applied. Your existing records are safe, but the app is running an older version of its data format until this is fixed."
+  },
+  "loadErrorOverlay": {
+    "message": "Solo + Us couldn't check your App Lock settings.",
+    "tryAgain": "Try again"
+  },
+  "databaseContext": {
+    "couldNotOpenHeadline": "Solo + Us couldn’t open its database on this device.",
+    "migrationRestoreFailedHeadline": "Solo + Us couldn’t update its database, and couldn’t undo the attempt either.",
+    "schemaTooNewDetail": "This database was created by a newer version of Solo + Us (v{{current}}, this app supports up to v{{max}}). Update the app to continue.",
+    "migrationRestoreFailedDetail": "Migration failed, and restoring the previous version also failed. Please contact support.",
+    "unknownErrorDetail": "Something went wrong while opening the database. Please try again."
+  },
+  "recoveryScreen": {
+    "headline": "Solo + Us couldn't unlock the records on this device.",
+    "body": "This can happen after moving to a new device or restoring from a backup — the encryption key may have been lost.",
+    "working": "Working…",
+    "restoreFromBackup": "Restore from a backup",
+    "deleteAndStartOver": "Delete and start over",
+    "confirmDeleteBody": "This permanently deletes the records on this device. This can't be undone.",
+    "restoredTitle": "Restored",
+    "restoredMessage_one": "{{count}} activity restored from backup.",
+    "restoredMessage_other": "{{count}} activities restored from backup.",
+    "couldNotRestoreBackup": "Could not restore backup",
+    "couldNotDelete": "Could not delete",
+    "verificationFailed": "The restored data couldn't be verified. Please try again.",
+    "somethingWentWrong": "Something went wrong while working with this file. Please try again."
+  },
+  "onboarding": {
+    "privacy": {
+      "tagline": "Your intimate life, over time.",
+      "belongsLine": "Your intimate life belongs to you.",
+      "points": {
+        "storedOnDevice": "Stored on this device",
+        "noAccount": "No account required",
+        "noAdvertising": "No advertising use",
+        "healthOptional": "Health connection is optional"
+      },
+      "continue": "Continue",
+      "somethingWentWrong": "Something went wrong",
+      "protectEntriesTitle": "Protect your entries?",
+      "protectEntriesMessage": "You can turn on App Lock in Settings to require device authentication before opening the app.",
+      "notNow": "Not Now",
+      "goToSettings": "Go to Settings"
+    }
+  }
+}

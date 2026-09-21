@@ -68,6 +68,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, AppState, BackHandler, Keyboard, StyleSheet, View, type AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../constants/theme';
 import { useDatabase } from './DatabaseContext';
 import { getSetting, setSetting } from '../services/SettingsRepository';
@@ -116,6 +117,7 @@ export function useAppLockActions(): AppLockActionsContextValue {
 
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
 
   const [enabled, setEnabled] = useState(false);
@@ -215,11 +217,8 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     setEnabled(false);
     setLocked(false);
     setAuthError(null);
-    Alert.alert(
-      'App Lock turned off',
-      'This device no longer has a passcode, fingerprint, or face unlock set up, so App Lock has been turned off to keep your records accessible.',
-    );
-  }, [db]);
+    Alert.alert(t('appLock.turnedOffTitle'), t('appLock.turnedOffMessage'));
+  }, [db, t]);
 
   const attemptUnlock = useCallback(async () => {
     if (authenticatingRef.current) return;
@@ -231,7 +230,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         await disableAppLockDueToNoEnrollment();
         return;
       }
-      const result = await authenticateGuarded('Unlock Solo + Us');
+      const result = await authenticateGuarded(t('appLock.unlockPromptReason'));
       if (result.success) {
         setLocked(false);
       } else if (result.error === 'not_enrolled' || result.error === 'passcode_not_set') {
@@ -259,7 +258,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     } finally {
       setAuthenticating(false);
     }
-  }, [authenticateGuarded, disableAppLockDueToNoEnrollment]);
+  }, [authenticateGuarded, disableAppLockDueToNoEnrollment, t]);
 
   // Prompts automatically the moment a lock is shown, rather than waiting
   // for a tap — matches the UI/UX §19 mockup's lack of a separate

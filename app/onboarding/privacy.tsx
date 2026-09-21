@@ -20,6 +20,7 @@ import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { markPrivacyIntroSeen } from '../../lib/onboarding';
@@ -27,17 +28,21 @@ import { hasDeviceAuthEnrolled } from '../../lib/deviceAuthEnrollment';
 import { logError } from '../../lib/log';
 import { IntersectPlus } from '../../components/IntersectPlus';
 
-const POINTS = [
-  'Stored on this device',
-  'No account required',
-  'No advertising use',
-  'Health connection is optional',
-];
-
 export default function PrivacyIntroScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const [continuing, setContinuing] = useState(false);
+
+  // Keyed by a stable id, not the translated text itself — two points
+  // translating to identical strings (plausible across locales) would
+  // otherwise collide as React keys (found in review).
+  const POINTS = [
+    { id: 'storedOnDevice', text: t('onboarding.privacy.points.storedOnDevice') },
+    { id: 'noAccount', text: t('onboarding.privacy.points.noAccount') },
+    { id: 'noAdvertising', text: t('onboarding.privacy.points.noAdvertising') },
+    { id: 'healthOptional', text: t('onboarding.privacy.points.healthOptional') },
+  ];
 
   const onContinue = async () => {
     if (continuing) return;
@@ -46,7 +51,7 @@ export default function PrivacyIntroScreen() {
       await markPrivacyIntroSeen(db);
     } catch (error) {
       setContinuing(false);
-      Alert.alert('Something went wrong', 'Please try again.');
+      Alert.alert(t('onboarding.privacy.somethingWentWrong'), t('common.pleaseTryAgain'));
       logError('markPrivacyIntroSeen failed', error);
       return;
     }
@@ -66,12 +71,12 @@ export default function PrivacyIntroScreen() {
     }
 
     Alert.alert(
-      'Protect your entries?',
-      'You can turn on App Lock in Settings to require device authentication before opening the app.',
+      t('onboarding.privacy.protectEntriesTitle'),
+      t('onboarding.privacy.protectEntriesMessage'),
       [
-        { text: 'Not Now', style: 'cancel', onPress: () => router.replace('/(tabs)') },
+        { text: t('onboarding.privacy.notNow'), style: 'cancel', onPress: () => router.replace('/(tabs)') },
         {
-          text: 'Go to Settings',
+          text: t('onboarding.privacy.goToSettings'),
           onPress: () => {
             // `replace` first so Today (not this screen) is what's
             // underneath the pushed Settings screen — e.g. its back
@@ -110,16 +115,14 @@ export default function PrivacyIntroScreen() {
       <View style={styles.top}>
         <IntersectPlus size={40} />
         <Text style={[styles.wordmark, { color: colors.textPrimary }]}>Solo + Us</Text>
-        <Text style={[styles.tagline, { color: colors.textSecondary }]}>Your intimate life, over time.</Text>
+        <Text style={[styles.tagline, { color: colors.textSecondary }]}>{t('onboarding.privacy.tagline')}</Text>
       </View>
 
       <View style={styles.middle}>
-        <Text style={[styles.belongsLine, { color: colors.textPrimary }]}>
-          Your intimate life belongs to you.
-        </Text>
+        <Text style={[styles.belongsLine, { color: colors.textPrimary }]}>{t('onboarding.privacy.belongsLine')}</Text>
         {POINTS.map((point) => (
-          <Text key={point} style={[styles.point, { color: colors.textSecondary }]}>
-            •  {point}
+          <Text key={point.id} style={[styles.point, { color: colors.textSecondary }]}>
+            •  {point.text}
           </Text>
         ))}
       </View>
@@ -129,7 +132,7 @@ export default function PrivacyIntroScreen() {
         disabled={continuing}
         style={[styles.continueButton, { backgroundColor: colors.solo, opacity: continuing ? 0.7 : 1 }]}
       >
-        <Text style={[styles.continueText, { color: colors.background }]}>Continue</Text>
+        <Text style={[styles.continueText, { color: colors.background }]}>{t('onboarding.privacy.continue')}</Text>
       </Pressable>
     </SafeAreaView>
   );

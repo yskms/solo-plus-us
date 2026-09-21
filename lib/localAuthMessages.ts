@@ -4,10 +4,11 @@
  * unit-testable without the native module itself (only the *type* is
  * imported here, which Jest never needs to resolve at runtime).
  */
+import type { TFunction } from 'i18next';
 import type { LocalAuthenticationError } from 'expo-local-authentication';
 
 /** `null` for cases not worth narrating (the person just dismissed the prompt) — a retry control alone is enough there. */
-export function describeAuthError(error: LocalAuthenticationError | null): string | null {
+export function describeAuthError(t: TFunction, error: LocalAuthenticationError | null): string | null {
   switch (error) {
     case null:
     case 'user_cancel':
@@ -16,8 +17,8 @@ export function describeAuthError(error: LocalAuthenticationError | null): strin
     case 'user_fallback':
       return null;
     case 'lockout':
-      return 'Too many attempts. Try again later, or use your device passcode.';
+      return t('lockScreen.lockoutError');
     default:
-      return 'Authentication failed. Tap to try again.';
+      return t('lockScreen.genericError');
   }
 }

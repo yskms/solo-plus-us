@@ -21,21 +21,20 @@
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../constants/theme';
 import { useMigrationRestoredNotice } from '../contexts/DatabaseContext';
 
 export function MigrationRestoredBanner() {
   const restored = useMigrationRestoredNotice();
   const { colors } = useTheme();
+  const { t } = useTranslation();
 
   if (!restored) return null;
 
   return (
     <SafeAreaView edges={['top']} style={[styles.banner, { backgroundColor: colors.destructive }]}>
-      <Text style={styles.text}>
-        A recent update to Solo + Us couldn&apos;t be applied. Your existing records are safe, but the app is
-        running an older version of its data format until this is fixed.
-      </Text>
+      <Text style={styles.text}>{t('migrationRestoredBanner.message')}</Text>
     </SafeAreaView>
   );
 }

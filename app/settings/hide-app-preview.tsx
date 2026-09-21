@@ -28,14 +28,31 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
-import { attemptScreenMask, type ScreenMaskResult } from '../../lib/screenMask';
+import { attemptScreenMask, type ScreenMaskResult, type ScreenMaskUnavailableReason } from '../../lib/screenMask';
 
 /** Below API 33, Android has no OS API to separate the two (see lib/screenMask.ts) — screenshots stay blocked as a side effect there, unlike everywhere else where it's now settings/block-screenshots.tsx's opt-in. */
 const ANDROID_LEGACY_FORCED_ON = Platform.OS === 'android' && Platform.Version < 33;
 
+/** Maps `lib/screenMask.ts`'s stable reason codes to display text — kept as a switch (not a lookup object) so the translation keys are literal `t(...)` calls, covered by `npm run check-i18n` (`scripts/checkI18nKeys.js`) the same way every other call site is. */
+function screenMaskReasonMessage(t: TFunction, reason: ScreenMaskUnavailableReason): string {
+  switch (reason) {
+    case 'blur-failed':
+      return t('errors.screenMask.blurFailed');
+    case 'hide-preview-failed':
+      return t('errors.screenMask.hidePreviewFailed');
+    case 'support-check-failed':
+      return t('errors.screenMask.supportCheckFailed');
+    case 'not-available':
+      return t('errors.screenMask.notAvailable');
+  }
+}
+
 export default function HideAppPreviewScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const [result, setResult] = useState<ScreenMaskResult | null>(null);
 
   useEffect(() => {
@@ -52,18 +69,18 @@ export default function HideAppPreviewScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ALWAYS ON</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.hideAppPreview.alwaysOn')}</Text>
           <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.optionRow}>
-              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Hide app preview</Text>
-              {result === null && <ActivityIndicator color={colors.textSecondary} accessibilityLabel="Checking" />}
+              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.hideAppPreview.hideAppPreview')}</Text>
+              {result === null && <ActivityIndicator color={colors.textSecondary} accessibilityLabel={t('settings.hideAppPreview.checking')} />}
               {result?.active === true && (
-                <Text style={[styles.checkmark, { color: colors.solo }]} accessibilityLabel="Enabled">
+                <Text style={[styles.checkmark, { color: colors.solo }]} accessibilityLabel={t('settings.hideAppPreview.enabled')}>
                   ✓
                 </Text>
               )}
               {result?.active === false && (
-                <Text style={[styles.checkmark, { color: colors.destructive }]} accessibilityLabel="Could not enable">
+                <Text style={[styles.checkmark, { color: colors.destructive }]} accessibilityLabel={t('settings.hideAppPreview.couldNotEnable')}>
                   !
                 </Text>
               )}
@@ -71,33 +88,26 @@ export default function HideAppPreviewScreen() {
           </View>
           {result?.active === true && (
             <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              Solo + Us always hides your records from the app switcher — this can&apos;t be turned off.
-              {ANDROID_LEGACY_FORCED_ON &&
-                ' On this version of Android, that also blocks screenshots and screen recordings as a side effect.'}
+              {t('settings.hideAppPreview.alwaysHidesCaption')}
+              {ANDROID_LEGACY_FORCED_ON && t('settings.hideAppPreview.androidLegacySideEffect')}
             </Text>
           )}
           {result?.active === false && (
-            <Text style={[styles.caption, { color: colors.destructive }]}>Could not enable: {result.reason}.</Text>
+            <Text style={[styles.caption, { color: colors.destructive }]}>
+              {t('settings.hideAppPreview.couldNotEnableWithReason', { reason: screenMaskReasonMessage(t, result.reason) })}
+            </Text>
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>WHAT THIS DOES</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.hideAppPreview.whatThisDoes')}</Text>
           {/* Deliberately not gated on ANDROID_LEGACY_FORCED_ON (the
               *current* device) — this is reference text describing both
               Android cases, not a statement about this specific device.
               Gating it would show an iOS reader an incomplete "Android"
               description (only the API 33+ half). */}
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            On Android 13 and later, the Recent Apps preview is replaced with a blank screen, and screenshots and
-            screen recordings are allowed unless you turn on Block Screenshots. On Android 12 and earlier, hiding
-            the Recent Apps preview requires blocking screenshots and screen recordings too, so Block Screenshots
-            can&apos;t be turned off there.
-          </Text>
-          <Text style={[styles.caption, { color: colors.textTertiary }]}>
-            On iOS, the app switcher preview is blurred. Screenshots and screen recordings are allowed unless you
-            turn on Block Screenshots.
-          </Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.hideAppPreview.androidExplanation')}</Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.hideAppPreview.iosExplanation')}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

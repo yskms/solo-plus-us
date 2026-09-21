@@ -18,18 +18,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useDataRevision } from '../contexts/DataRevision';
 import type { ActivityCounts } from '../repositories/ActivityRepository';
 import { getInsightsSnapshot } from '../services/StatisticsService';
 import { formatAverageIntervalDays } from '../lib/statistics';
+import { contextLabel } from '../lib/labels';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { logError } from '../lib/log';
 
 export default function InsightsScreen({ isActive }: { isActive: boolean }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { revision } = useDataRevision();
 
@@ -63,31 +66,29 @@ export default function InsightsScreen({ isActive }: { isActive: boolean }) {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Insights</Text>
-        <Text style={[styles.periodCaption, { color: colors.textTertiary }]}>All time</Text>
+        <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>{t('navigation.tabs.insights')}</Text>
+        <Text style={[styles.periodCaption, { color: colors.textTertiary }]}>{t('insights.allTime')}</Text>
 
         {loadStatus === 'loading' && (
-          <Text style={[styles.statusText, { color: colors.textSecondary }]}>Loading…</Text>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>{t('common.loading')}</Text>
         )}
 
         {loadStatus === 'error' && (
-          <Text style={[styles.statusText, { color: colors.textSecondary }]}>
-            Couldn&apos;t load your insights. Leaving and reopening this tab will try again.
-          </Text>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>{t('insights.loadError')}</Text>
         )}
 
         {loadStatus === 'ready' && (
           <>
             <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TOTAL ACTIVITIES</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('insights.totalActivities')}</Text>
               {counts.total === 0 ? (
                 <EmptyState />
               ) : (
                 <>
                   <Text style={[styles.totalValue, { color: colors.textPrimary }]}>{counts.total}</Text>
                   <View style={styles.metricsRow}>
-                    <MetricCard value={counts.solo} label="Solo" color={colors.solo} />
-                    <MetricCard value={counts.partnered} label="Partnered" color={colors.partneredStrong} />
+                    <MetricCard value={counts.solo} label={contextLabel(t, 'solo')} color={colors.solo} />
+                    <MetricCard value={counts.partnered} label={contextLabel(t, 'partnered')} color={colors.partneredStrong} />
                   </View>
                 </>
               )}
@@ -95,10 +96,10 @@ export default function InsightsScreen({ isActive }: { isActive: boolean }) {
 
             {counts.total > 0 && (
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>YOUR PATTERNS</Text>
-                <Text style={[styles.patternLabel, { color: colors.textSecondary }]}>Average interval</Text>
+                <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('insights.yourPatterns')}</Text>
+                <Text style={[styles.patternLabel, { color: colors.textSecondary }]}>{t('insights.averageInterval')}</Text>
                 <Text style={[styles.patternValue, { color: colors.textPrimary }]}>
-                  {formatAverageIntervalDays(averageInterval)}
+                  {formatAverageIntervalDays(t, averageInterval)}
                 </Text>
               </View>
             )}

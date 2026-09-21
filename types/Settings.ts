@@ -14,6 +14,7 @@
 export type FirstDayOfWeek = 'monday' | 'sunday';
 export type TimeFormat = '12h' | '24h';
 export type Appearance = 'system' | 'light' | 'dark';
+export type Language = 'system' | 'ja' | 'en';
 export type AppLockTiming = 'immediately' | '1m' | '5m';
 
 export interface SettingsMap {
@@ -27,6 +28,7 @@ export interface SettingsMap {
   'preferences.firstDayOfWeek': FirstDayOfWeek;
   'preferences.timeFormat': TimeFormat;
   'preferences.appearance': Appearance;
+  'preferences.language': Language;
 
   'appLock.enabled': boolean;
   'appLock.timing': AppLockTiming;
@@ -56,6 +58,7 @@ export const STATIC_DEFAULTS: Pick<
   | 'activityDetails.mood'
   | 'activityDetails.note'
   | 'preferences.appearance'
+  | 'preferences.language'
   | 'appLock.enabled'
   | 'appLock.timing'
   | 'privacy.blockScreenshots'
@@ -70,6 +73,7 @@ export const STATIC_DEFAULTS: Pick<
   'activityDetails.note': true,
 
   'preferences.appearance': 'system',
+  'preferences.language': 'system',
 
   'appLock.enabled': false,
   'appLock.timing': 'immediately',
@@ -95,6 +99,7 @@ export const EXPORTABLE_SETTING_KEYS: readonly SettingKey[] = [
   'preferences.firstDayOfWeek',
   'preferences.timeFormat',
   'preferences.appearance',
+  'preferences.language',
 ] as const;
 
 /**

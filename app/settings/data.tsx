@@ -18,6 +18,8 @@ import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
@@ -41,20 +43,38 @@ type Step =
   | { kind: 'offerResync'; importedCount: number }
   | { kind: 'busy'; label: string };
 
-function describeValidationErrors(errors: { path: string; message: string }[]): string {
+/**
+ * The per-field messages themselves (from `services/importValidation.ts`)
+ * stay English/untranslated — they're schema-violation detail aimed at
+ * whoever is debugging a malformed/hand-edited backup file, closer to a
+ * technical log line than normal UI copy (design decision, see the i18n
+ * design-decision record). Only the surrounding "here's what's wrong"
+ * chrome is translated.
+ */
+function describeValidationErrors(t: TFunction, errors: { path: string; message: string }[]): string {
   const shown = errors.slice(0, 5).map((e) => `${e.path || '(file)'}: ${e.message}`);
-  const more = errors.length > shown.length ? `\n…and ${errors.length - shown.length} more` : '';
-  return `This file doesn't look like a Solo + Us backup:\n${shown.join('\n')}${more}`;
+  const more = errors.length > shown.length ? t('settings.data.andNMore', { count: errors.length - shown.length }) : '';
+  return t('settings.data.notABackup', { errors: shown.join('\n'), more });
 }
 
-function describeSafetyExportError(error: unknown): string {
-  if (error instanceof SafetyExportFailedError) return error.message;
-  return 'Could not create a safety backup. Please try again.';
+function describeSafetyExportError(t: TFunction, error: unknown): string {
+  if (error instanceof SafetyExportFailedError) {
+    switch (error.reason.kind) {
+      case 'no-location-chosen':
+        return t('settings.data.safetyExportError.noLocationChosen');
+      case 'write-failed':
+        return t('settings.data.safetyExportError.writeFailed');
+      case 'read-back-failed':
+        return t('settings.data.safetyExportError.readBackFailed');
+      case 'verification-mismatch':
+        return t('settings.data.safetyExportError.verificationMismatch', {
+          expected: error.reason.expectedCount,
+          actual: error.reason.actualCount === -1 ? t('settings.data.safetyExportError.noneFound') : error.reason.actualCount,
+        });
+    }
+  }
+  return t('settings.data.safetyExportError.generic');
 }
-
-/** §12.4: "共有先で平文になることを画面上で明示する" — shown on the Export section itself, before either button is tapped. */
-const EXPORT_PLAINTEXT_NOTICE =
-  "These files are not encrypted. Anyone with access to them can read everything in them — share and store them carefully.";
 
 /**
  * §13.3/D-27's safety-export step, shown before the person commits to a
@@ -66,20 +86,21 @@ const EXPORT_PLAINTEXT_NOTICE =
  * instead, which carries a real trade-off worth surfacing (included in
  * the device's iCloud/iTunes backup as an unencrypted file).
  */
-function safetyExportLocationNotice(): string {
+function safetyExportLocationNotice(t: TFunction): string {
   return Platform.OS === 'android'
-    ? "Before replacing anything, you'll be asked to choose a folder to save a safety backup of your current data."
-    : "Before replacing anything, a safety backup of your current data will be saved in Solo + Us's private storage on this device. It isn't visible in the Files app, but — unlike the app's own database — it's included in this device's iCloud/iTunes backup as an unencrypted file for as long as it remains on this device.";
+    ? t('settings.data.safetyExportLocationNotice.android')
+    : t('settings.data.safetyExportLocationNotice.ios');
 }
 
-function safetyExportLocationShortNotice(): string {
+function safetyExportLocationShortNotice(t: TFunction): string {
   return Platform.OS === 'android'
-    ? 'A safety backup of your previous data was saved to the folder you chose.'
-    : "A safety backup of your previous data was saved in this app's private storage (included in this device's iCloud/iTunes backup).";
+    ? t('settings.data.safetyExportLocationShortNotice.android')
+    : t('settings.data.safetyExportLocationShortNotice.ios');
 }
 
 export default function DataSettingsScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { bump } = useDataRevision();
   const [step, setStep] = useState<Step>({ kind: 'menu' });
@@ -101,7 +122,7 @@ export default function DataSettingsScreen() {
       await shareExportFile(fileName, contents, mimeType, uti);
     } catch (error) {
       logError(`Export (${format}) failed`, error);
-      Alert.alert('Could not export', 'Please try again.');
+      Alert.alert(t('settings.data.couldNotExport'), t('common.pleaseTryAgain'));
     } finally {
       setExporting(null);
     }
@@ -118,12 +139,12 @@ export default function DataSettingsScreen() {
       picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
     } catch (error) {
       logError('DocumentPicker.getDocumentAsync failed', error);
-      Alert.alert('Could not open file picker', 'Please try again.');
+      Alert.alert(t('settings.data.couldNotOpenFilePicker'), t('common.pleaseTryAgain'));
       return;
     }
     if (picked.canceled || picked.assets.length === 0) return;
 
-    setStep({ kind: 'busy', label: 'Checking backup file…' });
+    setStep({ kind: 'busy', label: t('settings.data.checkingBackupFile') });
     try {
       const raw = await new File(picked.assets[0].uri).text();
       let parsed: unknown;
@@ -131,13 +152,13 @@ export default function DataSettingsScreen() {
         parsed = JSON.parse(raw);
       } catch {
         setStep({ kind: 'menu' });
-        Alert.alert('Could not read file', 'This file is not valid JSON.');
+        Alert.alert(t('settings.data.couldNotReadFile'), t('settings.data.notValidJson'));
         return;
       }
       const validation = validateExportFile(parsed);
       if (!validation.valid) {
         setStep({ kind: 'menu' });
-        Alert.alert("This file doesn't look like a backup", describeValidationErrors(validation.errors));
+        Alert.alert(t('settings.data.doesntLookLikeBackup'), describeValidationErrors(t, validation.errors));
         return;
       }
       const currentCount = (await countAllActivities(db)).total;
@@ -145,24 +166,23 @@ export default function DataSettingsScreen() {
     } catch (error) {
       logError('Reading/validating import file failed', error);
       setStep({ kind: 'menu' });
-      Alert.alert('Could not read file', 'Please try again.');
+      Alert.alert(t('settings.data.couldNotReadFile'), t('common.pleaseTryAgain'));
     }
   };
 
   const handleAppendImport = async (file: ExportFileV1) => {
-    setStep({ kind: 'busy', label: 'Adding new records…' });
+    setStep({ kind: 'busy', label: t('settings.data.addingNewRecords') });
     try {
       const result = await performAppendImport(db, file);
       bump();
       setStep({ kind: 'menu' });
-      Alert.alert(
-        'Import complete',
-        `${result.importedCount} new activities added.${result.skippedCount > 0 ? ` ${result.skippedCount} already existed and were skipped.` : ''}`,
-      );
+      const added = t('settings.data.appendImportAdded', { count: result.importedCount });
+      const skipped = result.skippedCount > 0 ? t('settings.data.appendImportSkipped', { count: result.skippedCount }) : '';
+      Alert.alert(t('settings.data.importCompleteTitle'), `${added}${skipped}`);
     } catch (error) {
       logError('performAppendImport failed', error);
       setStep({ kind: 'menu' });
-      Alert.alert('Could not import', 'Please try again.');
+      Alert.alert(t('settings.data.couldNotImport'), t('common.pleaseTryAgain'));
     }
   };
 
@@ -170,7 +190,7 @@ export default function DataSettingsScreen() {
     // §13.3 step 1: a verified safety backup of the *current* (about to be
     // destroyed) data must succeed before anything is wiped. Cancelling or
     // failing this must not proceed to the replace below.
-    setStep({ kind: 'busy', label: 'Creating a safety backup…' });
+    setStep({ kind: 'busy', label: t('settings.data.creatingSafetyBackup') });
     let currentPayload: ExportFileV1;
     try {
       currentPayload = await buildExportPayload(db);
@@ -178,11 +198,11 @@ export default function DataSettingsScreen() {
     } catch (error) {
       logError('performSafetyExport failed', error);
       setStep({ kind: 'menu' });
-      Alert.alert('Could not replace data', describeSafetyExportError(error));
+      Alert.alert(t('settings.data.couldNotReplaceData'), describeSafetyExportError(t, error));
       return;
     }
 
-    setStep({ kind: 'busy', label: 'Replacing your data…' });
+    setStep({ kind: 'busy', label: t('settings.data.replacingYourData') });
     let result: { importedCount: number };
     try {
       // §9.12: this is the one call site that runs performReplaceImport
@@ -193,7 +213,10 @@ export default function DataSettingsScreen() {
     } catch (error) {
       logError('performReplaceImport failed', error);
       setStep({ kind: 'menu' });
-      Alert.alert('Could not replace data', `${safetyExportLocationShortNotice()} Please try again.`);
+      Alert.alert(
+        t('settings.data.couldNotReplaceData'),
+        `${safetyExportLocationShortNotice(t)} ${t('common.pleaseTryAgain')}`,
+      );
       return;
     }
     bump();
@@ -221,7 +244,10 @@ export default function DataSettingsScreen() {
       setStep({ kind: 'offerResync', importedCount: result.importedCount });
     } else {
       setStep({ kind: 'menu' });
-      Alert.alert('Import complete', `${result.importedCount} activities restored. ${safetyExportLocationShortNotice()}`);
+      Alert.alert(
+        t('settings.data.importCompleteTitle'),
+        t('settings.data.replaceImportResult', { count: result.importedCount, notice: safetyExportLocationShortNotice(t) }),
+      );
     }
   };
 
@@ -230,7 +256,7 @@ export default function DataSettingsScreen() {
       setStep({ kind: 'menu' });
       return;
     }
-    setStep({ kind: 'busy', label: 'Queuing Health Connect sync…' });
+    setStep({ kind: 'busy', label: t('settings.data.queuingHealthConnectSync') });
     try {
       await queueResync(db);
       // Nudge SyncWorkerLoop's existing DataRevision trigger so the newly
@@ -238,11 +264,11 @@ export default function DataSettingsScreen() {
       // periodic tick (same reasoning as health-connect.tsx's handleRetry).
       bump();
       setStep({ kind: 'menu' });
-      Alert.alert('Import complete', 'Health Connect sync has been queued. Check progress anytime in Settings › Health Connect.');
+      Alert.alert(t('settings.data.importCompleteTitle'), t('settings.data.healthConnectSyncQueued'));
     } catch (error) {
       logError('queueResync failed', error);
       setStep({ kind: 'offerResync', importedCount });
-      Alert.alert('Could not queue Health Connect sync', 'Please try again.');
+      Alert.alert(t('settings.data.couldNotQueueHealthConnectSync'), t('common.pleaseTryAgain'));
     }
   };
 
@@ -252,11 +278,10 @@ export default function DataSettingsScreen() {
         {step.kind === 'menu' && (
           <>
             <View style={styles.section}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>EXPORT</Text>
-              <Text style={[styles.caption, { color: colors.textTertiary }]}>
-                Export everything you&apos;ve recorded in Solo + Us.
-              </Text>
-              <Text style={[styles.caption, { color: colors.textTertiary }]}>{EXPORT_PLAINTEXT_NOTICE}</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.data.exportSectionLabel')}</Text>
+              <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.exportCaption')}</Text>
+              {/* §12.4: "共有先で平文になることを画面上で明示する" — shown here, before either export button is tapped. */}
+              <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.exportPlaintextNotice')}</Text>
               <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Pressable
                   onPress={() => handleExport('json')}
@@ -265,8 +290,8 @@ export default function DataSettingsScreen() {
                   accessibilityRole="button"
                 >
                   <View>
-                    <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Export JSON</Text>
-                    <Text style={[styles.optionSubLabel, { color: colors.textTertiary }]}>Complete backup</Text>
+                    <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.data.exportJson')}</Text>
+                    <Text style={[styles.optionSubLabel, { color: colors.textTertiary }]}>{t('settings.data.exportJsonSubLabel')}</Text>
                   </View>
                   {exporting === 'json' && <ActivityIndicator color={colors.textSecondary} />}
                 </Pressable>
@@ -280,8 +305,8 @@ export default function DataSettingsScreen() {
                   accessibilityRole="button"
                 >
                   <View>
-                    <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Export CSV</Text>
-                    <Text style={[styles.optionSubLabel, { color: colors.textTertiary }]}>For spreadsheets and analysis</Text>
+                    <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.data.exportCsv')}</Text>
+                    <Text style={[styles.optionSubLabel, { color: colors.textTertiary }]}>{t('settings.data.exportCsvSubLabel')}</Text>
                   </View>
                   {exporting === 'csv' && <ActivityIndicator color={colors.textSecondary} />}
                 </Pressable>
@@ -289,13 +314,11 @@ export default function DataSettingsScreen() {
             </View>
 
             <View style={styles.section}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>IMPORT</Text>
-              <Text style={[styles.caption, { color: colors.textTertiary }]}>
-                Restore from a Solo + Us JSON backup.
-              </Text>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.data.importSectionLabel')}</Text>
+              <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.importCaption')}</Text>
               <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Pressable onPress={handleImportPick} style={styles.optionRow} accessibilityRole="button">
-                  <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Import from a backup</Text>
+                  <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{t('settings.data.importFromBackup')}</Text>
                 </Pressable>
               </View>
             </View>
@@ -305,10 +328,10 @@ export default function DataSettingsScreen() {
         {step.kind === 'modeChoice' && (
           <View style={styles.section}>
             <Text style={[styles.headline, { color: colors.textPrimary }]}>
-              {step.file.activities.length} activities found in this backup.
+              {t('settings.data.foundInBackup', { count: step.file.activities.length })}
             </Text>
             <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              You currently have {step.currentCount} activities recorded on this device.
+              {t('settings.data.currentlyHave', { count: step.currentCount })}
             </Text>
             <View style={styles.actions}>
               <Pressable
@@ -316,21 +339,21 @@ export default function DataSettingsScreen() {
                 style={[styles.button, { backgroundColor: colors.solo }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.background }]}>Add only new records</Text>
+                <Text style={[styles.buttonText, { color: colors.background }]}>{t('settings.data.addOnlyNewRecords')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => setStep({ kind: 'confirmReplace', file: step.file, currentCount: step.currentCount })}
                 style={[styles.button, styles.secondaryButton, { borderColor: colors.destructive }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.destructive }]}>Replace all data</Text>
+                <Text style={[styles.buttonText, { color: colors.destructive }]}>{t('settings.data.replaceAllData')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => setStep({ kind: 'menu' })}
                 style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Cancel</Text>
+                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
               </Pressable>
             </View>
           </View>
@@ -339,26 +362,26 @@ export default function DataSettingsScreen() {
         {step.kind === 'confirmReplace' && (
           <View style={styles.section}>
             <Text style={[styles.headline, { color: colors.textPrimary }]}>
-              {step.file.activities.length} activities will be imported.
+              {t('settings.data.willBeImported', { count: step.file.activities.length })}
             </Text>
             <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              Your current {step.currentCount} activities will be permanently replaced.
+              {t('settings.data.willBeReplaced', { count: step.currentCount })}
             </Text>
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>{safetyExportLocationNotice()}</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{safetyExportLocationNotice(t)}</Text>
             <View style={styles.actions}>
               <Pressable
                 onPress={() => handleConfirmReplace(step.file)}
                 style={[styles.button, { backgroundColor: colors.destructive }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.background }]}>Replace all data</Text>
+                <Text style={[styles.buttonText, { color: colors.background }]}>{t('settings.data.replaceAllData')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => setStep({ kind: 'modeChoice', file: step.file, currentCount: step.currentCount })}
                 style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Cancel</Text>
+                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
               </Pressable>
             </View>
           </View>
@@ -366,31 +389,27 @@ export default function DataSettingsScreen() {
 
         {step.kind === 'offerResync' && (
           <View style={styles.section}>
-            <Text style={[styles.headline, { color: colors.textPrimary }]}>{step.importedCount} activities restored.</Text>
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>{safetyExportLocationShortNotice()}</Text>
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              Health Connect sync is on for this device, but Solo + Us doesn&apos;t automatically resend restored data.
+            <Text style={[styles.headline, { color: colors.textPrimary }]}>
+              {t('settings.data.activitiesRestored', { count: step.importedCount })}
             </Text>
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              If you continue, every restored activity will be resent to Health Connect, replacing what&apos;s there now.
-            </Text>
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              A few records may need a manual retry — you can check progress anytime in Settings › Health Connect.
-            </Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{safetyExportLocationShortNotice(t)}</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.offerResyncExplanation1')}</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.offerResyncExplanation2')}</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.offerResyncExplanation3')}</Text>
             <View style={styles.actions}>
               <Pressable
                 onPress={() => handleOfferResync(true, step.importedCount)}
                 style={[styles.button, { backgroundColor: colors.solo }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.background }]}>Sync to Health Connect</Text>
+                <Text style={[styles.buttonText, { color: colors.background }]}>{t('settings.data.syncToHealthConnect')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => handleOfferResync(false, step.importedCount)}
                 style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Not now</Text>
+                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('settings.data.notNow')}</Text>
               </Pressable>
             </View>
           </View>

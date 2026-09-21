@@ -11,12 +11,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { DB } from '@op-engineering/op-sqlite';
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { getDatabase, wasRestoredFromFailedMigration } from '../database/connection';
 import { clearAllClaims } from '../repositories/HealthSyncJobRepository';
 import { hasSeenPrivacyIntro } from '../lib/onboarding';
 import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
 import { reconcileHealthConnectBuildFlag } from '../services/ActivityService';
-import { DatabaseCorruptOrWrongKeyError, DatabaseKeyUnavailableError, MigrationRestoreFailedError } from '../lib/errors';
+import {
+  DatabaseCorruptOrWrongKeyError,
+  DatabaseKeyUnavailableError,
+  MigrationRestoreFailedError,
+  SchemaTooNewError,
+} from '../lib/errors';
 import { logError } from '../lib/log';
 import { useTheme } from '../constants/theme';
 import { RecoveryScreen } from '../components/RecoveryScreen';
@@ -31,6 +37,7 @@ const DatabaseContext = createContext<DatabaseState | null>(null);
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DatabaseState>({ status: 'loading' });
   const { colors } = useTheme();
+  const { t } = useTranslation();
   // Guards both the initial mount attempt and any later retry (from
   // RecoveryScreen) against setting state after this provider itself has
   // unmounted — unlikely (it wraps the whole app) but cheap to guard.
@@ -67,6 +74,15 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       const migrationRestored = wasRestoredFromFailedMigration();
       if (!cancelledRef.current) setState({ status: 'ready', db, needsOnboarding, migrationRestored });
     } catch (error) {
+      // §7.2 exists specifically so a DB-open failure is never silent —
+      // logged here too (not just rendered) since this is the one path in
+      // the app where nothing else logs it: `getDatabase()`'s own callers
+      // upstream of this provider don't wrap it in a try/catch of their
+      // own (found in review — this call was previously the only place
+      // the error surfaced, via its raw `message` on screen; see the
+      // render branch below for why that alone is no longer enough now
+      // that most error types show a translated, non-`message` detail).
+      logError('DatabaseProvider.attemptOpen failed', error);
       if (!cancelledRef.current) setState({ status: 'error', error });
     }
   }, []);
@@ -78,7 +94,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   if (state.status === 'loading') {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary }}>{t('common.loading')}</Text>
       </View>
     );
   }
@@ -110,15 +126,37 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     // this is the case where neither succeeded and `getDatabase()` never
     // returned a `db` at all.
     const isMigrationRestoreFailure = state.error instanceof MigrationRestoreFailedError;
+    const isSchemaTooNew = state.error instanceof SchemaTooNewError;
     const headline = isMigrationRestoreFailure
-      ? 'Solo + Us couldn’t update its database, and couldn’t undo the attempt either.'
-      : 'Solo + Us couldn’t open its database on this device.';
+      ? t('databaseContext.migrationRestoreFailedHeadline')
+      : t('databaseContext.couldNotOpenHeadline');
+    const detail =
+      state.error instanceof SchemaTooNewError
+        ? t('databaseContext.schemaTooNewDetail', { current: state.error.currentVersion, max: state.error.maxKnownVersion })
+        : isMigrationRestoreFailure
+          ? t('databaseContext.migrationRestoreFailedDetail')
+          : t('databaseContext.unknownErrorDetail');
+    // Only the truly-unclassified case (neither of the two known types
+    // above) loses real diagnostic content by switching to a translated,
+    // fixed message — `logError` doesn't include `error.message` in
+    // release builds either (§8.7, `lib/log.ts`), so without this, an
+    // unrecognized failure here would leave *no* surviving detail
+    // anywhere, for a screen whose whole point is not hiding what went
+    // wrong (found in review). Deliberately left English/untechnical-
+    // looking rather than run through `t()` — it's the raw exception
+    // message, not authored UI copy (same reasoning as the untranslated
+    // `services/importValidation.ts` field messages).
+    const technicalDetail =
+      !isSchemaTooNew && !isMigrationRestoreFailure ? String((state.error as Error)?.message ?? state.error) : null;
     return (
       <View style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 24 }]}>
         <Text style={{ color: colors.textPrimary, fontSize: 16, textAlign: 'center' }}>{headline}</Text>
-        <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 8 }}>
-          {String((state.error as Error)?.message ?? state.error)}
-        </Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 8 }}>{detail}</Text>
+        {technicalDetail && (
+          <Text style={{ color: colors.textTertiary, fontSize: 11, textAlign: 'center', marginTop: 12 }}>
+            {technicalDetail}
+          </Text>
+        )}
       </View>
     );
   }

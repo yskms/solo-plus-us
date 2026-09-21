@@ -73,11 +73,16 @@ export class DatabaseCorruptOrWrongKeyError extends Error {
  * newer version). The design forbids opening the DB in this state.
  */
 export class SchemaTooNewError extends Error {
+  readonly currentVersion: number;
+  readonly maxKnownVersion: number;
+
   constructor(currentVersion: number, maxKnownVersion: number) {
     super(
       `Database schema version ${currentVersion} is newer than the highest version this app build knows about (${maxKnownVersion}). Refusing to open — this usually means the app was downgraded.`,
     );
     this.name = 'SchemaTooNewError';
+    this.currentVersion = currentVersion;
+    this.maxKnownVersion = maxKnownVersion;
   }
 }
 
@@ -110,13 +115,38 @@ export class MigrationRestoreFailedError extends Error {
  * verification (`services/SafetyExportService.ts`). Either way, §13.3's
  * rule is absolute: "キャンセルされた／検証に失敗した場合、置換を開始しない"
  * — the caller must not proceed to the destructive replace.
+ *
+ * `reason` is structured (not a pre-formatted English sentence) so the
+ * display site (`app/settings/data.tsx`'s `describeSafetyExportError`) can
+ * translate it — `message` stays English/debug-only, for `logError`.
  */
+export type SafetyExportFailureReason =
+  | { kind: 'no-location-chosen' }
+  | { kind: 'write-failed' }
+  | { kind: 'read-back-failed' }
+  | { kind: 'verification-mismatch'; expectedCount: number; actualCount: number };
+
+function safetyExportFailureDebugMessage(reason: SafetyExportFailureReason): string {
+  switch (reason.kind) {
+    case 'no-location-chosen':
+      return 'Choose a save location to continue — replacing your data requires a verified backup first.';
+    case 'write-failed':
+      return 'Could not save the safety backup.';
+    case 'read-back-failed':
+      return 'The safety backup could not be read back after saving.';
+    case 'verification-mismatch':
+      return `Safety backup verification failed (expected ${reason.expectedCount} rows, found ${reason.actualCount === -1 ? 'none' : reason.actualCount}).`;
+  }
+}
+
 export class SafetyExportFailedError extends Error {
+  readonly reason: SafetyExportFailureReason;
   readonly originalError: unknown;
 
-  constructor(message: string, originalError?: unknown) {
-    super(message);
+  constructor(reason: SafetyExportFailureReason, originalError?: unknown) {
+    super(safetyExportFailureDebugMessage(reason));
     this.name = 'SafetyExportFailedError';
+    this.reason = reason;
     this.originalError = originalError;
   }
 }
@@ -146,10 +176,30 @@ export class RecoveryImportInvalidError extends Error {
  * file. Whichever step this happens at, nothing about the *original*
  * (still-undecryptable) database has been touched yet — see
  * `RecoveryService` for exactly what's still safe at each point.
+ *
+ * `reason` is structured, same as `SafetyExportFailedError` above, so
+ * `components/RecoveryScreen.tsx`'s `describeError` can translate it
+ * rather than showing `message` (English/debug-only) verbatim.
  */
+export type RecoveryVerificationFailureReason =
+  | { kind: 'temp-db-mismatch'; verifiedCount: number; expectedCount: number }
+  | { kind: 'final-db-mismatch'; finalCount: number; expectedCount: number };
+
+function recoveryVerificationFailureDebugMessage(reason: RecoveryVerificationFailureReason): string {
+  switch (reason.kind) {
+    case 'temp-db-mismatch':
+      return `Imported row count (${reason.verifiedCount}) does not match the backup file (${reason.expectedCount}).`;
+    case 'final-db-mismatch':
+      return `Database verification failed after switching (expected ${reason.expectedCount} rows, found ${reason.finalCount}).`;
+  }
+}
+
 export class RecoveryVerificationFailedError extends Error {
-  constructor(message: string) {
-    super(message);
+  readonly reason: RecoveryVerificationFailureReason;
+
+  constructor(reason: RecoveryVerificationFailureReason) {
+    super(recoveryVerificationFailureDebugMessage(reason));
     this.name = 'RecoveryVerificationFailedError';
+    this.reason = reason;
   }
 }

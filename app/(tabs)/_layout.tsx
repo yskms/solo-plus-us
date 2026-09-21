@@ -31,6 +31,7 @@ import PagerView from 'react-native-pager-view';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import type { ComponentProps } from 'react';
 import { useTheme, minTouchTarget } from '../../constants/theme';
 import TodayScreen from './index';
@@ -39,15 +40,16 @@ import InsightsScreen from '../../screens/InsightsScreen';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
-const TABS: { title: string; icon: IoniconName; iconOutline: IoniconName }[] = [
-  { title: 'Today', icon: 'today', iconOutline: 'today-outline' },
-  { title: 'Calendar', icon: 'calendar', iconOutline: 'calendar-outline' },
-  { title: 'Insights', icon: 'stats-chart', iconOutline: 'stats-chart-outline' },
-];
-
 export default function TabLayout() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+
+  const TABS: { id: string; title: string; icon: IoniconName; iconOutline: IoniconName }[] = [
+    { id: 'today', title: t('navigation.tabs.today'), icon: 'today', iconOutline: 'today-outline' },
+    { id: 'calendar', title: t('navigation.tabs.calendar'), icon: 'calendar', iconOutline: 'calendar-outline' },
+    { id: 'insights', title: t('navigation.tabs.insights'), icon: 'stats-chart', iconOutline: 'stats-chart-outline' },
+  ];
   const pagerRef = useRef<PagerView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [routeFocused, setRouteFocused] = useState(true);
@@ -117,7 +119,7 @@ export default function TabLayout() {
           const color = focused ? colors.solo : colors.textTertiary;
           return (
             <Pressable
-              key={tab.title}
+              key={tab.id}
               onPress={() => goToPage(index)}
               style={styles.tabButton}
               accessibilityRole="tab"

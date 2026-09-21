@@ -28,6 +28,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
@@ -42,6 +43,7 @@ type Step = 'confirm' | 'busy';
 
 export default function DeleteDataScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { bump } = useDataRevision();
   const [step, setStep] = useState<Step>('confirm');
@@ -114,8 +116,8 @@ export default function DeleteDataScreen() {
       let title: string;
       let message: string;
       if (pendingDeleteCount === 0) {
-        title = 'All data deleted';
-        message = 'Every activity has been permanently deleted.';
+        title = t('settings.deleteData.allDataDeletedTitle');
+        message = t('settings.deleteData.allDataDeletedMessage');
       } else if (!isHealthConnectBuildEnabled()) {
         // §9.11/§25.1 レビュー指摘（2026-09-21・4回目）: ビルド種別の分岐を
         // healthConnectEnabled（ランタイム状態、`reconcileHealthConnectBuildFlag`
@@ -129,19 +131,19 @@ export default function DeleteDataScreen() {
         // ビルドでは永久に送信できない——with-health-connect ビルドへ更新
         // された場合にのみ再開する（`services/ActivityService.ts` の
         // `reconcileHealthConnectBuildFlag` doc comment参照）。
-        title = 'Deleted from this device';
-        message = `Every activity has been deleted from this device. This version of the app can't sync ${pendingDeleteCount} pending Health Connect deletion${pendingDeleteCount > 1 ? 's' : ''} — they'll be sent automatically if this device gets an update with Health Connect support.`;
+        title = t('settings.deleteData.deletedFromDeviceTitle');
+        message = t('settings.deleteData.cannotSyncMessage', { count: pendingDeleteCount });
       } else if (healthConnectEnabled) {
-        title = 'Deleted from this device';
-        message = `Every activity has been deleted from this device. ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's are' : ' is'} still being sent to Health Connect — check progress anytime in Settings › Health Connect.`;
+        title = t('settings.deleteData.deletedFromDeviceTitle');
+        message = t('settings.deleteData.stillSendingMessage', { count: pendingDeleteCount });
       } else {
-        title = 'Deleted from this device';
-        message = `Every activity has been deleted from this device. Health Connect has ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's' : ''} waiting — reconnect in Settings › Health Connect to resume.`;
+        title = t('settings.deleteData.deletedFromDeviceTitle');
+        message = t('settings.deleteData.waitingMessage', { count: pendingDeleteCount });
       }
 
       Alert.alert(title, message, [
         {
-          text: 'OK',
+          text: t('common.ok'),
           onPress: () => {
             if (mountedRef.current) router.back();
           },
@@ -150,7 +152,7 @@ export default function DeleteDataScreen() {
     } catch (error) {
       logError('deleteAllActivities failed', error);
       if (mountedRef.current) setStep('confirm');
-      Alert.alert('Could not delete', 'Please try again.');
+      Alert.alert(t('settings.deleteData.couldNotDelete'), t('common.pleaseTryAgain'));
     } finally {
       deletingRef.current = false;
     }
@@ -161,35 +163,26 @@ export default function DeleteDataScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {step === 'confirm' && (
           <View style={styles.section}>
-            <Text style={[styles.headline, { color: colors.textPrimary }]}>Delete all data?</Text>
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              Every activity on this device will be deleted immediately.
-            </Text>
+            <Text style={[styles.headline, { color: colors.textPrimary }]}>{t('settings.deleteData.confirmTitle')}</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.deleteData.confirmCaption')}</Text>
             {Platform.OS === 'android' && (
-              <Text style={[styles.caption, { color: colors.textTertiary }]}>
-                Records already sent to Health Connect will be deleted there too, over time. If you close Solo + Us
-                before that finishes, deletion pauses and picks up again the next time you open the app. If you
-                uninstall Solo + Us before it finishes, those records will remain in Health Connect.
-              </Text>
+              <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.deleteData.androidCaption')}</Text>
             )}
-            <Text style={[styles.caption, { color: colors.textTertiary }]}>
-              This can&apos;t be undone. If you want to keep a copy, export your data first — Settings › Export &amp;
-              Import.
-            </Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.deleteData.cannotBeUndoneCaption')}</Text>
             <View style={styles.actions}>
               <Pressable
                 onPress={handleDelete}
                 style={[styles.button, { backgroundColor: colors.destructive }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.background }]}>Delete All Data</Text>
+                <Text style={[styles.buttonText, { color: colors.background }]}>{t('settings.deleteData.deleteAllData')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => router.back()}
                 style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Cancel</Text>
+                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
               </Pressable>
             </View>
           </View>
@@ -198,7 +191,7 @@ export default function DeleteDataScreen() {
         {step === 'busy' && (
           <View style={styles.busyRow}>
             <ActivityIndicator color={colors.textSecondary} />
-            <Text style={[styles.caption, { color: colors.textSecondary }]}>Deleting…</Text>
+            <Text style={[styles.caption, { color: colors.textSecondary }]}>{t('settings.deleteData.deleting')}</Text>
           </View>
         )}
       </ScrollView>

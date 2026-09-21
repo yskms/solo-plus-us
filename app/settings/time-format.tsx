@@ -17,6 +17,7 @@
 import React, { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import SettingsOptionScreen from '../../components/SettingsOptionScreen';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
@@ -24,14 +25,15 @@ import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { logError } from '../../lib/log';
 import type { TimeFormat } from '../../types/Settings';
 
-const OPTIONS: { value: TimeFormat; label: string }[] = [
-  { value: '12h', label: '12-hour (1:30 PM)' },
-  { value: '24h', label: '24-hour (13:30)' },
-];
-
 export default function TimeFormatSettingsScreen() {
+  const { t } = useTranslation();
   const db = useDatabase();
   const { bump } = useDataRevision();
+
+  const OPTIONS: { value: TimeFormat; label: string }[] = [
+    { value: '12h', label: t('settings.timeFormat.option12h') },
+    { value: '24h', label: t('settings.timeFormat.option24h') },
+  ];
   const [value, setValue] = useState<TimeFormat | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -60,7 +62,7 @@ export default function TimeFormatSettingsScreen() {
     } catch (error) {
       setValue(previous);
       logError('Saving preferences.timeFormat failed', error);
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
     } finally {
       setBusy(false);
     }

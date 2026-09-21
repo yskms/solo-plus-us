@@ -146,9 +146,11 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
     const verifiedCount = (verifyResult.rows?.[0] as { n?: number } | undefined)?.n ?? -1;
     tempDb.close();
     if (verifiedCount !== file.activities.length) {
-      throw new RecoveryVerificationFailedError(
-        `Imported row count (${verifiedCount}) does not match the backup file (${file.activities.length}).`,
-      );
+      throw new RecoveryVerificationFailedError({
+        kind: 'temp-db-mismatch',
+        verifiedCount,
+        expectedCount: file.activities.length,
+      });
     }
   } catch (error) {
     // Nothing about the real DB has been touched yet — only the temp
@@ -188,9 +190,11 @@ export async function restoreFromBackup(backupFileUri: string): Promise<RestoreF
     // is left at `dbFile` now is exactly what `recoverGenuineOldDbForRetry`
     // discards (not restores from) on the next attempt, since the real
     // data is safe at `oldAsideFile`.
-    throw new RecoveryVerificationFailedError(
-      `Database verification failed after switching (expected ${file.activities.length} rows, found ${finalCount}).`,
-    );
+    throw new RecoveryVerificationFailedError({
+      kind: 'final-db-mismatch',
+      finalCount,
+      expectedCount: file.activities.length,
+    });
   }
 
   // Step 8.

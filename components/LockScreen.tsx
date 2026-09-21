@@ -13,6 +13,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import type { LocalAuthenticationError } from 'expo-local-authentication';
 import { useTheme, spacing } from '../constants/theme';
 import { IntersectPlus } from './IntersectPlus';
@@ -28,7 +29,8 @@ export function LockScreen({
   onRetry: () => void;
 }) {
   const { colors } = useTheme();
-  const errorMessage = describeAuthError(authError);
+  const { t } = useTranslation();
+  const errorMessage = describeAuthError(t, authError);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -43,11 +45,9 @@ export function LockScreen({
           disabled={authenticating}
           style={styles.unlockRow}
           accessibilityRole="button"
-          accessibilityLabel="Unlock with device authentication"
+          accessibilityLabel={t('lockScreen.unlockA11y')}
         >
-          <Text style={[styles.unlockText, { color: colors.textSecondary }]}>
-            Unlock with device{'\n'}authentication
-          </Text>
+          <Text style={[styles.unlockText, { color: colors.textSecondary }]}>{t('lockScreen.unlockWithDevice')}</Text>
         </Pressable>
 
         {errorMessage && <Text style={[styles.errorText, { color: colors.destructive }]}>{errorMessage}</Text>}

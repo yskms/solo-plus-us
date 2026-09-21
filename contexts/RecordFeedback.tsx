@@ -15,6 +15,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import * as ActivityService from '../services/ActivityService';
 import { useDatabase } from './DatabaseContext';
 import { useDataRevision } from './DataRevision';
@@ -37,6 +38,7 @@ interface RecordFeedbackContextValue {
 const RecordFeedbackContext = createContext<RecordFeedbackContextValue | null>(null);
 
 export function RecordFeedbackProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const db = useDatabase();
   const { bump } = useDataRevision();
   const [state, setState] = useState<FeedbackState | null>(null);
@@ -79,9 +81,9 @@ export function RecordFeedbackProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       dismiss(); // don't leave a Snackbar whose Undo button just failed sitting there forever
       logError('Undo failed', error);
-      Alert.alert('Undo failed', 'The record was not removed. Please try deleting it from its detail page.');
+      Alert.alert(t('undoSnackbar.undoFailedTitle'), t('undoSnackbar.undoFailedMessage'));
     }
-  }, [state, dismiss, bump, db]);
+  }, [state, dismiss, bump, db, t]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 

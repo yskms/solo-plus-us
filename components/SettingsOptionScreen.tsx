@@ -11,6 +11,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 
 export interface SettingsOption<T extends string> {
@@ -30,11 +31,12 @@ interface Props<T extends string> {
 
 export default function SettingsOptionScreen<T extends string>({ options, value, busy, onSelect, caption }: Props<T>) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
 
   if (value === null) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
-        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
   }

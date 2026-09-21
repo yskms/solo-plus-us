@@ -10,23 +10,23 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 
 export function LoadErrorOverlay({ onRetry }: { onRetry: () => void }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.center}>
-        <Text style={[styles.message, { color: colors.textPrimary }]}>
-          Solo + Us couldn&apos;t check your App Lock settings.
-        </Text>
+        <Text style={[styles.message, { color: colors.textPrimary }]}>{t('loadErrorOverlay.message')}</Text>
         <Pressable
           onPress={onRetry}
           style={[styles.retryButton, { borderColor: colors.border }]}
           accessibilityRole="button"
-          accessibilityLabel="Try again"
+          accessibilityLabel={t('loadErrorOverlay.tryAgain')}
         >
-          <Text style={[styles.retryText, { color: colors.textPrimary }]}>Try again</Text>
+          <Text style={[styles.retryText, { color: colors.textPrimary }]}>{t('loadErrorOverlay.tryAgain')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

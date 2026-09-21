@@ -11,6 +11,7 @@
 import React from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing } from '../constants/theme';
 
 interface DateTimePickerSheetProps {
@@ -24,6 +25,7 @@ interface DateTimePickerSheetProps {
 
 export function DateTimePickerSheet({ visible, value, maximumDate, onChange, onCancel, onDone }: DateTimePickerSheetProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   if (Platform.OS !== 'ios' || !visible) return null;
 
   return (
@@ -32,7 +34,7 @@ export function DateTimePickerSheet({ visible, value, maximumDate, onChange, onC
         style={StyleSheet.absoluteFill}
         onPress={onCancel}
         accessibilityRole="button"
-        accessibilityLabel="Dismiss date picker"
+        accessibilityLabel={t('dateTimePickerSheet.dismiss')}
       />
       {/* accessibilityViewIsModal: without it, VoiceOver can still reach the
           content underneath while this sheet is open — it isn't a real
@@ -41,10 +43,10 @@ export function DateTimePickerSheet({ visible, value, maximumDate, onChange, onC
       <View style={[styles.sheet, { backgroundColor: colors.surface }]} accessibilityViewIsModal>
         <View style={styles.header}>
           <Pressable onPress={onCancel} hitSlop={8}>
-            <Text style={{ color: colors.textSecondary, fontSize: 16 }}>Cancel</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 16 }}>{t('common.cancel')}</Text>
           </Pressable>
           <Pressable onPress={onDone} hitSlop={8}>
-            <Text style={{ color: colors.solo, fontSize: 16, fontWeight: '700' }}>Done</Text>
+            <Text style={{ color: colors.solo, fontSize: 16, fontWeight: '700' }}>{t('common.done')}</Text>
           </Pressable>
         </View>
         <DateTimePicker

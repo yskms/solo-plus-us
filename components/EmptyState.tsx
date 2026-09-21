@@ -4,14 +4,16 @@
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../constants/theme';
 
 export function EmptyState() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   return (
     <View style={styles.container}>
-      <Text style={[styles.title, { color: colors.textSecondary }]}>No activities recorded yet.</Text>
-      <Text style={[styles.subtitle, { color: colors.textTertiary }]}>Your history starts with your first entry.</Text>
+      <Text style={[styles.title, { color: colors.textSecondary }]}>{t('emptyState.title')}</Text>
+      <Text style={[styles.subtitle, { color: colors.textTertiary }]}>{t('emptyState.subtitle')}</Text>
     </View>
   );
 }

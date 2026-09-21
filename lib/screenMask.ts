@@ -144,7 +144,16 @@ function isAndroidRecentsApiAvailable(): boolean {
   return Platform.OS === 'android' && Platform.Version >= 33;
 }
 
-export type ScreenMaskResult = { active: true } | { active: false; reason: string };
+/**
+ * `reason` is a stable code, not display text — `lib/` stays free of an
+ * i18n dependency (see `lib/timeFormat.ts`'s doc comment on why `t` is
+ * passed in rather than imported elsewhere in this codebase; here there's
+ * no natural component-call-site to thread `t` through, so the display
+ * mapping lives entirely at the one render site,
+ * `app/settings/hide-app-preview.tsx`, via its `errors.screenMask.*` keys).
+ */
+export type ScreenMaskUnavailableReason = 'blur-failed' | 'hide-preview-failed' | 'support-check-failed' | 'not-available';
+export type ScreenMaskResult = { active: true } | { active: false; reason: ScreenMaskUnavailableReason };
 
 /** Always-on Recent Apps / App Switcher preview hiding — not a preference, see file doc comment. */
 async function runScreenMaskAttempt(): Promise<ScreenMaskResult> {
@@ -153,7 +162,7 @@ async function runScreenMaskAttempt(): Promise<ScreenMaskResult> {
       await ScreenCapture.enableAppSwitcherProtectionAsync(APP_SWITCHER_BLUR_INTENSITY);
     } catch (error) {
       logError('enableAppSwitcherProtectionAsync failed', error);
-      return { active: false, reason: 'could not blur the app switcher preview' };
+      return { active: false, reason: 'blur-failed' };
     }
     return { active: true };
   }
@@ -164,7 +173,7 @@ async function runScreenMaskAttempt(): Promise<ScreenMaskResult> {
         await ScreenCapture.setRecentsScreenshotEnabledAsync(false);
       } catch (error) {
         logError('setRecentsScreenshotEnabledAsync failed', error);
-        return { active: false, reason: 'could not hide the Recent Apps preview' };
+        return { active: false, reason: 'hide-preview-failed' };
       }
       return { active: true };
     }
@@ -178,21 +187,21 @@ async function runScreenMaskAttempt(): Promise<ScreenMaskResult> {
       available = await ScreenCapture.isAvailableAsync();
     } catch (error) {
       logError('ScreenCapture.isAvailableAsync failed', error);
-      return { active: false, reason: 'support could not be checked on this device' };
+      return { active: false, reason: 'support-check-failed' };
     }
     if (!available) {
-      return { active: false, reason: 'not available on this device' };
+      return { active: false, reason: 'not-available' };
     }
     try {
       await ScreenCapture.preventScreenCaptureAsync();
     } catch (error) {
       logError('preventScreenCaptureAsync failed', error);
-      return { active: false, reason: 'could not hide the Recent Apps preview' };
+      return { active: false, reason: 'hide-preview-failed' };
     }
     return { active: true };
   }
 
-  return { active: false, reason: 'not available on this device' };
+  return { active: false, reason: 'not-available' };
 }
 
 let memoizedAttempt: Promise<ScreenMaskResult> | null = null;

@@ -62,14 +62,12 @@ function verifyActivityCount(readBackJson: string, expectedCount: number): void 
   try {
     parsed = JSON.parse(readBackJson);
   } catch (error) {
-    throw new SafetyExportFailedError('The safety backup could not be read back after saving.', error);
+    throw new SafetyExportFailedError({ kind: 'read-back-failed' }, error);
   }
   const activities = (parsed as { activities?: unknown } | null)?.activities;
   const actualCount = Array.isArray(activities) ? activities.length : -1;
   if (actualCount !== expectedCount) {
-    throw new SafetyExportFailedError(
-      `Safety backup verification failed (expected ${expectedCount} rows, found ${actualCount === -1 ? 'none' : actualCount}).`,
-    );
+    throw new SafetyExportFailedError({ kind: 'verification-mismatch', expectedCount, actualCount });
   }
 }
 
@@ -78,13 +76,13 @@ async function performSafetyExportIOS(file: ExportFileV1, json: string): Promise
   try {
     target.write(json);
   } catch (error) {
-    throw new SafetyExportFailedError('Could not save the safety backup.', error);
+    throw new SafetyExportFailedError({ kind: 'write-failed' }, error);
   }
   let readBack: string;
   try {
     readBack = await target.text();
   } catch (error) {
-    throw new SafetyExportFailedError('The safety backup could not be read back after saving.', error);
+    throw new SafetyExportFailedError({ kind: 'read-back-failed' }, error);
   }
   verifyActivityCount(readBack, file.activities.length);
   return { location: target.uri };
@@ -95,7 +93,7 @@ async function performSafetyExportAndroid(file: ExportFileV1, json: string): Pro
   if (!permission.granted) {
     // §13.3: "キャンセルされた…場合、置換を開始しない" — cancelling the
     // location picker is exactly this case, not a lower-severity variant.
-    throw new SafetyExportFailedError('Choose a save location to continue — replacing your data requires a verified backup first.');
+    throw new SafetyExportFailedError({ kind: 'no-location-chosen' });
   }
 
   let fileUri: string;
@@ -103,14 +101,14 @@ async function performSafetyExportAndroid(file: ExportFileV1, json: string): Pro
     fileUri = await StorageAccessFramework.createFileAsync(permission.directoryUri, safetyExportFileBaseName(), 'application/json');
     await StorageAccessFramework.writeAsStringAsync(fileUri, json);
   } catch (error) {
-    throw new SafetyExportFailedError('Could not save the safety backup.', error);
+    throw new SafetyExportFailedError({ kind: 'write-failed' }, error);
   }
 
   let readBack: string;
   try {
     readBack = await StorageAccessFramework.readAsStringAsync(fileUri);
   } catch (error) {
-    throw new SafetyExportFailedError('The safety backup could not be read back after saving.', error);
+    throw new SafetyExportFailedError({ kind: 'read-back-failed' }, error);
   }
   verifyActivityCount(readBack, file.activities.length);
   return { location: fileUri };

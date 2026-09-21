@@ -9,6 +9,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
@@ -32,13 +34,23 @@ function monthRangeFor(localDate: string): { from: string; to: string } {
   return { from: `${y}-${String(m).padStart(2, '0')}-01`, to: `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` };
 }
 
-function weekdayHeader(): string {
+/** Format (word order, punctuation) lives in `today.dateHeader` itself, not just the substituted words — see `lib/timeFormat.ts`'s doc comment on why. */
+function weekdayHeader(t: TFunction): string {
   const now = new Date();
-  return now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const weekdaysFull = t('common.weekdaysFull', { returnObjects: true }) as unknown as string[];
+  const weekdayInitials = t('common.weekdayInitials', { returnObjects: true }) as unknown as string[];
+  const monthsFull = t('common.monthsFull', { returnObjects: true }) as unknown as string[];
+  return t('today.dateHeader', {
+    weekdayFull: weekdaysFull[now.getDay()],
+    weekdayShort: weekdayInitials[now.getDay()],
+    month: monthsFull[now.getMonth()],
+    day: now.getDate(),
+  });
 }
 
 export default function TodayScreen({ isActive }: { isActive: boolean }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { revision } = useDataRevision();
   const [counts, setCounts] = useState<ActivityCounts>({ total: 0, solo: 0, partnered: 0 });
@@ -80,26 +92,26 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
             onPress={() => router.push('/settings')}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="Settings"
+            accessibilityLabel={t('navigation.settings')}
           >
             <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
           </Pressable>
         </View>
-        <Text style={[styles.dateLine, { color: colors.textSecondary }]}>{weekdayHeader()}</Text>
+        <Text style={[styles.dateLine, { color: colors.textSecondary }]}>{weekdayHeader(t)}</Text>
 
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>THIS MONTH</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('today.thisMonth')}</Text>
           {counts.total === 0 ? (
             <EmptyState />
           ) : (
             <>
               <View style={styles.totalRow}>
                 <Text style={[styles.totalValue, { color: colors.textPrimary }]}>{counts.total}</Text>
-                <Text style={[styles.totalCaption, { color: colors.textSecondary }]}>activities</Text>
+                <Text style={[styles.totalCaption, { color: colors.textSecondary }]}>{t('today.activities', { count: counts.total })}</Text>
               </View>
               <View style={styles.metricsRow}>
-                <MetricCard value={counts.solo} label="Solo" color={colors.solo} />
-                <MetricCard value={counts.partnered} label="Partnered" color={colors.partneredStrong} />
+                <MetricCard value={counts.solo} label={contextLabel(t, 'solo')} color={colors.solo} />
+                <MetricCard value={counts.partnered} label={contextLabel(t, 'partnered')} color={colors.partneredStrong} />
               </View>
             </>
           )}
@@ -107,19 +119,19 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
 
         {lastActivity && (
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>LAST ACTIVITY</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('today.lastActivity')}</Text>
             <Text style={[styles.lastActivityLine, { color: colors.textPrimary }]}>
-              {contextLabel(lastActivity.context)}
+              {contextLabel(t, lastActivity.context)}
             </Text>
             <Text style={[styles.lastActivityCaption, { color: colors.textSecondary }]}>
-              {formatRelativeLocalDate(lastActivity.occurredLocalDate, todayLocalDate())}
+              {formatRelativeLocalDate(t, lastActivity.occurredLocalDate, todayLocalDate())}
             </Text>
           </View>
         )}
 
         {recent.length > 0 && (
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>RECENT</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('today.recent')}</Text>
             {recent.map((activity) => (
               <ActivityRow key={activity.id} activity={activity} />
             ))}
@@ -131,7 +143,7 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
         onPress={() => router.push('/record')}
         style={({ pressed }) => [styles.fab, { backgroundColor: colors.solo, opacity: pressed ? 0.85 : 1 }]}
         accessibilityRole="button"
-        accessibilityLabel="Record activity"
+        accessibilityLabel={t('today.recordActivityA11y')}
       >
         <IntersectPlus size={26} tint="#FFFFFF" />
       </Pressable>

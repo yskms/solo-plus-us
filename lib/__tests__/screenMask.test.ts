@@ -80,7 +80,7 @@ describe('attemptScreenMask', () => {
     setPlatform('ios');
     mockEnableAppSwitcherProtectionAsync.mockRejectedValue(new Error('boom'));
     const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'could not blur the app switcher preview' });
+    expect(result).toEqual({ active: false, reason: 'blur-failed' });
   });
 
   it('on Android API 33+, only calls setRecentsScreenshotEnabledAsync — never FLAG_SECURE', async () => {
@@ -96,7 +96,7 @@ describe('attemptScreenMask', () => {
     setPlatform('android', 33);
     mockSetRecentsScreenshotEnabledAsync.mockRejectedValue(new Error('boom'));
     const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'could not hide the Recent Apps preview' });
+    expect(result).toEqual({ active: false, reason: 'hide-preview-failed' });
   });
 
   it('on Android below API 33, falls back to FLAG_SECURE (couples screenshot blocking)', async () => {
@@ -111,7 +111,7 @@ describe('attemptScreenMask', () => {
     setPlatform('android', 32);
     mockIsAvailableAsync.mockResolvedValue(false);
     const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'not available on this device' });
+    expect(result).toEqual({ active: false, reason: 'not-available' });
     expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
   });
 
@@ -119,14 +119,14 @@ describe('attemptScreenMask', () => {
     setPlatform('android', 32);
     mockIsAvailableAsync.mockRejectedValue(new Error('boom'));
     const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'support could not be checked on this device' });
+    expect(result).toEqual({ active: false, reason: 'support-check-failed' });
   });
 
   it('reports failure with a reason when preventScreenCaptureAsync rejects (Android below API 33)', async () => {
     setPlatform('android', 32);
     mockPreventScreenCaptureAsync.mockRejectedValue(new Error('boom'));
     const result = await attemptScreenMask();
-    expect(result).toEqual({ active: false, reason: 'could not hide the Recent Apps preview' });
+    expect(result).toEqual({ active: false, reason: 'hide-preview-failed' });
   });
 
   it('memoizes: a second call never invokes the native functions again, even after a failure', async () => {
@@ -143,7 +143,7 @@ describe('attemptScreenMask', () => {
     setPlatform('android', 32);
     mockPreventScreenCaptureAsync.mockRejectedValueOnce(new Error('boom'));
     const first = await attemptScreenMask();
-    expect(first).toEqual({ active: false, reason: 'could not hide the Recent Apps preview' });
+    expect(first).toEqual({ active: false, reason: 'hide-preview-failed' });
 
     __resetScreenMaskForTests();
     mockPreventScreenCaptureAsync.mockResolvedValueOnce(undefined);

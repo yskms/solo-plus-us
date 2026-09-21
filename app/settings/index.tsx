@@ -58,6 +58,7 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 
@@ -109,50 +110,52 @@ const appVersion = Application.nativeApplicationVersion ?? Constants.expoConfig?
 
 export default function SettingsIndexScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRIVACY</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.privacy')}</Text>
         <SettingsGroup
           rows={[
-            { label: 'App Lock', onPress: () => router.push('/settings/app-lock') },
-            { label: 'Hide App Preview', onPress: () => router.push('/settings/hide-app-preview') },
-            { label: 'Block Screenshots', onPress: () => router.push('/settings/block-screenshots') },
+            { label: t('settings.index.appLock'), onPress: () => router.push('/settings/app-lock') },
+            { label: t('settings.index.hideAppPreview'), onPress: () => router.push('/settings/hide-app-preview') },
+            { label: t('settings.index.blockScreenshots'), onPress: () => router.push('/settings/block-screenshots') },
           ]}
         />
 
         {Platform.OS === 'android' && isHealthConnectBuildEnabled() && (
           <>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>HEALTH</Text>
-            <SettingsGroup rows={[{ label: 'Health Connect', onPress: () => router.push('/settings/health-connect') }]} />
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.health')}</Text>
+            <SettingsGroup rows={[{ label: t('settings.index.healthConnect'), onPress: () => router.push('/settings/health-connect') }]} />
           </>
         )}
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.data')}</Text>
         <SettingsGroup
           rows={[
-            { label: 'Export & Import', onPress: () => router.push('/settings/data') },
-            { label: 'Delete Data', onPress: () => router.push('/settings/delete-data') },
+            { label: t('settings.index.exportImport'), onPress: () => router.push('/settings/data') },
+            { label: t('settings.index.deleteData'), onPress: () => router.push('/settings/delete-data') },
           ]}
         />
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TRACKING</Text>
-        <SettingsGroup rows={[{ label: 'Activity Details', onPress: () => router.push('/settings/activity-details') }]} />
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.tracking')}</Text>
+        <SettingsGroup rows={[{ label: t('settings.index.activityDetails'), onPress: () => router.push('/settings/activity-details') }]} />
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PREFERENCES</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.preferences')}</Text>
         <SettingsGroup
           rows={[
-            { label: 'First Day of Week', onPress: () => router.push('/settings/first-day-of-week') },
-            { label: 'Time Format', onPress: () => router.push('/settings/time-format') },
-            { label: 'Appearance', onPress: () => router.push('/settings/appearance') },
+            { label: t('settings.index.firstDayOfWeek'), onPress: () => router.push('/settings/first-day-of-week') },
+            { label: t('settings.index.timeFormat'), onPress: () => router.push('/settings/time-format') },
+            { label: t('settings.index.appearance'), onPress: () => router.push('/settings/appearance') },
+            { label: t('settings.index.language'), onPress: () => router.push('/settings/language') },
           ]}
         />
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ABOUT</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.about')}</Text>
         <SettingsGroup
           rows={[
-            { label: 'About Solo + Us', onPress: () => router.push('/settings/about') },
-            { label: 'Version', value: appVersion },
+            { label: t('settings.index.aboutApp'), onPress: () => router.push('/settings/about') },
+            { label: t('settings.index.version'), value: appVersion },
           ]}
         />
       </ScrollView>

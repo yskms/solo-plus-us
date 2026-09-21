@@ -18,6 +18,7 @@
 - v0.13 で D-49 を追加（「日の切り替え時刻」設定を実装する場合の設計方針。着手時期は未定）
 - v0.14 で D-50 を追加（記録済み Activity の日時事後編集をスコープに含める。D-48 と
   同様の経緯で、以前の README 記載のスコープ判断を上書き）
+- v0.15 で D-53 を追加（多言語対応(i18n)に着手。D-48 のスコープ外指定を撤回・上書き）
 
 ---
 
@@ -1759,6 +1760,9 @@ Recent Apps 非表示とスクリーンショットブロックを実際に分�
 
 ## D-48 多言語対応（UI 全体の翻訳）はロードマップ外とし、v1.0 には含めない
 
+> **D-53 で撤回：** ユーザーから明示的な着手指示があり、この決定は撤回された。
+> 多言語対応（日本語 + 英語）は実装済み。この項目は経緯の記録として残す。
+
 （Appearance トグル実装時の整理で追加。設計文書のどこにも計画が無いことを確認したため、
 「未着手」ではなく「スコープ外」であることを明文化する）
 
@@ -2210,6 +2214,167 @@ OFF にできる」という*既定値の文脈依存*であって、*表示の�
 TABLE のみ」の制約と、`activityDetails.*` の Export allowlist
 （`types/Settings.ts` の `EXPORTABLE_SETTING_KEYS`）への影響も合わせて
 確認すること。
+
+---
+
+## D-53 多言語対応（i18n）に着手する——D-48 のスコープ外指定を撤回・上書きする
+
+（D-48「多言語対応はロードマップ外」の撤回。ユーザーから明示的な着手指示があり、
+D-48 が「着手する場合に先に決めるべきこと」として挙げていた5点のうち、1〜4点を
+ユーザーに確認のうえ確定し、実装した）
+
+**決定**
+
+- **対応言語**：日本語 + 英語のみ。基盤（`i18next`/`react-i18next` のリソース構造）は
+  他言語を後から追加しやすい形にするが、今回は翻訳リソースを作らない
+- **ライブラリ**：`i18next` + `react-i18next`。複数形処理（`count` + `_one`/`_other`
+  接尾辞での自動出し分け）を自前実装せずに使えることが主な採用理由——このアプリには
+  "N days ago"／"N activities"／Health Connect の未同期件数など、三項演算子で複数形を
+  手書きしていた箇所が複数あった
+- **言語切替**：既存の `preferences.appearance`（`contexts/Appearance.tsx`、
+  `system`/`light`/`dark`）と同じ設計を踏襲し、`preferences.language`
+  （`system`/`ja`/`en`、既定 `system`）を新設。端末の言語設定に自動追従しつつ、
+  Settings › Language で明示的に上書きできる（`contexts/Language.tsx`・
+  `app/settings/language.tsx`）
+- **Export/Import・DB 値には影響しない**（D-48 の懸念5への回答）：`preferences.language`
+  は表示設定として `EXPORTABLE_SETTING_KEYS` に乗るが、`'solo'`/`'partnered'` 等の内部値・
+  DB スキーマ・Export JSON の形は一切変更していない
+
+**実装範囲**
+
+- `lib/timeFormat.ts`・`lib/relativeDate.ts`・`lib/calendarGrid.ts`・`lib/statistics.ts`
+  ほか、`lib/` の日付/複数形フォーマッタは `TFunction`（react-i18next の `t`）を引数で
+  受け取る形に変更した——`lib/` を i18next singleton や React に直接依存させない、
+  既存の「依存を明示的に渡す」作法（`SqlExecutor` を毎回渡す等）に合わせている
+- 日付表示は単語の置き換えだけでなく、**フォーマットの構造自体を言語ごとに翻訳リソース側で
+  持たせている**（例：Today 画面の見出しは英語 "Sunday, September 14"／日本語
+  "9月14日(日)"。12h 表示の午前/午後は日本語では時刻の前に来る）
+- `lib/errors.ts` のエラークラス（`SafetyExportFailedError`・
+  `RecoveryVerificationFailedError`）は、整形済みの英語文をそのまま保持する設計から、
+  構造化された `reason`（コード＋必要な数値データ）を持つ設計に変更した。`message`
+  （`Error` 標準フィールド）は `logError` 用の英語デバッグ文字列として残し、UI 表示は
+  必ず `reason` を `t()` で翻訳した文言を使う。`SchemaTooNewError` も
+  `currentVersion`/`maxKnownVersion` を `readonly` フィールドとして保持するよう変更した
+  （表示側が `t()` で組み立てられるようにするため）。これは
+  `contexts/DatabaseContext.tsx`・`app/settings/data.tsx`・`components/RecoveryScreen.tsx`
+  が `error.message` を直接表示していた箇所を是正する目的も兼ねている
+- `lib/screenMask.ts` の `ScreenMaskResult.reason` は自由文字列から安定した理由コードの
+  union 型に変更した（`lib/` 自体は i18n 非依存のまま、表示側の
+  `app/settings/hide-app-preview.tsx` でのみ翻訳する）
+- **`@formatjs/intl-pluralrules` ポリフィルを追加した。** 実機（Pixel 11、Android）で
+  複数形キー（`_one`/`_other`）が count=1 のときだけ日本語選択中でも英語表示に
+  なる不具合を発見——原因は Hermes に `Intl.PluralRules` が実装されておらず、
+  i18next が言語に関わらず「count===1 なら `_one`」という素朴な規則に
+  フォールバックしていたため（`ja.json` は `_other` のみ定義しているので
+  ミスマッチし、`fallbackLng: 'en'` の英語 `_one` が出ていた）。`tsc`/`jest`
+  はどちらも Node の `Intl.PluralRules` を使うため検出できず、実機確認でのみ
+  見つかった。詳細と対処は `lib/i18n/index.ts`・CLAUDE.md 参照
+
+**意図的にスコープ外としたもの**
+
+- `services/importValidation.ts` の個別フィールド検証メッセージ（約25種類、
+  「missing key (§D-23: unrecorded values must be explicit null)」等）は翻訳して
+  いない。壊れた/手編集された backup JSON のスキーマ違反を説明する、開発者向けの
+  技術的な詳細に近い文言であり、通常の UI 文言というより一種のログ出力に近いと
+  判断した。周囲の文言（「このファイルはバックアップに見えません」等）は翻訳している
+- Google Play / App Store のストア掲載情報（アプリ名・説明文）のローカライズは対象外
+
+**既知の制限（コードレビューで指摘、2026-09-22）**
+
+- **`components/RecoveryScreen.tsx` は常に端末の OS 言語で表示される。** この画面は
+  DB が復号できない状態で出る（`contexts/DatabaseContext.tsx`）ため、
+  `preferences.language`（暗号化 DB に保存）を読めない——`LanguageProvider` 自体が
+  `useDatabase()` に依存しており、DB が開けない限りこの画面より下に来ることが
+  そもそもできない。設計上の制約であり、暗号化 DB に設定を保存するという既存方針
+  （D-37「Stored encrypted」）を崩さない限り解消できない
+- **通常起動時、`LanguageProvider` の非同期読み込みが終わるまでは一瞬 OS 言語で
+  表示される**（`preferences.language` を明示的に別言語へ設定している場合）。
+  `contexts/Appearance.tsx` の `preferences.appearance` も同型の構造（`loaded` を
+  公開しているが、`app/_layout.tsx` はそれでレンダーをゲートしていない）で同じ
+  制限を元々持っており、Language はその既存パターンをそのまま踏襲した——Language
+  だけの新規の欠陥ではない。是正するなら Appearance 側も合わせて設計し直す必要が
+  あり、今回のスコープではない
+- **ネイティブ UI 部分は端末の OS 言語のまま追従しない**：
+  `expo-local-authentication` の生体認証プロンプト自体のボタン文言（Cancel 等、
+  OS が描画）、`@react-native-community/datetimepicker` の picker 自体の文言
+  （ライブラリ自身のドキュメントが「Android は端末ロケール固定、iOS の `locale` prop は
+  多くの picker mode で信頼できないため非推奨」と明記——このアプリが使っている
+  `display="spinner"` は数少ない「動作する」モードの一つだが、iOS ビルドが
+  ブロック中のため検証できない）。Health Connect の rationale 画面（`plugins/
+  withHealthConnectPermissionsRationale.js`）は対応済みだが、これは同じ理由
+  （JS ランタイム外）で個別対応が要ったケース
+- `app.json` に iOS の `CFBundleLocalizations` 相当の設定は無い（ストア掲載・
+  OS レベルのローカライズ判定に影響しうるが、iOS ビルドが現状ブロック中のため
+  今すぐの実害は無い——iOS 公開作業に着手する際に確認すること）
+
+**`ja.json` の翻訳内容、特にデリケートな語（Solo/Partnered・Orgasm・Ejaculation・
+Protection・Mood 等）のレビュー**は、D-48 が「機械翻訳では済まず人手レビューが要る」と
+指摘した通り、実装完了後にユーザー本人に確認してもらう想定——このセッションの会話記録
+参照。
+
+**却下した案**
+
+- `t()` のキー引数を `locales/en.json` の型から生成した Union 型で厳密に型付けする
+  （`types/i18next.d.ts` の module augmentation）——react-i18next のオーバーロード解決が
+  このリソースツリーの規模（150キー超）で崩れ、正しい呼び出しにまで誤ったコンパイル
+  エラーを出すようになったため撤回した（詳細は `types/i18next.d.ts` の doc comment）。
+  代わりに、全ソースの `t('...')` 呼び出しを `locales/en.json`/`ja.json` の実キーと
+  突き合わせる `npm run check-i18n`（`scripts/checkI18nKeys.js`）で typo を検出する
+  運用にした
+
+**コードレビュー指摘への対応（2026-09-22）**
+
+初回実装後のレビューで見つかった問題点と対応。重大度の高い順：
+
+- **`preferences.language` が Import で必ず落ちていた（重大）**：
+  `services/importValidation.ts` の `isSettingValueValid` に
+  `case 'preferences.language'` が無く、`default: return false` に落ちて
+  常に破棄されていた（§13.3 の「不正値は落として既定を使う」挙動に紛れて
+  UI 上はエラーにならず、置換復元のたびに `system` へ静かに戻っていた）。
+  case を追加し、`EXPORTABLE_SETTING_KEYS` の全キーが
+  `sanitizeImportedSettings` で正しく扱われることを保証する回帰テストを
+  `services/__tests__/importValidation.test.ts` に追加した
+- `services/SettingsRepository.ts` の `getAllSettings` が `preferences.language`
+  を返すキー一覧から漏れていた（`as unknown as SettingsMap` キャストが
+  `tsc` から隠していた）。ハードコードされたキー一覧を `STATIC_DEFAULTS` から
+  導出する形に変え、同種の漏れが構造的に起きないようにした
+- `contexts/DatabaseContext.tsx` のエラー画面から、分類できない例外の
+  `error.message` が完全に消えていた（`logError` は release ビルドで
+  `error.message` を出さない——§8.7、`lib/log.ts`——ため、唯一の手掛かりが
+  失われる格好になっていた）。翻訳済みの説明文の下に、未分類の例外
+  （`SchemaTooNewError`/`MigrationRestoreFailedError` 以外）に限り生の
+  `error.message` を技術的詳細として残す形に戻した。あわせてこの catch 節
+  自体に `logError` を追加（元々どこにも記録されていなかった）
+- `contexts/Language.tsx`：`i18n.changeLanguage()` の Promise が未 catch だった
+  ため `.catch(logError)` を追加。また `language === 'system'` のとき、
+  アプリ実行中の端末言語変更に追従しない問題があったため、`AppState` の
+  `active` 復帰時に再評価する処理を追加した（`lib/screenMask.ts`・
+  `contexts/AppLock.tsx` と同じ「バックグラウンド中の OS 状態変化を resume
+  時に拾う」既存パターンを踏襲）
+- `plugins/withHealthConnectPermissionsRationale.js` の `escapeXml` が
+  `'`/`"` を `&apos;`/`&quot;` に変換していたが、aapt2 は XML 実体参照が
+  解決された後の文字列を見るため、Android string リソースとして正しい
+  `\'`/`\"` のバックスラッシュエスケープに変更した（今のところ文言に
+  `'`/`"` が無いため未発現——将来の文言変更で aapt2 のビルドエラーとして
+  顕在化するはずだった）
+- CLAUDE.md に「`ja.json` は接尾辞なしの1キーで足りる」という誤記があった
+  （実際は `_other` を21キー全てに付けている）。`lib/i18n/index.ts` の
+  doc comment は正しかった。CLAUDE.md 側を修正した
+- `lib/activityDetailsFields.ts`・`app/settings/hide-app-preview.tsx` の doc
+  comment が、撤回済みの `types/i18next.d.ts` の型チェックをまだ有効であるかの
+  ように参照していた。修正した
+- 表記ゆれ：`settings.hideAppPreview.androidLegacySideEffect` の JA 側に
+  誤った先頭半角スペースがあった（直近の和欧間スペース対応と逆行）ので削除。
+  `screens/CalendarScreen.tsx` のアクセシビリティラベルが区切り文字を
+  英語のカンマに固定していたため `common.listSeparator`（EN: `, ` / JA:
+  `、`）を新設して差し替えた。`app/onboarding/privacy.tsx` の React
+  key が翻訳済みテキストそのものだったため、安定 id ベースに変更した
+- `t('calendar.loading')` が Calendar 画面以外の4箇所（Settings の各
+  ローディング表示等）でも汎用ローディング文言として流用されていたため、
+  `common.loading` を新設して差し替えた（`calendar.loading` は削除）
+- `app/settings/data.tsx` の `exportPlaintextNotice(t)` は `t()` 1回を
+  包むだけで関数化の意味が無かったため、呼び出し箇所で直接 `t()` する形に
+  簡略化した
 
 ---
 

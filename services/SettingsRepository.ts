@@ -92,22 +92,23 @@ export async function ensureLocaleDefaultsPersisted(executor: SqlExecutor): Prom
   await setSetting(executor, 'preferences.timeFormat', defaults['preferences.timeFormat']);
 }
 
+/**
+ * Derived from `STATIC_DEFAULTS`'s own keys, plus the two locale-resolved
+ * ones it deliberately excludes (`preferences.firstDayOfWeek`/
+ * `preferences.timeFormat` — see that const's doc comment), rather than a
+ * separately hand-maintained literal list: a hand-maintained list here
+ * previously went stale when `preferences.language` was added to
+ * `SettingsMap`/`STATIC_DEFAULTS` but not to this function, and the
+ * `as unknown as SettingsMap` cast below hid the gap from `tsc` (found in
+ * review). `Object.keys(STATIC_DEFAULTS)` can't go stale the same way —
+ * TypeScript already requires `STATIC_DEFAULTS`'s object literal to have
+ * exactly the keys its `Pick<SettingsMap, ...>` type lists.
+ */
 export async function getAllSettings(executor: SqlExecutor): Promise<SettingsMap> {
   const keys: SettingKey[] = [
-    'activityDetails.orgasm',
-    'activityDetails.ejaculation',
-    'activityDetails.protection',
-    'activityDetails.duration',
-    'activityDetails.mood',
-    'activityDetails.note',
+    ...(Object.keys(STATIC_DEFAULTS) as SettingKey[]),
     'preferences.firstDayOfWeek',
     'preferences.timeFormat',
-    'preferences.appearance',
-    'appLock.enabled',
-    'appLock.timing',
-    'privacy.blockScreenshots',
-    'healthConnect.enabled',
-    'healthConnect.lastSyncedAt',
   ];
   const entries = await Promise.all(keys.map(async (key) => [key, await getSetting(executor, key)] as const));
   return Object.fromEntries(entries) as unknown as SettingsMap;

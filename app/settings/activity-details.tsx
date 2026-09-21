@@ -17,10 +17,11 @@ import React, { useCallback, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
-import { ACTIVITY_DETAIL_FIELDS } from '../../lib/activityDetailsFields';
+import { ACTIVITY_DETAIL_FIELDS, activityDetailFieldLabel } from '../../lib/activityDetailsFields';
 import { logError } from '../../lib/log';
 
 type ActivityDetailSettingKey = (typeof ACTIVITY_DETAIL_FIELDS)[number]['settingKey'];
@@ -28,6 +29,7 @@ type FieldState = Record<ActivityDetailSettingKey, boolean>;
 
 export default function ActivityDetailsSettingsScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const [values, setValues] = useState<FieldState | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -55,7 +57,7 @@ export default function ActivityDetailsSettingsScreen() {
     } catch (error) {
       setValues((current) => (current ? { ...current, [key]: previous } : current));
       logError('Saving activityDetails setting failed', error);
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
     } finally {
       setBusyKey(null);
     }
@@ -64,7 +66,7 @@ export default function ActivityDetailsSettingsScreen() {
   if (!values) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
+        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -72,18 +74,16 @@ export default function ActivityDetailsSettingsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.intro, { color: colors.textSecondary }]}>
-          Choose what you want to track. You can change this anytime.
-        </Text>
+        <Text style={[styles.intro, { color: colors.textSecondary }]}>{t('settings.activityDetails.intro')}</Text>
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TRACKING DETAILS</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.activityDetails.sectionLabel')}</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {ACTIVITY_DETAIL_FIELDS.map(({ settingKey, label }, index) => (
+          {ACTIVITY_DETAIL_FIELDS.map(({ field, settingKey }, index) => (
             <View
               key={settingKey}
               style={[styles.row, { borderColor: colors.border }, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth }]}
             >
-              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
+              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{activityDetailFieldLabel(t, field)}</Text>
               <Switch
                 value={values[settingKey]}
                 onValueChange={(next) => persist(settingKey, next)}
@@ -93,10 +93,7 @@ export default function ActivityDetailsSettingsScreen() {
           ))}
         </View>
 
-        <Text style={[styles.caption, { color: colors.textTertiary }]}>
-          Values you have already recorded are always shown, even if turned off. Protection is also
-          always shown for partnered activities.
-        </Text>
+        <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.activityDetails.caption')}</Text>
       </ScrollView>
     </SafeAreaView>
   );

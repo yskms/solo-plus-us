@@ -19,18 +19,20 @@
  */
 import React, { useEffect } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
-import type { ActivityDetailField } from '../lib/activityDetailsFields';
+import { activityDetailFieldLabel, type ActivityDetailField } from '../lib/activityDetailsFields';
 
 interface AddMoreDetailsSheetProps {
   visible: boolean;
-  hiddenFields: readonly { field: ActivityDetailField; label: string }[];
+  hiddenFields: readonly { field: ActivityDetailField }[];
   onReveal: (field: ActivityDetailField) => void;
   onClose: () => void;
 }
 
 export function AddMoreDetailsSheet({ visible, hiddenFields, onReveal, onClose }: AddMoreDetailsSheetProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!visible) return;
@@ -57,23 +59,23 @@ export function AddMoreDetailsSheet({ visible, hiddenFields, onReveal, onClose }
         style={StyleSheet.absoluteFill}
         onPress={onClose}
         accessibilityRole="button"
-        accessibilityLabel="Dismiss"
+        accessibilityLabel={t('addMoreDetailsSheet.dismiss')}
       />
       <View style={[styles.sheet, { backgroundColor: colors.surface }]} accessibilityViewIsModal>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.textPrimary }]}>Add more details</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>{t('addMoreDetailsSheet.title')}</Text>
           <Pressable onPress={onClose} hitSlop={8}>
-            <Text style={{ color: colors.solo, fontSize: 16, fontWeight: '700' }}>Done</Text>
+            <Text style={{ color: colors.solo, fontSize: 16, fontWeight: '700' }}>{t('common.done')}</Text>
           </Pressable>
         </View>
-        {hiddenFields.map(({ field, label }) => (
+        {hiddenFields.map(({ field }) => (
           <Pressable
             key={field}
             onPress={() => onReveal(field)}
             style={({ pressed }) => [styles.row, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}
             accessibilityRole="button"
           >
-            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{activityDetailFieldLabel(t, field)}</Text>
             <Text style={[styles.plus, { color: colors.solo }]}>+</Text>
           </Pressable>
         ))}

@@ -25,6 +25,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAppLockActions } from '../contexts/AppLock';
@@ -33,6 +34,7 @@ import { useNativeDateTimePicker } from '../hooks/useNativeDateTimePicker';
 import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
 import { clampToNow } from '../lib/datetime';
 import { formatPickedDateTime } from '../lib/timeFormat';
+import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
 import * as ActivityService from '../services/ActivityService';
 import { getSetting } from '../services/SettingsRepository';
@@ -41,6 +43,7 @@ import type { TimeFormat } from '../types/Settings';
 
 export default function RecordScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { announceRecorded } = useRecordFeedback();
   const { isLocked } = useAppLockActions();
@@ -65,7 +68,7 @@ export default function RecordScreen() {
       router.back();
       announceRecorded(activity);
     } catch (error) {
-      Alert.alert('Could not record', 'Please try again.');
+      Alert.alert(t('record.couldNotRecord'), t('common.pleaseTryAgain'));
       logError('recordActivity failed', error);
     } finally {
       setSaving(false);
@@ -75,13 +78,13 @@ export default function RecordScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.headerRow}>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>Add Activity</Text>
-        <Pressable onPress={() => router.back()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{t('record.title')}</Text>
+        <Pressable onPress={() => router.back()} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('record.close')}>
           <Text style={[styles.close, { color: colors.textSecondary }]}>✕</Text>
         </Pressable>
       </View>
 
-      <Text style={[styles.prompt, { color: colors.textSecondary }]}>How would you like to log?</Text>
+      <Text style={[styles.prompt, { color: colors.textSecondary }]}>{t('record.prompt')}</Text>
 
       <Pressable
         onPress={() => record('solo')}
@@ -93,8 +96,8 @@ export default function RecordScreen() {
       >
         <View style={[styles.dot, { backgroundColor: colors.solo }]} />
         <View>
-          <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Solo</Text>
-          <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>Personal activity</Text>
+          <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>{contextLabel(t, 'solo')}</Text>
+          <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>{contextCaption(t, 'solo')}</Text>
         </View>
       </Pressable>
 
@@ -108,32 +111,32 @@ export default function RecordScreen() {
       >
         <View style={[styles.dot, { backgroundColor: colors.partneredStrong }]} />
         <View>
-          <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Partnered</Text>
-          <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>With someone</Text>
+          <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>{contextLabel(t, 'partnered')}</Text>
+          <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>{contextCaption(t, 'partnered')}</Text>
         </View>
       </Pressable>
 
       <View style={styles.whenBlock}>
         <Text style={[styles.now, { color: colors.textTertiary }]}>
-          {customInstant ? formatPickedDateTime(customInstant, timeFormat) : 'Just now'}
+          {customInstant ? formatPickedDateTime(t, customInstant, timeFormat) : t('record.justNow')}
         </Text>
         <Pressable
           onPress={open}
           disabled={saving}
           style={({ pressed }) => [styles.changeRow, { opacity: pressed ? 0.7 : 1 }]}
           accessibilityRole="button"
-          accessibilityLabel="Change date and time"
+          accessibilityLabel={t('record.changeDateTimeA11y')}
         >
-          <Text style={[styles.changeLink, { color: colors.solo }]}>Change date & time</Text>
+          <Text style={[styles.changeLink, { color: colors.solo }]}>{t('record.changeDateTime')}</Text>
         </Pressable>
         {customInstant && (
           <Pressable
             onPress={reset}
             style={styles.resetRow}
             accessibilityRole="button"
-            accessibilityLabel="Use current time instead"
+            accessibilityLabel={t('record.useNowInsteadA11y')}
           >
-            <Text style={[styles.resetLink, { color: colors.textTertiary }]}>Use now instead</Text>
+            <Text style={[styles.resetLink, { color: colors.textTertiary }]}>{t('record.useNowInstead')}</Text>
           </Pressable>
         )}
       </View>

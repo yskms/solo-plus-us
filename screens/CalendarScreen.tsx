@@ -16,6 +16,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, radius, minTouchTarget } from '../constants/theme';
 import type { ThemeColors } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
@@ -93,19 +95,20 @@ function DayDots({ dayActivities, colors }: { dayActivities: Activity[]; colors:
   );
 }
 
-function dayCellAccessibilityLabel(cell: CalendarCell, dayActivities: Activity[]): string {
-  const dateLabel = formatMonthDay(cell.localDate);
-  if (dayActivities.length === 0) return `${dateLabel}, no activities`;
+function dayCellAccessibilityLabel(t: TFunction, cell: CalendarCell, dayActivities: Activity[]): string {
+  const dateLabel = formatMonthDay(t, cell.localDate);
+  if (dayActivities.length === 0) return t('calendar.dayCellA11y.noActivities', { date: dateLabel });
   const solo = dayActivities.filter((a) => a.context === 'solo').length;
   const partnered = dayActivities.length - solo;
   const parts: string[] = [];
-  if (solo > 0) parts.push(`${solo} solo`);
-  if (partnered > 0) parts.push(`${partnered} partnered`);
-  return `${dateLabel}, ${parts.join(', ')}`;
+  if (solo > 0) parts.push(t('calendar.dayCellA11y.countPart', { count: solo, label: contextLabel(t, 'solo') }));
+  if (partnered > 0) parts.push(t('calendar.dayCellA11y.countPart', { count: partnered, label: contextLabel(t, 'partnered') }));
+  return t('calendar.dayCellA11y.withActivities', { date: dateLabel, parts: parts.join(t('common.listSeparator')) });
 }
 
 export default function CalendarScreen({ isActive }: { isActive: boolean }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const db = useDatabase();
   const { revision } = useDataRevision();
 
@@ -182,7 +185,7 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
   // assumed 'monday' and re-flowing it once 'sunday' arrives would flash a
   // visibly different layout for Sunday-first users on every open.
   const grid = firstDayOfWeek ? buildMonthGrid(visible.year, visible.month, firstDayOfWeek) : null;
-  const headerLabels = firstDayOfWeek ? weekdayHeaderLabels(firstDayOfWeek) : null;
+  const headerLabels = firstDayOfWeek ? weekdayHeaderLabels(t, firstDayOfWeek) : null;
   const selectedActivities = (selectedLocalDate ? byDate.get(selectedLocalDate) : undefined) ?? [];
   const sortedSelectedActivities = [...selectedActivities].sort((a, b) =>
     a.occurredLocalTime.localeCompare(b.occurredLocalTime),
@@ -196,7 +199,7 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-      <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Calendar</Text>
+      <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>{t('navigation.tabs.calendar')}</Text>
 
       <View style={styles.monthHeader}>
         <Pressable
@@ -204,17 +207,17 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
           hitSlop={8}
           style={styles.navButton}
           accessibilityRole="button"
-          accessibilityLabel="Previous month"
+          accessibilityLabel={t('calendar.previousMonth')}
         >
           <Text style={[styles.navArrow, { color: colors.textPrimary }]}>‹</Text>
         </Pressable>
-        <Text style={[styles.monthTitle, { color: colors.textPrimary }]}>{monthLabel(visible.year, visible.month)}</Text>
+        <Text style={[styles.monthTitle, { color: colors.textPrimary }]}>{monthLabel(t, visible.year, visible.month)}</Text>
         <Pressable
           onPress={() => goToMonth(1)}
           hitSlop={8}
           style={styles.navButton}
           accessibilityRole="button"
-          accessibilityLabel="Next month"
+          accessibilityLabel={t('calendar.nextMonth')}
         >
           <Text style={[styles.navArrow, { color: colors.textPrimary }]}>›</Text>
         </Pressable>
@@ -222,15 +225,13 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
 
       {loadStatus === 'loading' && (
         <View style={styles.statusBlock}>
-          <Text style={[styles.statusText, { color: colors.textSecondary }]}>Loading…</Text>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>{t('common.loading')}</Text>
         </View>
       )}
 
       {loadStatus === 'error' && (
         <View style={styles.statusBlock}>
-          <Text style={[styles.statusText, { color: colors.textSecondary }]}>
-            Couldn&apos;t load your calendar. Leaving and reopening this tab will try again.
-          </Text>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>{t('calendar.loadError')}</Text>
         </View>
       )}
 
@@ -257,7 +258,7 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
                   style={[styles.dayCell, isSelected && { borderWidth: 1.5, borderColor: colors.solo, borderRadius: radius.sm }]}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isSelected }}
-                  accessibilityLabel={dayCellAccessibilityLabel(cell, dayActivities)}
+                  accessibilityLabel={dayCellAccessibilityLabel(t, cell, dayActivities)}
                 >
                   <Text
                     style={[
@@ -279,7 +280,7 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
         {loadStatus === 'ready' && selectedLocalDate && (
           <>
             <Text style={[styles.selectedDateLabel, { color: colors.textSecondary }]}>
-              {formatMonthDay(selectedLocalDate)}
+              {formatMonthDay(t, selectedLocalDate)}
             </Text>
             {sortedSelectedActivities.length === 0 ? (
               <EmptyState />
@@ -290,11 +291,14 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
                   onPress={() => router.push(`/activity/${activity.id}`)}
                   style={({ pressed }) => [styles.activityRow, { opacity: pressed ? 0.6 : 1 }]}
                   accessibilityRole="button"
-                  accessibilityLabel={`${contextLabel(activity.context)} activity, ${formatLocalTime(activity.occurredLocalTime, timeFormat)}`}
+                  accessibilityLabel={t('calendar.activityRowA11y', {
+                    context: contextLabel(t, activity.context),
+                    time: formatLocalTime(t, activity.occurredLocalTime, timeFormat),
+                  })}
                 >
                   <ActivityBadge context={activity.context} />
                   <Text style={[styles.activityTime, { color: colors.textSecondary }]}>
-                    {formatLocalTime(activity.occurredLocalTime, timeFormat)}
+                    {formatLocalTime(t, activity.occurredLocalTime, timeFormat)}
                   </Text>
                 </Pressable>
               ))

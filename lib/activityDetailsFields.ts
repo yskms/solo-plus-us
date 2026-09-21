@@ -7,6 +7,7 @@
  * `app/settings/activity-details.tsx`（設定一覧のラベル）と
  * `app/activity/[id].tsx`（実際の出し分け）の両方から参照する。
  */
+import type { TFunction } from 'i18next';
 import type { Activity, ActivityContext } from '../types/Activity';
 import type { SettingsMap } from '../types/Settings';
 
@@ -15,12 +16,11 @@ export type ActivityDetailField = 'orgasm' | 'ejaculation' | 'protection' | 'dur
 export const ACTIVITY_DETAIL_FIELDS: readonly {
   field: ActivityDetailField;
   settingKey: Extract<keyof SettingsMap, `activityDetails.${string}`>;
-  label: string;
 }[] = [
-  { field: 'orgasm', settingKey: 'activityDetails.orgasm', label: 'Orgasm' },
-  { field: 'ejaculation', settingKey: 'activityDetails.ejaculation', label: 'Ejaculation' },
-  { field: 'protection', settingKey: 'activityDetails.protection', label: 'Protection' },
-  { field: 'duration', settingKey: 'activityDetails.duration', label: 'Duration' },
+  { field: 'orgasm', settingKey: 'activityDetails.orgasm' },
+  { field: 'ejaculation', settingKey: 'activityDetails.ejaculation' },
+  { field: 'protection', settingKey: 'activityDetails.protection' },
+  { field: 'duration', settingKey: 'activityDetails.duration' },
   // Screen 07a shows one row for both Mood rows — a single setting key
   // gates them together, including in `AddMoreDetailsSheet`. Screen 04's
   // own "+ Add more details" mock lists "Mood before"/"Mood after" as two
@@ -30,9 +30,27 @@ export const ACTIVITY_DETAIL_FIELDS: readonly {
   // after still hidden" state the setting itself can't express. Kept as
   // one field; deliberate deviation from that one sub-mock (README "表示
   // 項目のカスタマイズ" Known gaps).
-  { field: 'mood', settingKey: 'activityDetails.mood', label: 'Mood before / after' },
-  { field: 'note', settingKey: 'activityDetails.note', label: 'Notes' },
+  { field: 'mood', settingKey: 'activityDetails.mood' },
+  { field: 'note', settingKey: 'activityDetails.note' },
 ] as const;
+
+/** Kept as a function (not a `label` field above) so the translation keys below are literal `t(...)` calls — greppable, and covered by `npm run check-i18n` (`scripts/checkI18nKeys.js`), unlike a string stored in data and passed to `t()` indirectly. */
+export function activityDetailFieldLabel(t: TFunction, field: ActivityDetailField): string {
+  switch (field) {
+    case 'orgasm':
+      return t('activityDetailsFields.orgasm');
+    case 'ejaculation':
+      return t('activityDetailsFields.ejaculation');
+    case 'protection':
+      return t('activityDetailsFields.protection');
+    case 'duration':
+      return t('activityDetailsFields.duration');
+    case 'mood':
+      return t('activityDetailsFields.mood');
+    case 'note':
+      return t('activityDetailsFields.note');
+  }
+}
 
 type RecordedCheckSource = Pick<
   Activity,

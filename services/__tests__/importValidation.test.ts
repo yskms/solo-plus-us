@@ -1,5 +1,6 @@
 import { sanitizeImportedSettings, validateExportFile } from '../importValidation';
 import { CURRENT_EXPORT_VERSION } from '../../types/Export';
+import { EXPORTABLE_SETTING_KEYS, STATIC_DEFAULTS } from '../../types/Settings';
 
 function validActivity(overrides: Record<string, unknown> = {}) {
   return {
@@ -193,5 +194,42 @@ describe('sanitizeImportedSettings — §13.3 lenient (bad values dropped, never
     expect(sanitizeImportedSettings(undefined)).toEqual({});
     expect(sanitizeImportedSettings(null)).toEqual({});
     expect(sanitizeImportedSettings('nope')).toEqual({});
+  });
+
+  /**
+   * Regression guard: `isSettingValueValid` (private to importValidation.ts)
+   * switches on `SettingKey` with no exhaustiveness check from the
+   * compiler (its `default: return false` swallows an unhandled case
+   * instead of a type error), so adding a key to `EXPORTABLE_SETTING_KEYS`
+   * without also adding a case there silently drops that setting on every
+   * import/restore — exactly what happened for `preferences.language`
+   * (caught only by code review, not by `tsc`/`jest`, since a dropped key
+   * looks identical to "wasn't in the file"). This test would have failed
+   * for it: a known-valid value for every exportable key must round-trip
+   * through `sanitizeImportedSettings` unchanged.
+   *
+   * `toStrictEqual`, not `toEqual` (round 2 review fix): `toEqual` treats
+   * an `undefined`-valued property as equivalent to the property being
+   * absent, so if a *future* key were added to `EXPORTABLE_SETTING_KEYS`
+   * without also adding it here (`validValuesByKey[key]` silently
+   * `undefined`) *and* without a case in `isSettingValueValid`, this test
+   * would still pass — `raw` becomes `{ [key]: undefined }`, the sanitizer
+   * drops it to `{}`, and `toEqual({}, { [key]: undefined })` is true,
+   * defeating the whole point of this guard. `toStrictEqual` tells the
+   * two apart. The explicit `toBeDefined()` below is redundant with that
+   * (belt-and-suspenders) but gives a clearer failure message pointing at
+   * *this test* needing an update, rather than a confusing equality diff.
+   */
+  it('recognizes a known-valid value for every key in EXPORTABLE_SETTING_KEYS', () => {
+    const validValuesByKey: Record<string, unknown> = {
+      ...STATIC_DEFAULTS,
+      'preferences.firstDayOfWeek': 'monday',
+      'preferences.timeFormat': '24h',
+    };
+    for (const key of EXPORTABLE_SETTING_KEYS) {
+      expect(validValuesByKey[key]).toBeDefined();
+      const raw = { [key]: validValuesByKey[key] };
+      expect(sanitizeImportedSettings(raw)).toStrictEqual(raw);
+    }
   });
 });

@@ -20,6 +20,8 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { IntersectPlus } from './IntersectPlus';
 import { restoreFromBackup, resetAndStartOver } from '../services/RecoveryService';
@@ -28,25 +30,38 @@ import { logError } from '../lib/log';
 
 type Step = 'choice' | 'confirmDelete' | 'busy';
 
-function describeError(error: unknown): string {
+/**
+ * The per-field messages inside `RecoveryImportInvalidError.validationErrors`
+ * stay English/untranslated — see `app/settings/data.tsx`'s
+ * `describeValidationErrors` doc comment for why (same design-decision
+ * record covers both call sites, Import and Recovery).
+ */
+function describeError(t: TFunction, error: unknown): string {
   if (error instanceof RecoveryImportInvalidError) {
     const shown = error.validationErrors.slice(0, 5).map((e) => `${e.path || '(file)'}: ${e.message}`);
-    const more = error.validationErrors.length > shown.length ? `\n…and ${error.validationErrors.length - shown.length} more` : '';
-    return `This file doesn't look like a Solo + Us backup:\n${shown.join('\n')}${more}`;
+    const more =
+      error.validationErrors.length > shown.length
+        ? t('settings.data.andNMore', { count: error.validationErrors.length - shown.length })
+        : '';
+    return t('settings.data.notABackup', { errors: shown.join('\n'), more });
   }
   if (error instanceof RecoveryVerificationFailedError) {
-    // Author-controlled message (see RecoveryService), safe to show as-is.
-    return error.message;
+    switch (error.reason.kind) {
+      case 'temp-db-mismatch':
+      case 'final-db-mismatch':
+        return t('recoveryScreen.verificationFailed');
+    }
   }
   // Any other error (a native SQLite/filesystem error, ...) may embed a
   // raw file path or fragment of SQL — shown to the device's own owner
   // here, not a third party, but still not worth surfacing verbatim when
   // a plain explanation says everything they actually need to know.
-  return 'Something went wrong while working with this file. Please try again.';
+  return t('recoveryScreen.somethingWentWrong');
 }
 
 export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>('choice');
 
   const handleRestore = async () => {
@@ -55,7 +70,7 @@ export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
       picked = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
     } catch (error) {
       logError('DocumentPicker.getDocumentAsync failed', error);
-      Alert.alert('Could not open file picker', 'Please try again.');
+      Alert.alert(t('settings.data.couldNotOpenFilePicker'), t('common.pleaseTryAgain'));
       return;
     }
     if (picked.canceled || picked.assets.length === 0) return;
@@ -63,11 +78,13 @@ export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
     setStep('busy');
     try {
       const result = await restoreFromBackup(picked.assets[0].uri);
-      Alert.alert('Restored', `${result.importedCount} activities restored from backup.`, [{ text: 'OK', onPress: onRecovered }]);
+      Alert.alert(t('recoveryScreen.restoredTitle'), t('recoveryScreen.restoredMessage', { count: result.importedCount }), [
+        { text: t('common.ok'), onPress: onRecovered },
+      ]);
     } catch (error) {
       logError('RecoveryService.restoreFromBackup failed', error);
       setStep('choice');
-      Alert.alert('Could not restore backup', describeError(error));
+      Alert.alert(t('recoveryScreen.couldNotRestoreBackup'), describeError(t, error));
     }
   };
 
@@ -79,7 +96,7 @@ export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
     } catch (error) {
       logError('RecoveryService.resetAndStartOver failed', error);
       setStep('choice');
-      Alert.alert('Could not delete', 'Please try again.');
+      Alert.alert(t('recoveryScreen.couldNotDelete'), t('common.pleaseTryAgain'));
     }
   };
 
@@ -89,18 +106,13 @@ export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
         <IntersectPlus size={40} />
         <Text style={[styles.wordmark, { color: colors.textPrimary }]}>Solo + Us</Text>
 
-        <Text style={[styles.headline, { color: colors.textPrimary }]}>
-          Solo + Us couldn&apos;t unlock the records on this device.
-        </Text>
-        <Text style={[styles.body, { color: colors.textSecondary }]}>
-          This can happen after moving to a new device or restoring from a backup — the encryption key may have
-          been lost.
-        </Text>
+        <Text style={[styles.headline, { color: colors.textPrimary }]}>{t('recoveryScreen.headline')}</Text>
+        <Text style={[styles.body, { color: colors.textSecondary }]}>{t('recoveryScreen.body')}</Text>
 
         {step === 'busy' && (
           <View style={styles.busyRow}>
             <ActivityIndicator color={colors.textSecondary} />
-            <Text style={[styles.body, { color: colors.textSecondary }]}>Working…</Text>
+            <Text style={[styles.body, { color: colors.textSecondary }]}>{t('recoveryScreen.working')}</Text>
           </View>
         )}
 
@@ -119,43 +131,41 @@ export function RecoveryScreen({ onRecovered }: { onRecovered: () => void }) {
               style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Try again</Text>
+              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('loadErrorOverlay.tryAgain')}</Text>
             </Pressable>
             <Pressable
               onPress={handleRestore}
               style={[styles.button, { backgroundColor: colors.solo }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.buttonText, { color: colors.background }]}>Restore from a backup</Text>
+              <Text style={[styles.buttonText, { color: colors.background }]}>{t('recoveryScreen.restoreFromBackup')}</Text>
             </Pressable>
             <Pressable
               onPress={() => setStep('confirmDelete')}
               style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Delete and start over</Text>
+              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('recoveryScreen.deleteAndStartOver')}</Text>
             </Pressable>
           </View>
         )}
 
         {step === 'confirmDelete' && (
           <View style={styles.actions}>
-            <Text style={[styles.body, { color: colors.textSecondary }]}>
-              This permanently deletes the records on this device. This can&apos;t be undone.
-            </Text>
+            <Text style={[styles.body, { color: colors.textSecondary }]}>{t('recoveryScreen.confirmDeleteBody')}</Text>
             <Pressable
               onPress={handleConfirmDelete}
               style={[styles.button, { backgroundColor: colors.destructive }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.buttonText, { color: colors.background }]}>Delete and start over</Text>
+              <Text style={[styles.buttonText, { color: colors.background }]}>{t('recoveryScreen.deleteAndStartOver')}</Text>
             </Pressable>
             <Pressable
               onPress={() => setStep('choice')}
               style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Cancel</Text>
+              <Text style={[styles.buttonText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
             </Pressable>
           </View>
         )}

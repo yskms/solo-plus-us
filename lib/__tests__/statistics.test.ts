@@ -1,4 +1,8 @@
+import i18n from '../i18n';
 import { averageIntervalDays, formatAverageIntervalDays } from '../statistics';
+
+const en = i18n.getFixedT('en');
+const ja = i18n.getFixedT('ja');
 
 describe('averageIntervalDays', () => {
   it('returns null for 0 records', () => {
@@ -27,46 +31,52 @@ describe('averageIntervalDays', () => {
 
 describe('formatAverageIntervalDays', () => {
   it('renders "—" for null (not enough data)', () => {
-    expect(formatAverageIntervalDays(null)).toBe('—');
+    expect(formatAverageIntervalDays(en, null)).toBe('—');
   });
 
   it('renders one decimal place with a "days" suffix', () => {
-    expect(formatAverageIntervalDays(3.14159)).toBe('3.1 days');
+    expect(formatAverageIntervalDays(en, 3.14159)).toBe('3.1 days');
   });
 
   it('renders a whole number with one decimal place', () => {
-    expect(formatAverageIntervalDays(4)).toBe('4.0 days');
+    expect(formatAverageIntervalDays(en, 4)).toBe('4.0 days');
   });
 
   it('uses singular "day" only when the rounded value is exactly 1.0', () => {
-    expect(formatAverageIntervalDays(1)).toBe('1.0 day');
-    expect(formatAverageIntervalDays(1.04)).toBe('1.0 day'); // rounds to 1.0
-    expect(formatAverageIntervalDays(1.2)).toBe('1.2 days');
+    expect(formatAverageIntervalDays(en, 1)).toBe('1.0 day');
+    expect(formatAverageIntervalDays(en, 1.04)).toBe('1.0 day'); // rounds to 1.0
+    expect(formatAverageIntervalDays(en, 1.2)).toBe('1.2 days');
   });
 
   it('switches to hours below 1 day even when rounding days would reach 1.0', () => {
     // 0.96 days = ~23 hours: still < 1 day raw, so hours, not "1.0 day"
-    expect(formatAverageIntervalDays(0.96)).toBe('23.0 hours');
+    expect(formatAverageIntervalDays(en, 0.96)).toBe('23.0 hours');
   });
 
   it('switches to hours below 1 day, rather than showing "0.x days"', () => {
     // 3 hours: below 1 day, at or above 1 hour, so hours (not days, not minutes)
-    expect(formatAverageIntervalDays(3 / 24)).toBe('3.0 hours');
+    expect(formatAverageIntervalDays(en, 3 / 24)).toBe('3.0 hours');
   });
 
   it('uses singular "hour" only when the rounded value is exactly 1.0', () => {
-    expect(formatAverageIntervalDays(1 / 24)).toBe('1.0 hour');
-    expect(formatAverageIntervalDays(2 / 24)).toBe('2.0 hours');
+    expect(formatAverageIntervalDays(en, 1 / 24)).toBe('1.0 hour');
+    expect(formatAverageIntervalDays(en, 2 / 24)).toBe('2.0 hours');
   });
 
   it('switches to minutes below 1 hour even when rounding hours would reach 1.0', () => {
     // 0.96 hours = ~57.6 minutes: still < 1 hour raw, so minutes, not "1.0 hour"
-    expect(formatAverageIntervalDays(0.96 / 24)).toBe('57.6 minutes');
+    expect(formatAverageIntervalDays(en, 0.96 / 24)).toBe('57.6 minutes');
   });
 
   it('switches to minutes below 1 hour, rather than showing "0.0 hours"', () => {
     // 2 records 1 minute apart -> 0.0 hours would misread as simultaneous
-    expect(formatAverageIntervalDays(1 / 24 / 60)).toBe('1.0 minute');
-    expect(formatAverageIntervalDays(5 / 24 / 60)).toBe('5.0 minutes');
+    expect(formatAverageIntervalDays(en, 1 / 24 / 60)).toBe('1.0 minute');
+    expect(formatAverageIntervalDays(en, 5 / 24 / 60)).toBe('5.0 minutes');
+  });
+
+  it('has no singular/plural split in Japanese', () => {
+    expect(formatAverageIntervalDays(ja, 1)).toBe('1.0日');
+    expect(formatAverageIntervalDays(ja, 1 / 24)).toBe('1.0時間');
+    expect(formatAverageIntervalDays(ja, 1 / 24 / 60)).toBe('1.0分');
   });
 });

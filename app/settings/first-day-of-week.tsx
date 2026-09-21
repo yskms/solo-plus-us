@@ -17,6 +17,7 @@
 import React, { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import SettingsOptionScreen from '../../components/SettingsOptionScreen';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
@@ -24,14 +25,15 @@ import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { logError } from '../../lib/log';
 import type { FirstDayOfWeek } from '../../types/Settings';
 
-const OPTIONS: { value: FirstDayOfWeek; label: string }[] = [
-  { value: 'monday', label: 'Monday' },
-  { value: 'sunday', label: 'Sunday' },
-];
-
 export default function FirstDayOfWeekSettingsScreen() {
+  const { t } = useTranslation();
   const db = useDatabase();
   const { bump } = useDataRevision();
+
+  const OPTIONS: { value: FirstDayOfWeek; label: string }[] = [
+    { value: 'monday', label: t('settings.firstDayOfWeek.monday') },
+    { value: 'sunday', label: t('settings.firstDayOfWeek.sunday') },
+  ];
   const [value, setValue] = useState<FirstDayOfWeek | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -60,7 +62,7 @@ export default function FirstDayOfWeekSettingsScreen() {
     } catch (error) {
       setValue(previous);
       logError('Saving preferences.firstDayOfWeek failed', error);
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
     } finally {
       setBusy(false);
     }

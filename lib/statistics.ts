@@ -7,6 +7,7 @@
  * ("実時間差" — a DST-crossing period can be a day off from the person's
  * felt sense of the gap, which is the definition, not an error).
  */
+import type { TFunction } from 'i18next';
 import { parseStrictUtcIso } from './datetime';
 
 const MS_PER_DAY = 86_400_000;
@@ -29,20 +30,24 @@ export function averageIntervalDays(count: number, oldestOccurredAtUtc: string, 
  * `:00`), so a "seconds" tier below this would only ever show noise from
  * the division, not a real recorded distinction. Singular "day"/"hour"/
  * "minute" only for a value that rounds to exactly 1.0, matching how the
- * rounded number reads ("1.0 day", not "1.0 days").
+ * rounded number reads ("1.0 day", not "1.0 days") — delegated to
+ * `t()`'s `count`-based plural selection (`Intl.PluralRules`), same as
+ * this file's `count === '1.0'` check used to do by hand. `t` is passed
+ * in (react-i18next's `TFunction`) rather than imported — see
+ * `lib/timeFormat.ts`'s doc comment for why.
  */
-export function formatAverageIntervalDays(days: number | null): string {
+export function formatAverageIntervalDays(t: TFunction, days: number | null): string {
   if (days === null) return '—';
 
   const hours = days * 24;
   if (hours < 1) {
-    const minutes = (hours * 60).toFixed(1);
-    return `${minutes} ${minutes === '1.0' ? 'minute' : 'minutes'}`;
+    const value = (hours * 60).toFixed(1);
+    return t('statistics.minutes', { count: Number(value), value });
   }
   if (days < 1) {
-    const roundedHours = hours.toFixed(1);
-    return `${roundedHours} ${roundedHours === '1.0' ? 'hour' : 'hours'}`;
+    const value = hours.toFixed(1);
+    return t('statistics.hours', { count: Number(value), value });
   }
-  const rounded = days.toFixed(1);
-  return `${rounded} ${rounded === '1.0' ? 'day' : 'days'}`;
+  const value = days.toFixed(1);
+  return t('statistics.days', { count: Number(value), value });
 }

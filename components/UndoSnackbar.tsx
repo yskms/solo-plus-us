@@ -5,12 +5,14 @@
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../constants/theme';
 import { contextLabel } from '../lib/labels';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
 
 export function UndoSnackbar() {
   const { colors, scheme } = useTheme();
+  const { t } = useTranslation();
   const { state, undo } = useRecordFeedback();
 
   if (!state) return null;
@@ -24,10 +26,10 @@ export function UndoSnackbar() {
         ]}
       >
         <Text style={[styles.message, { color: scheme === 'dark' ? colors.textPrimary : colors.background }]}>
-          ✓ {contextLabel(state.activity.context)} activity recorded
+          {t('undoSnackbar.recorded', { context: contextLabel(t, state.activity.context) })}
         </Text>
-        <Pressable onPress={undo} hitSlop={8} accessibilityRole="button" accessibilityLabel="Undo">
-          <Text style={[styles.undo, { color: colors.solo }]}>Undo</Text>
+        <Pressable onPress={undo} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('undoSnackbar.undo')}>
+          <Text style={[styles.undo, { color: colors.solo }]}>{t('undoSnackbar.undo')}</Text>
         </Pressable>
       </View>
     </View>
