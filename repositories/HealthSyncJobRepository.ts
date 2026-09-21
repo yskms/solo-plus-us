@@ -89,39 +89,50 @@ export async function insertJob(
   return created;
 }
 
-/** Rows/statement kept well under SQLite's default 999-bound-parameter limit (6 params/row: id, activity_id, provider, operation, not_before, created_at). */
+/** Rows/statement kept well under SQLite's default 999-bound-parameter limit (7 params/row: id, activity_id, provider, operation, external_record_id, not_before, created_at). */
 const BULK_INSERT_CHUNK_SIZE = 100;
 
 /**
  * Bulk variant of `insertJob` for callers that queue many jobs at once
- * (`services/HealthSyncResyncService.ts`, §13.6) and don't need each
- * inserted row read back — `insertJob`'s per-row `INSERT` + `SELECT`
- * read-back would double the statement count across potentially thousands
- * of Activities. Chunked into multi-row `VALUES` statements instead of one
- * `execute()` per row, so the whole call is a handful of statements rather
- * than one per job — this matters because every `db.transaction()` in this
- * app shares one connection-wide FIFO queue (op-sqlite's `enhanceDB`,
- * `node_modules/@op-engineering/op-sqlite/src/functions.ts`): a slow
- * transaction here blocks every other transaction in the app (recording a
- * new Activity, `SyncWorker`'s own finalize) for its entire duration, not
- * just this one.
+ * (`services/HealthSyncResyncService.ts`, §13.6; `services/ActivityService.
+ * deleteAllActivities`, §10.6 順5) and don't need each inserted row read
+ * back — `insertJob`'s per-row `INSERT` + `SELECT` read-back would double
+ * the statement count across potentially thousands of Activities. Chunked
+ * into multi-row `VALUES` statements instead of one `execute()` per row, so
+ * the whole call is a handful of statements rather than one per job — this
+ * matters because every `db.transaction()` in this app shares one
+ * connection-wide FIFO queue (op-sqlite's `enhanceDB`, `node_modules/
+ * @op-engineering/op-sqlite/src/functions.ts`): a slow transaction here
+ * blocks every other transaction in the app (recording a new Activity,
+ * `SyncWorker`'s own finalize) for its entire duration, not just this one.
+ *
+ * `externalRecordId` is per-row and optional (omitted/`undefined` → `NULL`)
+ * — `queueResync`'s `recreate` jobs never carry one, but §10.6's bulk
+ * `delete` jobs do (carried over from each Activity's own mapping, same as
+ * `insertJob`'s `externalRecordId` parameter).
  *
  * Same precondition as `insertJob`, per row: no existing job for
  * (activityId, provider) — `uq_health_sync_jobs`.
  */
 export async function insertJobsBulk(
   executor: SqlExecutor,
-  jobs: readonly { activityId: string; provider: Provider; operation: JobOperation; notBefore: string | null }[],
+  jobs: readonly {
+    activityId: string;
+    provider: Provider;
+    operation: JobOperation;
+    externalRecordId?: string | null;
+    notBefore: string | null;
+  }[],
 ): Promise<void> {
   if (jobs.length === 0) return;
   const now = nowUtcIso();
 
   for (let i = 0; i < jobs.length; i += BULK_INSERT_CHUNK_SIZE) {
     const chunk = jobs.slice(i, i + BULK_INSERT_CHUNK_SIZE);
-    const placeholders = chunk.map(() => '(?, ?, ?, ?, NULL, 1, NULL, ?, 0, NULL, ?)').join(', ');
+    const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, 1, NULL, ?, 0, NULL, ?)').join(', ');
     const params: Scalar[] = [];
     for (const job of chunk) {
-      params.push(generateId(), job.activityId, job.provider, job.operation, job.notBefore, now);
+      params.push(generateId(), job.activityId, job.provider, job.operation, job.externalRecordId ?? null, job.notBefore, now);
     }
     await executor.execute(
       `INSERT INTO health_sync_jobs (

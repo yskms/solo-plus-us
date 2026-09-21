@@ -19,8 +19,12 @@
  * matching `app/settings/data.tsx`'s `confirmReplace` step — this
  * codebase's precedent for "the most destructive action in the app"
  * confirmations (§17 "全削除は「記録を消したい」という意思が最も強い場面").
+ * Same precedent for button order: `confirmReplace` puts the destructive
+ * action first/top and Cancel second — this screen matches it rather than
+ * the §17 mockup's left-to-right "[ キャンセル ] [ 削除 ]", for consistency
+ * with the sibling destructive-confirm screen already in this app.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -30,6 +34,7 @@ import { useDataRevision } from '../../contexts/DataRevision';
 import * as ActivityService from '../../services/ActivityService';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
+import { getSetting } from '../../services/SettingsRepository';
 import { logError } from '../../lib/log';
 
 type Step = 'confirm' | 'busy';
@@ -40,7 +45,30 @@ export default function DeleteDataScreen() {
   const { bump } = useDataRevision();
   const [step, setStep] = useState<Step>('confirm');
 
+  // Guards two separate races, both real on this screen:
+  // 1. A fast double-tap on "Delete All Data" — `setStep('busy')` doesn't
+  //    take effect (and disable the button) until the next render, so two
+  //    taps in the same tick can both reach here before that happens.
+  // 2. `router.back()` inside the completion Alert's OK handler — if the
+  //    person backs out of this screen while the delete is still running,
+  //    `handleDelete`'s promise keeps going (it isn't tied to the
+  //    component), and the Alert (an OS-level dialog, not React state)
+  //    still appears over whatever screen they're now on. Calling
+  //    `router.back()` there would pop *that* screen, not this one —
+  //    closing an extra level of Settings navigation the person never
+  //    asked to leave. Only pop if this screen is still the one on top.
+  const deletingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const handleDelete = async () => {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
     setStep('busy');
     try {
       // §9.12/CLAUDE.md「Health Connect 同期の排他制御」: destructive ops go
@@ -52,32 +80,63 @@ export default function DeleteDataScreen() {
       bump(); // Today/Calendar/Insights etc. pick up the now-empty state immediately.
 
       let pendingDeleteCount = 0;
+      let healthConnectEnabled = false;
       if (Platform.OS === 'android') {
         try {
           // Every remaining job for this provider is necessarily a 'delete'
           // job by construction — deleteAllActivities already resolved every
           // other §10.1 branch (dropped or turned into 'delete') for every
           // Activity that existed.
-          pendingDeleteCount = (await HealthSyncJobRepository.findAllJobsForProvider(db, 'health_connect')).length;
+          //
+          // TODO(HealthKit): once an iOS provider exists, this Platform.OS
+          // check needs to become a real "is there a second provider active"
+          // check — right now `ActivityService.ALL_PROVIDERS` includes
+          // 'healthkit', but nothing ever queues a job for it, so counting
+          // only 'health_connect' and gating on Android is still correct
+          // today.
+          [pendingDeleteCount, healthConnectEnabled] = await Promise.all([
+            HealthSyncJobRepository.findAllJobsForProvider(db, 'health_connect').then((jobs) => jobs.length),
+            getSetting(db, 'healthConnect.enabled').then((v) => v ?? false),
+          ]);
         } catch (error) {
           // The delete itself already succeeded — a failure to count what's
           // left over must not be reported as "could not delete". Settings >
           // Health Connect can still be checked directly.
-          logError('Counting remaining Health Connect delete jobs after deleteAllActivities failed', error);
+          logError('Checking remaining Health Connect deletions after deleteAllActivities failed', error);
         }
       }
 
-      Alert.alert(
-        pendingDeleteCount > 0 ? 'Deleted from this device' : 'All data deleted',
-        pendingDeleteCount > 0
-          ? `Every activity has been deleted from this device. ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's are' : ' is'} still being sent to Health Connect — check progress anytime in Settings › Health Connect.`
-          : 'Every activity has been permanently deleted.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      );
+      // §10.6 "Health Connect が未接続の場合": "進行バーを出したまま止めない。
+      // 止まっている理由を状態として示す" — don't claim work is actively in
+      // flight when Health Connect is off and nothing can actually be sent
+      // right now.
+      let title: string;
+      let message: string;
+      if (pendingDeleteCount === 0) {
+        title = 'All data deleted';
+        message = 'Every activity has been permanently deleted.';
+      } else if (healthConnectEnabled) {
+        title = 'Deleted from this device';
+        message = `Every activity has been deleted from this device. ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's are' : ' is'} still being sent to Health Connect — check progress anytime in Settings › Health Connect.`;
+      } else {
+        title = 'Deleted from this device';
+        message = `Every activity has been deleted from this device. Health Connect has ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's' : ''} waiting — reconnect in Settings › Health Connect to resume.`;
+      }
+
+      Alert.alert(title, message, [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (mountedRef.current) router.back();
+          },
+        },
+      ]);
     } catch (error) {
       logError('deleteAllActivities failed', error);
-      setStep('confirm');
+      if (mountedRef.current) setStep('confirm');
       Alert.alert('Could not delete', 'Please try again.');
+    } finally {
+      deletingRef.current = false;
     }
   };
 
@@ -92,8 +151,9 @@ export default function DeleteDataScreen() {
             </Text>
             {Platform.OS === 'android' && (
               <Text style={[styles.caption, { color: colors.textTertiary }]}>
-                Records already sent to Health Connect will be deleted there too, which can take a moment. If you
-                uninstall Solo + Us before that finishes, those records will remain in Health Connect.
+                Records already sent to Health Connect will be deleted there too, over time. If you close Solo + Us
+                before that finishes, deletion pauses and picks up again the next time you open the app. If you
+                uninstall Solo + Us before it finishes, those records will remain in Health Connect.
               </Text>
             )}
             <Text style={[styles.caption, { color: colors.textTertiary }]}>

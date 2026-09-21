@@ -10,7 +10,7 @@ import * as ActivityService from '../../services/ActivityService';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
 import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
-import { setSetting } from '../../services/SettingsRepository';
+import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { addSecondsIso, nowUtcIso } from '../../lib/datetime';
 
 let db: TestDb;
@@ -281,5 +281,54 @@ describe('deleteAllActivities — §10.6 bulk-applies §10.1 to every Activity',
     expect(survivingJob?.operation).toBe('delete'); // 順5: a delete job survives the Activity itself so the outbox can still reach Health Connect
     expect(survivingJob?.externalRecordId).toBe('hc-1');
     expect(await HealthSyncRepository.findMapping(db, synced.id, 'health_connect')).toBeNull(); // §10.2 step 3
+  });
+
+  it('順2: a create job that may have already reached the provider (attempts > 0, no mapping yet) is replaced with delete, not dropped — the exact case §10.6 names as "同期済みだけを対象にしない"', async () => {
+    await enableHealthConnect();
+    const activity = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    const claimAt = addSecondsIso(nowUtcIso(), 6);
+    const claimed = await HealthSyncJobRepository.claimNextDueJob(db, 'health_connect', claimAt);
+    expect(claimed).not.toBeNull(); // attempts is now 1 — an external create may have already gone out
+
+    await ActivityService.deleteAllActivities(db);
+
+    const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+    expect(job?.operation).toBe('delete'); // not silently dropped — the provider might still have this record
+    expect(job?.attempts).toBe(0); // reset on replace
+    expect(job?.claimedAt).toBeNull();
+  });
+
+  it('順5 batches correctly across more than one mapping-only Activity (insertJobsBulk path, not just a single row)', async () => {
+    await enableHealthConnect();
+    const first = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    const second = await ActivityService.recordActivity(db, { context: 'partnered', instantUtc: new Date('2026-09-15T14:42:00Z') });
+    for (const activity of [first, second]) {
+      await HealthSyncRepository.upsertMapping(db, { activityId: activity.id, provider: 'health_connect', externalRecordId: `hc-${activity.id}` });
+      await HealthSyncJobRepository.deleteJob(db, activity.id, 'health_connect');
+    }
+
+    await ActivityService.deleteAllActivities(db);
+
+    for (const activity of [first, second]) {
+      const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
+      expect(job?.operation).toBe('delete');
+      expect(job?.externalRecordId).toBe(`hc-${activity.id}`);
+    }
+  });
+
+  it('resets healthConnect.lastSyncedAt to null (§10.6 "全削除の開始時点で...以前の「Last synced」を残すと誤解を招く")', async () => {
+    await enableHealthConnect();
+    await setSetting(db, 'healthConnect.lastSyncedAt', '2026-09-14T14:42:00Z');
+    await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+
+    await ActivityService.deleteAllActivities(db);
+
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).toBeNull();
+  });
+
+  it('resets healthConnect.lastSyncedAt to null even when there is nothing to delete', async () => {
+    await setSetting(db, 'healthConnect.lastSyncedAt', '2026-09-14T14:42:00Z');
+    await ActivityService.deleteAllActivities(db);
+    expect(await getSetting(db, 'healthConnect.lastSyncedAt')).toBeNull();
   });
 });

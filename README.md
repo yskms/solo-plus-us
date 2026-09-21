@@ -2443,11 +2443,11 @@ About の追加した PRIVACY 記載（Health Connect 同期・Export 平文）�
 
 | 層 | 内容 |
 |---|---|
-| `services/ActivityService.ts` | 既存の `deleteActivity`（§10.1/§10.2、1件削除）から、トランザクションを開かない内部関数 `applyDeletePlan(tx, id)` を抽出。新規 `deleteAllActivities(db)` は1つの `db.transaction` の中でこれを全 Activity 分ループする——§10.6「§10.1 の判定表をそのまま全 Activity へ適用する」を、既存の1件削除ロジックの再利用で満たす（新しい判定ロジックは書いていない）。`ActivityRepository.deleteAllActivities`（Import の置換復元が使う生の全削除、delete ジョブを作らない）とは別物——同名だが別モジュールの別関数であることを両方の doc comment に明記した |
-| `app/settings/delete-data.tsx`（新規） | 確認画面 → 実行 の2ステップ。確認文は §17 のモック文言に準拠（Android では Health Connect 反映の注意文を追加、iOS ではその段落を出さない——Health Connect 自体が Android 専用機能のため）。実行は `SyncCoordinator.runExclusive(() => ActivityService.deleteAllActivities(db))`——`health-connect.tsx` の切断処理と同じ形（コールバックは1関数呼び出しのみ、内側から drain 相当は呼ばない）。完了後 `useDataRevision().bump()` を呼び、Today/Calendar/Insights に反映する |
+| `services/ActivityService.ts` | 新規 `deleteAllActivities(db)`。既存の `deleteActivity`（§10.1/§10.2、1件削除）から抽出した `applyDeletePlan(tx, id)` は使わず、プロバイダごとに `findAllJobsForProvider`/`findAllMappingsForProvider` で既存のジョブ・マッピングだけを一括取得し、その集合にだけ `planForDelete`（判定ロジック自体は共有、`applyDeletePlan` と同じ純粋関数）を適用したうえで、`HealthSyncRepository.deleteAllMappings`/`ActivityRepository.deleteAllActivities`（Import の置換復元が使うのと同じ生の一括 DELETE）で仕上げる——基本設計 §10.6 自身の擬似コード（「1. ジョブを整理する／2. health_sync を全削除／3. activities を全削除」）に沿った形（**2巡目のレビューで、当初の「全Activityを1件ずつループ」実装から書き直した——下記「レビューで見つかり、修正したもの」参照**）。全削除の開始時に `healthConnect.lastSyncedAt`（`SYNC_DERIVED_SETTING_KEYS`、`ImportService.performReplaceImport` と同じ定数）を `null` にリセットする処理もここに追加 |
+| `repositories/HealthSyncJobRepository.ts` | `insertJobsBulk` に `externalRecordId`（省略可）を追加——順5（マッピングのみ→新規 delete ジョブ）をバッチ挿入するために必要だった。既存呼び出し元（`HealthSyncResyncService.queueResync`）は省略時 `NULL` のままなので非破壊的な変更 |
+| `app/settings/delete-data.tsx`（新規） | 確認画面 → 実行 の2ステップ。確認文は §17／基本設計 §10.6 双方のモック文言を統合（Android では Health Connect 反映の注意文——「アプリを閉じると一時停止・再開する」「アンインストールすると再開できない」の両方——を追加、iOS ではその段落を出さない）。実行は `SyncCoordinator.runExclusive(() => ActivityService.deleteAllActivities(db))`——`health-connect.tsx` の切断処理と同じ形。完了後 `useDataRevision().bump()` を呼び、Today/Calendar/Insights に反映する |
 | `app/settings/index.tsx` | DATA セクションに「Delete Data」の行を追加（既存の「Export & Import」とは別行・別画面——Export/Import は1つのステップマシン画面を共有する理由があるが、Delete は共有する状態を持たない単発の破壊的操作のため） |
 | `app/_layout.tsx` | `settings/delete-data` の `Stack.Screen` タイトルを追加 |
-| `services/SyncCoordinator.ts`／`app/settings/health-connect.tsx`／`app/settings/data.tsx` | 「§10.6 は配線先が無い／対象外」としていた doc comment を、実際の配線先（`delete-data.tsx`）を指す内容に更新 |
 
 #### スコープの判断：§18 モックの進行表示画面（「Health Connect 12/47」）は作らない
 
@@ -2479,16 +2479,104 @@ doc comment に同じ判断を明記した。
 言及）を添えた。これは §17 の確認文そのものへの追加ではなく、確認文の下に別行として
 表示するモック非記載の補足であり、既存の Export 導線への案内に留まる。
 
+#### レビューで見つかり、修正したもの
+
+ユーザーによるレビュー（コミット 80217d6 が対象、基本設計 §10.6/§9.12 と
+`ImportService`/`SyncCoordinator`/`health-connect.tsx` との突き合わせ）で
+6件の指摘を受けた。うち1件は仕様違反、4件は仕様との不整合・堅牢性の問題、
+1件は軽微な指摘の集合だった。
+
+1. **【要対応・仕様違反】`healthConnect.lastSyncedAt` を `null` にしていな
+   かった**：基本設計 §10.6 が独立した見出し（「`lastSyncedAt` を全削除の
+   開始時に `null` にする」）で明記している手順を落としていた。結果、全削除
+   直後は Settings > Health Connect の「Last synced」が削除前の同期時刻の
+   ままになり、その後 delete ジョブが drain されるとその時刻で上書きされる
+   ため、§10.6 が防ごうとしていた「記録が0件なのに『さっき同期しました』と
+   出る」状態が実機の実機確認そのもので再現していた。`ImportService.
+   performReplaceImport` の先例（`SYNC_DERIVED_SETTING_KEYS` を `null` に
+   リセット）と対称になる形で、`deleteAllActivities` の `db.transaction`
+   内に同じ処理を追加した
+2. **【仕様との不整合】完了アラートが「HC 未接続で止まっている」場合を区別
+   しない**：基本設計 §10.6 は「Health Connect が未接続の場合」に独立した
+   見出しを立て、「削除中」と「再接続待ち」を分けることを求めている
+   （「進行バーを出したまま止めない。止まっている理由を状態として示す」）。
+   以前は `pendingDeleteCount > 0` なら常に「送信中」と表示しており、HC が
+   OFF のときも実際には1件も送られないのに送信中と伝えていた。
+   `healthConnect.enabled` を読み、OFF の場合は「Health Connect has N
+   deletions waiting — reconnect... to resume.」に文言を出し分けるようにした
+   （`isAvailable()`/`hasWritePermission()` 相当のネイティブ呼び出しまでは
+   行っていない——§10.6 自身が名指ししているのは接続トグルの ON/OFF であり、
+   これらのネイティブ呼び出しは D-41 により cancel/timeout が無いため、削除
+   自体が成功した後にこれを待って完了アラートの表示自体をブロックするリスク
+   の方が大きいと判断した）
+3. **【仕様との不整合】確認文に「アプリを閉じると一時停止する」旨が無かっ
+   た**：基本設計 §10.6 自身の確認文（「完了までアプリを開いたままにして
+   ください」）と UI/UX §17 のモック（「完了前にアプリを削除すると、Health
+   Connect には残ります」）は文言が異なるが、意味しているところ（アプリを
+   閉じると一時停止し再開できる／アンインストールすると永久に再開できない、
+   は別の事象）は両方とも実際の制約（§6.2 バックグラウンド同期なし）を反映
+   している。実装は後者（アンインストール注意）だけを含めていたため、前者
+   （「閉じると一時停止・再度開くと再開」）も追加した
+4. **【堅牢性】1トランザクション内で Activity 数 × プロバイダ数の逐次クエリ
+   になっていた**：当初の実装は全 Activity を1件ずつループし `applyDeletePlan`
+   を呼んでいたため、Health Connect を一度も使っていない Activity（順6・
+   ジョブもマッピングも無い）についても無駄に2クエリ（job/mapping の
+   SELECT）が発生し、件数が多いと「Deleting…」のまま数十秒かかりうる
+   状態だった。基本設計 §10.6 自身の擬似コード（「1. ジョブを整理する／
+   2. health_sync を全削除／3. activities を全削除」）の形に書き直し、
+   プロバイダごとに実在する job/mapping（同期履歴がある Activity だけ、
+   通常は全 Activity よりずっと少ない）だけを一括取得して判定し、mapping
+   のみで delete ジョブが無い分（順5）は `insertJobsBulk`（`externalRecordId`
+   を渡せるよう拡張）でバッチ挿入、最後に `health_sync`/`activities` を
+   それぞれ1回の DELETE で一括削除するようにした。これにより支配的だった
+   コスト（総 Activity 数に比例する無駄な順6判定）を解消した——`services/
+   ActivityService.ts`/`repositories/HealthSyncJobRepository.ts` の doc
+   comment 参照
+5. **【堅牢性】busy 中に画面を離れると `router.back()` が別画面を pop する**：
+   削除実行中にヘッダーの戻る／バックジェスチャでこの画面を離れると、
+   `handleDelete` の Promise はコンポーネントの生死と無関係に継続し、完了
+   アラート（OS レベルのダイアログ）はその時点でどの画面の上にいても表示
+   される。その OK ハンドラが無条件に `router.back()` していたため、
+   Settings 一覧など別の画面から余計に1段階戻ってしまう経路があった。
+   `health-connect.tsx` に既にある `mountedRef` パターンを移植し、この
+   画面がまだマウントされている場合のみ `router.back()` するよう変更した
+6. **軽微、4件**：
+   - **ボタン順序**（§17 モックは「キャンセル・削除」の順）：**対応せず**——
+     このアプリの同種の確認画面（`data.tsx` の `confirmReplace`）は既に
+     「破壊的操作のボタンを上・Cancel を下」で実装済みで、`delete-data.tsx`
+     もそれに揃えている。モックの左右順ではなく、既存の姉妹画面との一貫性を
+     優先した（doc comment に理由を明記）
+   - **二重タップで `handleDelete` が2回走りうる**：`setStep('busy')` は
+     非同期のため、同一フレーム内の連続タップが両方とも通り抜けうる状態
+     だった。`deletingRef`（同期的なガード）を追加した
+   - **iOS + `healthkit` の将来的な扱い**：`ALL_PROVIDERS` に `healthkit` が
+     含まれる一方、`pendingDeleteCount` の集計は `Platform.OS === 'android'`
+     固定になっている。HealthKit 未実装の現状では正しいが、実装時にはこの
+     判定を「2つ目のプロバイダが有効か」ベースに直す必要がある旨を
+     `delete-data.tsx` に TODO コメントとして残した
+   - **テストの穴**：§10.6 が名指しで強調する「順2（`attempts > 0` の
+     create、mapping 無し → 同期済みだけを対象にしない）」が
+     `deleteAllActivities` 側のテストに無かった。追加した。あわせて、
+     `insertJobsBulk` のバッチ経路が単一行だけでなく複数行でも正しく動く
+     ことのテスト、`lastSyncedAt` が `null` にリセットされることのテスト
+     （Activity が無い場合を含む）も追加した
+
+対応しなかったもの（上記「ボタン順序」以外）：無し（指摘6件のうち5件は
+コード変更、1件は既存の姉妹画面との一貫性を理由に意図的に見送り）。
+
 #### テスト
 
 `services/ActivityService.ts` の `deleteAllActivities` は
 `test/__tests__/activityService.integration.test.ts` に追加（`deleteActivity` と
 同じ better-sqlite3 統合テスト）：全件削除されること、Activity が無い場合に
 no-op であること、Activity ごとに異なる §10.1 の分岐（順1: 未送信 create は
-そのまま消す／順5: 同期済みマッピングのみの Activity には新規 delete ジョブが
-残る）が一括適用でも個別適用と同じ結果になることを検証。`app/settings/
-delete-data.tsx` 自体は他の画面コンポーネントと同様ユニットテスト対象外——
-`npx tsc --noEmit` と全テストスイート（28スイート・401件）のパスで検証した。
+そのまま消す／順2: 送信済みかもしれない create は delete に置き換える／順5:
+同期済みマッピングのみの Activity には新規 delete ジョブが残る、複数件での
+バッチ挿入経路を含む）が一括適用でも個別適用と同じ結果になることを検証。
+`healthConnect.lastSyncedAt` が `null` にリセットされること（Activity が
+無い場合を含む）も検証。`app/settings/delete-data.tsx` 自体は他の画面
+コンポーネントと同様ユニットテスト対象外——`npx tsc --noEmit` と全テスト
+スイート（28スイート・405件）のパスで検証した。
 
 #### 実機確認（Pixel 3、2026-09-21）
 
@@ -2512,6 +2600,22 @@ Activity（1件、Health Connect 接続済み・同期済みの状態）に対�
 （この確認で削除した1件は、直前までの Settings 機能検証で使っていたテスト用の
 記録——README の他の「実機確認」節と同じ、この端末での標準的な検証手順の一部。）
 
+**レビュー指摘の再確認（同日、Pixel 3）**：新たに Solo の記録を1件作成し、
+`SyncWorkerLoop` の drain で Health Connect への同期が完了する（「Last
+synced」に時刻が入る）ことを確認したうえで、改めて Delete All Data を実行した。
+
+- 確認画面の文言が「閉じると一時停止・再開できる」「アンインストールすると
+  Health Connect に残る」の両方を含む形に更新されていることを確認した
+- 完了アラートは引き続き「1 deletion is still being sent to Health Connect」
+  （HC 接続中の文言）を正しく表示した
+- 完了直後、Settings > Health Connect の「Last synced」は一瞬「Never」相当の
+  状態を経て、数秒後に新しい時刻へ更新された——これは指摘1の再発ではなく、
+  `SyncWorker.ts` の `finalizeDeleteSuccess` が「delete ジョブが実際に成功
+  した時点」でも `lastSyncedAt` を更新するという、この全削除機能とは無関係の
+  既存の正しい挙動（delete も「同期が成功した」という事実の一種のため）。
+  トランザクションのコミット直後に `null` になっていること自体は、上記の
+  単体テストで直接検証済み
+
 #### Known gaps
 
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため）——
@@ -2523,6 +2627,14 @@ Activity（1件、Health Connect 接続済み・同期済みの状態）に対�
 - **セーフティ Export ファイルの蓄積は未解消**：上記「Export/Import の UI」節の
   Known gaps 参照——Delete Data は Activity データを消すだけで、ディスク上の
   セーフティ Export ファイルには触れない別物
+- **既存ジョブの置き換え（順2/3/4）はまだ Activity 単位のループ**：上記
+  「レビューで見つかり、修正したもの」4番のバルク化は、対象を「全 Activity」
+  から「その時点で実在する job/mapping（同期履歴があるものだけ）」に絞る
+  ところまでで止めている。未処理ジョブ（送信待ちのバックログ）が大量に残って
+  いる状態（例：`queueResync` 直後に即全削除する等）では、この部分はまだ
+  件数に比例する。実運用でのバックログはこの部分よりずっと大きくなりにくい
+  と判断し、完全な SQL 一括更新への書き換え（分岐ロジックを SQL に再実装する
+  必要があり、間違えやすい箇所を増やすリスクがある）は見送った
 
 ## Phase 4 実装状況
 
