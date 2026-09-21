@@ -2153,6 +2153,66 @@ reject されることを確認済み——詳細は D-20 の「確認結果」�
 
 ---
 
+## D-52 Partnered の Protection は「既定表示」ではなく「常時表示」として実装する
+
+**決定**
+
+`context === 'partnered'` の Activity では、`activityDetails.protection`
+設定の値・記録済みかどうかに関わらず、Protection を常に表示する
+（`lib/activityDetailsFields.ts` の `isFieldVisible`）。Settings で
+Protection を OFF にしても、Partnered の記録ではこの項目を隠す手段が
+ない。
+
+**背景**
+
+UI/UX Specification Screen 04「Partnered の場合」の文言は「Protection を
+**既定表示**にする。ただし Solo で選べないようハードゲートはしない。」
+——素直に読めば「Partnered では初期値が ON になるが、Solo と同様に本人が
+OFF にできる」という*既定値の文脈依存*であって、*表示の強制*ではない。
+
+**「既定表示」ではなく「常時表示」にした理由**
+
+`activityDetails.protection` は単一の boolean 設定であり、Solo/Partnered
+で別々の値を持たない（§6.3・07a の設定画面はコンテキストを問わない全体
+設定として実装済み）。この1個の boolean だけでは、以下の2状態を区別
+できない：
+
+- 「一度も触っていない既定 OFF」
+- 「利用者が Partnered での Protection 非表示を意図して明示的に OFF に
+  した」
+
+文言通りの「既定表示」（Partnered では初期値 ON、Solo と同じく OFF に
+できる）を実装するには、tri-state（unset/on/off）化するか、
+`activityDetails.protection.partnered` のようなコンテキスト別の設定キー
+を新設する必要がある——いずれも v1 の設定モデルに対する非自明な拡張で、
+今回のスコープ（§6.3 の出し分けロジックの実装）を超える。
+
+**受け入れる帰結**
+
+- Partnered の記録では、Protection を非表示にする手段が無い（Solo は
+  従来通り設定で隠せる——「ハードゲートはしない」はこの Solo 側の挙動に
+  ついてのみ字義通り満たしている）
+- これは §6.3 の中心的な主張（「アプリが利用者の属性を推定し出し分けを
+  決めるのではなく、本人が選ぶ」）と、この1点に限り向きが逆になる。
+  ただし Screen 04 自身が Protection を安全に関わる情報として特別扱い
+  している以上、v1 の妥協として許容できると判断した
+- Settings 画面（`app/settings/activity-details.tsx`）の文言はこの挙動に
+  触れていない——「Values you have already recorded are always shown,
+  even if turned off.」は記録済みの値についての注記であり、Partnered の
+  常時表示とは別の話。利用者が Protection を OFF にしたのに Partnered の
+  記録で出続ける理由は、現状 UI 上で説明されない
+
+**再検討する場合**
+
+設定モデルを tri-state 化する、またはコンテキスト別キーを追加する
+機会（他の理由でスキーマ変更が必要になったタイミングなど）があれば、
+文言通りの「既定表示」に寄せることを検討する。その際は D-11「ALTER
+TABLE のみ」の制約と、`activityDetails.*` の Export allowlist
+（`types/Settings.ts` の `EXPORTABLE_SETTING_KEYS`）への影響も合わせて
+確認すること。
+
+---
+
 ## 実装着手の前提条件
 
 以下が確定するまで DB を触るコードを書かない。すべて DB ファイル形式かドライバ選定を決めるため。

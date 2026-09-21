@@ -67,11 +67,16 @@ export function hasRecordedValue(field: ActivityDetailField, activity: RecordedC
  * — never persisted, so re-opening the screen later falls back to settings +
  * recorded values only.
  *
- * UI/UX Screen 04「Partnered の場合」: Protection is shown by default for a
- * `partnered` Activity regardless of the `activityDetails.protection`
- * setting — "ただし Solo で選べないようハードゲートはしない" means this is
- * additive only (Solo still follows the normal setting/recorded/revealed
- * rule below, never force-hidden).
+ * UI/UX Screen 04「Partnered の場合」: Protection is shown *unconditionally*
+ * for a `partnered` Activity, not merely defaulted on — the setting can't
+ * override it there, which is a deliberate reading of "既定表示" beyond
+ * what the spec text alone says, forced by the setting model being a
+ * single boolean with no way to distinguish "untouched default" from
+ * "explicitly turned off" (設計判断記録 D-52: rationale, alternatives
+ * considered, and the accepted consequence that Partnered can't hide
+ * Protection). "ただし Solo で選べないようハードゲートはしない" means this
+ * is additive only for Partnered — Solo still follows the normal
+ * setting/recorded/revealed rule below, never force-hidden.
  */
 export function isFieldVisible(
   field: ActivityDetailField,

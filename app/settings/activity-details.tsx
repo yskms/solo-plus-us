@@ -7,7 +7,11 @@
  *
  * ここで変更するのは「未記録の項目を編集画面（`app/activity/[id].tsx`）に
  * 出すかどうか」だけ——既に記録済みの値は設定に関わらず常に表示される
- * （`lib/activityDetailsFields.ts` の不変条件）。
+ * （`lib/activityDetailsFields.ts` の不変条件）。Protection はさらに、
+ * Partnered の Activity では本設定を OFF にしても常に表示される
+ * （§6.3 の中心的な主張から意図的に外れる例外——理由・帰結は設計判断記録
+ * D-52 参照）。下記キャプションはこの1点だけ、属性の話に踏み込まず事実
+ * のみを伝える形で明示している。
  */
 import React, { useCallback, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
@@ -90,7 +94,8 @@ export default function ActivityDetailsSettingsScreen() {
         </View>
 
         <Text style={[styles.caption, { color: colors.textTertiary }]}>
-          Values you have already recorded are always shown, even if turned off.
+          Values you have already recorded are always shown, even if turned off. Protection is also
+          always shown for partnered activities.
         </Text>
       </ScrollView>
     </SafeAreaView>
