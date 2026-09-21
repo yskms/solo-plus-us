@@ -30,21 +30,32 @@
  * §17's mockup lists it, but there is no hosted policy URL yet — the user
  * has decided it will link out to an externally-hosted page (not be drafted
  * or embedded in-app) once that URL exists. Add the row when the URL is
- * available; don't add it with a placeholder URL. "Version" has no
- * destination by design (§17 mockup shows it with no `>` chevron) — it's
- * read from `app.json`'s `expo.version` rather than hardcoded, so it never
- * drifts from the real build.
+ * available; don't add it with a placeholder URL — when it's added, it
+ * belongs in the same `SettingsGroup` as "About Solo + Us"/"Version" (§17's
+ * mockup shows all three as one card, which is why `Row` supports a
+ * non-navigable `value` variant rather than splitting "Version" into its
+ * own group). "Version" reads `Application.nativeApplicationVersion`
+ * (falling back to `app.json`'s `expo.version` only where the native module
+ * returns `null`, e.g. web) rather than importing `app.json` directly —
+ * a raw `app.json` import reflects the JS bundle's build-time value, which
+ * can drift from what's actually installed (an OTA-updated bundle, or a
+ * future `app.config.js`/EAS `remote`/`autoIncrement` version source) —
+ * see 2026-09-21 review.
  */
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Application from 'expo-application';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import appConfig from '../../app.json';
 
 interface Row {
   label: string;
-  onPress: () => void;
+  /** Omitted for a non-navigable info row (e.g. "Version") — no chevron, no press handler, matching §17's mockup where that row has no `>`. */
+  onPress?: () => void;
+  /** Present only for a non-navigable row; rendered where the chevron would otherwise go. */
+  value?: string;
 }
 
 /** Dividers are derived from position (`index > 0`), not passed per-row — a row added between two others can't silently end up missing one. */
@@ -52,37 +63,38 @@ function SettingsGroup({ rows }: { rows: Row[] }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      {rows.map((row, index) => (
-        <Pressable
-          key={row.label}
-          onPress={row.onPress}
-          style={({ pressed }) => [
-            styles.row,
-            { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
-            index > 0 && { borderTopWidth: StyleSheet.hairlineWidth },
-          ]}
-          accessibilityRole="button"
-        >
-          <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{row.label}</Text>
-          <Text style={[styles.chevron, { color: colors.textTertiary }]}>›</Text>
-        </Pressable>
-      ))}
+      {rows.map((row, index) => {
+        const border = [{ borderColor: colors.border }, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth }];
+        if (!row.onPress) {
+          return (
+            <View
+              key={row.label}
+              style={[styles.row, ...border]}
+              accessible
+              accessibilityLabel={row.value !== undefined ? `${row.label}, ${row.value}` : row.label}
+            >
+              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{row.label}</Text>
+              {row.value !== undefined && <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{row.value}</Text>}
+            </View>
+          );
+        }
+        return (
+          <Pressable
+            key={row.label}
+            onPress={row.onPress}
+            style={({ pressed }) => [styles.row, ...border, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{row.label}</Text>
+            <Text style={[styles.chevron, { color: colors.textTertiary }]}>›</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-/** A non-navigable info row (e.g. "Version") — no chevron, no press handler, matching §17's mockup where this row has no `>`. */
-function StaticValueRow({ label, value }: { label: string; value: string }) {
-  const { colors } = useTheme();
-  return (
-    <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.row}>
-        <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
-        <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{value}</Text>
-      </View>
-    </View>
-  );
-}
+const appVersion = Application.nativeApplicationVersion ?? appConfig.expo.version;
 
 export default function SettingsIndexScreen() {
   const { colors } = useTheme();
@@ -121,8 +133,12 @@ export default function SettingsIndexScreen() {
         />
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ABOUT</Text>
-        <SettingsGroup rows={[{ label: 'About Solo + Us', onPress: () => router.push('/settings/about') }]} />
-        <StaticValueRow label="Version" value={appConfig.expo.version} />
+        <SettingsGroup
+          rows={[
+            { label: 'About Solo + Us', onPress: () => router.push('/settings/about') },
+            { label: 'Version', value: appVersion },
+          ]}
+        />
       </ScrollView>
     </SafeAreaView>
   );

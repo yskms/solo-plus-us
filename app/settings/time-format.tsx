@@ -6,14 +6,18 @@
  * persistent tab (not remounted on navigating back from here), so saving
  * must bump `useDataRevision()` for the change to actually reflow it — see
  * that context's file doc comment. `app/record.tsx`/`app/activity/[id].tsx`
- * re-read the setting on their own mount, so they don't need the bump, but
- * it's harmless for them either way.
+ * re-read the setting on their own mount instead, so the bump doesn't
+ * matter to them either way. That `bump()` also happens to re-trigger
+ * `contexts/SyncWorkerLoop.tsx`'s drain (it subscribes to the same
+ * revision counter) — harmless (drains are serialized via `drainingRef`),
+ * just not the reason this call exists; noted per 2026-09-21 review.
+ * Layout is `components/SettingsOptionScreen.tsx`, shared with
+ * `appearance.tsx`/`first-day-of-week.tsx`.
  */
 import React, { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
+import SettingsOptionScreen from '../../components/SettingsOptionScreen';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
@@ -26,7 +30,6 @@ const OPTIONS: { value: TimeFormat; label: string }[] = [
 ];
 
 export default function TimeFormatSettingsScreen() {
-  const { colors } = useTheme();
   const db = useDatabase();
   const { bump } = useDataRevision();
   const [value, setValue] = useState<TimeFormat | null>(null);
@@ -34,14 +37,20 @@ export default function TimeFormatSettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
       getSetting(db, 'preferences.timeFormat')
-        .then(setValue)
+        .then((loaded) => {
+          if (!cancelled) setValue(loaded);
+        })
         .catch((error) => logError('Loading preferences.timeFormat failed', error));
+      return () => {
+        cancelled = true;
+      };
     }, [db]),
   );
 
   const persist = async (next: TimeFormat) => {
-    if (next === value) return;
+    if (value === null || next === value) return;
     const previous = value;
     setValue(next);
     setBusy(true);
@@ -57,52 +66,5 @@ export default function TimeFormatSettingsScreen() {
     }
   };
 
-  if (value === null) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary, padding: spacing.md }}>Loading…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {OPTIONS.map((option, index) => (
-            <Pressable
-              key={option.value}
-              onPress={() => persist(option.value)}
-              disabled={busy}
-              style={({ pressed }) => [
-                styles.row,
-                { borderColor: colors.border, opacity: pressed || busy ? 0.6 : 1 },
-                index > 0 && { borderTopWidth: StyleSheet.hairlineWidth },
-              ]}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: value === option.value }}
-            >
-              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{option.label}</Text>
-              {value === option.value && <Text style={[styles.checkmark, { color: colors.solo }]}>✓</Text>}
-            </Pressable>
-          ))}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <SettingsOptionScreen options={OPTIONS} value={value} busy={busy} onSelect={persist} />;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { padding: spacing.md, gap: spacing.sm },
-  group: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    minHeight: minTouchTarget,
-  },
-  rowLabel: { fontSize: 15, fontWeight: '500' },
-  checkmark: { fontSize: 16, fontWeight: '700' },
-});

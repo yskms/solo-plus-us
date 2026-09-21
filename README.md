@@ -2253,7 +2253,8 @@ Data（§10.6）は破壊的操作で `SyncCoordinator.runExclusive` を要す�
 | `app/settings/first-day-of-week.tsx`（新規） | Monday/Sunday の選択画面。`preferences.firstDayOfWeek` は Phase 1 から存在し `screens/CalendarScreen.tsx` 等が既に参照していたが、値を変える UI が無い「設定の器だけがある」状態だった（§6.3 着手前の `activityDetails.*` と同じパターン）。`app/settings/appearance.tsx` と同じラジオ選択の見た目 |
 | `app/settings/time-format.tsx`（新規） | 12-hour/24-hour の選択画面。`preferences.timeFormat` も同様に器だけの状態だった |
 | `app/settings/about.tsx`（新規） | 「About Solo + Us」。要件定義書 §3.1/§3.2（コンセプト・原則）と §19.1（プライバシー基本方針）に基づく事実のみで構成——Insights 同様、評価的な文言（§16 で禁止されている「Better sexual health.」的な言い回し）を混入させないよう明記 |
-| `app/settings/index.tsx` | PREFERENCES に First Day of Week/Time Format の2行を追加。ABOUT セクションを新設し「About Solo + Us」行と、非タップの `StaticValueRow`（新規コンポーネント）で「Version」を追加。バージョンは `app.json` の `expo.version` から動的に読む（モック文言の "Version 1.0" を固定値として転記しない——実際のビルドから乖離しないようにするため） |
+| `components/SettingsOptionScreen.tsx`（新規） | 単一選択のラジオ選択画面の共通レイアウト。`appearance.tsx`/`first-day-of-week.tsx`/`time-format.tsx` の3画面目でほぼ同一実装が重複したため抽出（下記レビュー参照）。値の読み込み・永続化はデータソースが画面ごとに異なる（Appearance は Context、他2画面は `SettingsRepository` 直読み）ため各画面側に残し、本コンポーネントは表示のみを担う |
+| `app/settings/index.tsx` | PREFERENCES に First Day of Week/Time Format の2行を追加。ABOUT セクションを新設し「About Solo + Us」「Version」を1つの `SettingsGroup` にまとめた（§17 モックが3行を1カードで示しているため——下記レビュー参照）。バージョンは `Application.nativeApplicationVersion`（`expo-application`）から読む——`app.json` を直接 import する案は「JSバンドルのビルド時点の値」であり実際にインストールされているネイティブバイナリのバージョンとは限らない（OTA更新等で乖離しうる）ため、レビュー指摘を受けて変更した |
 | `app/_layout.tsx` | 上記3画面の `Stack.Screen` タイトルを追加 |
 
 **「Privacy Policy」行は意図的に未実装**（§17 のモックには行タイトルの
@@ -2275,8 +2276,77 @@ Settings への画面遷移では unmount されない（`isActive` は「どの
 再発火しない。両画面とも保存成功時に `useDataRevision().bump()` を呼ぶ
 ことで、Calendar 側の再読み込みをトリガーする（`contexts/DataRevision.tsx`
 の「画面遷移で拾われない書き込みは bump を呼ぶ」という既存規約どおり）。
-`app/record.tsx`/`app/activity/[id].tsx` は毎回マウント時に自前で
-`getSetting` するため bump は不要だが、実害はないため両画面とも呼んでいる。
+**この `bump()` は Calendar タブにとって必須**——呼ばなければ設定変更が
+画面に反映されるのはアプリ再起動後になる。`app/record.tsx`/`app/activity/
+[id].tsx` は毎回マウント時に自前で `getSetting` するため、この2画面に
+限ってはこの `bump()` が無くても正しく動くが、Calendar 側の必須性から
+両画面とも呼んでいる。
+
+**副次的な影響（2026-09-21 レビュー指摘）**：`contexts/SyncWorkerLoop.tsx`
+も同じ `revision` を購読しているため、表示設定を変更するたびに Health
+Connect の `drainDueJobs` が呼ばれる。`drainingRef` により直列化されて
+おり実害は無い（CLAUDE.md の「drain トリガを増やす際は `SyncWorkerLoop`
+の直列化を経由すること」にも、経由しているため違反しない）が、「表示
+設定の変更＝同期ワーカー起動」は意図した設計ではない副作用として認識
+しておく。将来 `bump()` の粒度を分ける（Activity データの変更とその他の
+表示設定変更を別カウンタにする等）動機になり得る。
+
+#### レビューで見つかり、修正したもの
+
+1. **【中】Version が `app.json` の直 import だった**：JSバンドルのビルド
+   時点の値であり、実際にインストールされているネイティブバイナリの
+   バージョンとは限らない（OTA更新でバンドルだけ差し替わった場合や、
+   将来 `app.config.js`/EAS の `appVersionSource: remote`/`autoIncrement`
+   を導入した場合に乖離しうる）。`expo-application` の
+   `nativeApplicationVersion`（`null` の場合のみ `app.json` の値へ
+   フォールバック）に変更した。この変更で `expo-application`/
+   `expo-constants`（Phase 1 から package.json にあるが未使用だった）が
+   初めてネイティブ側でリンクされるため、Android のネイティブ再ビルドが
+   必要だった（`npx expo-modules-autolinking resolve` で事前に解決対象へ
+   含まれることを確認してから実行——スキーマ変更は無いためアンインストール
+   は不要、CLAUDE.md 参照）
+2. **【中】About の PRIVACY が Health Connect 同期・Export 平文に触れて
+   いなかった**：「Your activity data stays on this device, encrypted」
+   だけでは、Health Connect 同期を ON にした場合に日時・避妊具使用の
+   有無が Health Connect 側（＝他アプリが読み得る場所）にも書かれること
+   や、Export ファイルが平文であること（§19.2 の必須要件）が伝わらない。
+   `app/settings/health-connect.tsx`/`app/settings/data.tsx` が実行画面
+   側で個別に明示している事実と同じ内容を、新しい文言を創作せず2行
+   追加した
+3. **【低】First Day of Week/Time Format の変更が Health Connect の
+   drain も起動する**：上記「反映先についての注意」に追記して対応（コード
+   変更ではなく、意図した設計ではない副作用として明示するドキュメント
+   対応）
+4. **【低】`useFocusEffect` の非同期ロードに未マウント/再フォーカス時の
+   キャンセルが無かった**：保存直後に再フォーカスが重なると、in-flight
+   だった古い `getSetting` の結果が新しい保存値を上書きする余地があった。
+   `contexts/Appearance.tsx` の読み込み effect が既に使っている
+   `let cancelled = false` のクリーンアップパターンを2画面に追加した
+5. **【低】保存失敗時のロールバックが型上 `null` を書き戻しうる**：
+   `persist` の先頭に `value === null` のガードを追加し、ロールバック対象
+   が常に非 `null` であることを保証した（現状 `value === null` の間は
+   Loading 表示でタップ不可のため実害は無いが、型で保証されない限り将来の
+   変更で壊れうる）
+6. **【低】Loading 分岐の `SafeAreaView` に `edges={['bottom']}` が無い**：
+   `appearance.tsx` からそのまま踏襲していた既存の見落とし。共通コンポーネント
+   `SettingsOptionScreen` へ抽出する際に1箇所で修正した
+7. **【低】ABOUT が §17 モックと異なり2枚のカードに分かれていた**：
+   モックは About/Privacy Policy/Version を1グループとして示している。
+   `Row` に非タップの `value` バリアントを追加し、`SettingsGroup` を
+   1つにまとめた（Privacy Policy 行を追加する際もこの1グループに入れれば
+   よい）
+8. **【低】ラジオ選択画面が3つ目の重複だった**：`appearance.tsx`/
+   `first-day-of-week.tsx`/`time-format.tsx` がスタイルを含めほぼ同一
+   実装だったため、`components/SettingsOptionScreen.tsx` へ抽出した
+   （データの読み込み・永続化は画面ごとに異なるため残し、表示のみ共通化）
+9. **【低】アクセシビリティの細部**：ラジオ行のコンテナに
+   `accessibilityRole="radiogroup"` を追加（`SettingsOptionScreen` に集約）。
+   Version 行は `accessibilityLabel="Version, 0.1.0"` のように1つのラベルで
+   読み上げられるよう `SettingsGroup` 側で対応した
+10. **【nit】`about.tsx` のアポストロフィ表記ゆれ**：カーリー（`'`）と
+    直線（`'`）が混在していたのを直線に統一した
+
+対応しなかったもの：無し（指摘10件すべて対応）。
 
 #### テスト
 
@@ -2285,16 +2355,38 @@ Settings への画面遷移では unmount されない（`isActive` は「どの
 398件）のパスのみで検証した。ロジック自体（`getSetting`/`setSetting`・
 `resolveLocaleDefaults`）は Phase 1 から既存のテスト対象。
 
-#### 実機確認（Pixel 11、2026-09-21）
+#### 実機確認（Pixel 3、2026-09-21）
 
-Settings → First Day of Week で Sunday→Monday に変更 → 戻る操作
-（ハードウェアバック）で Settings・Today を経由 → Calendar タブへ
-切り替えたところ、曜日ヘッダーが `M T W T F S S`（Monday 始まり）に
-即座に反映されていることを確認した——上記の `bump()` が実際に機能して
-いることの直接的な証拠。Time Format も選択状態が保存後に正しく
+**当初「Pixel 11」と記録していたが誤り**：`adb devices -l` で確認したところ
+接続機はモデル `Pixel_3`/デバイス `blueline`（実機確認当時の接続シリアルは
+D-20/§6.3 で使っているのと同じ個体）——本項を訂正。
+
+1回目（レビュー前の実装直後）：Settings → First Day of Week で
+Sunday→Monday に変更 → 戻る操作（ハードウェアバック）で Settings・Today を
+経由 → Calendar タブへ切り替えたところ、曜日ヘッダーが `M T W T F S S`
+（Monday 始まり）に即座に反映されていることを確認した——`bump()` が実際に
+機能していることの直接的な証拠。Time Format も選択状態が保存後に正しく
 チェックマークへ反映されることを確認した。About Solo + Us は内容が
 意図通り表示されることを確認した。確認後、First Day of Week は元の
 値（この端末のロケール既定である Sunday）に戻した。
+
+2回目（レビュー指摘の修正後）：Version 表示の `expo-application` 化は
+ネイティブモジュールの初リンクを伴うため、`cd android && ./gradlew
+installDebug` でこの端末に再インストールして確認した（スキーマ変更は
+無いためアンインストール不要）。**`Application.nativeApplicationVersion`
+が実際に効いていることの確認方法**：`app.json` の `version` だけを
+一時的に別の値（`"9.9.9-jsonly-test"`）に書き換え、JS バンドルだけを
+再読み込みさせても Settings の Version 表示が `0.1.0`（実際にビルドに
+埋め込まれた値）のままで変化しないことを確認した——もし
+`app.json` の直 import にフォールバックしていれば `9.9.9-jsonly-test`
+に変わっていたはずで、変わらなかったことがネイティブ値を読んでいる
+ことの直接的な証拠になる。確認後 `app.json` は `0.1.0` に戻した。
+あわせて、ABOUT が「About Solo + Us」「Version」の1カードにまとまった
+こと、Version 行の accessibility label が `"Version, 0.1.0"` になった
+こと、`components/SettingsOptionScreen.tsx` へ共通化した後も Appearance/
+First Day of Week/Time Format の3画面がそれぞれ変わらず動作すること、
+About の追加した PRIVACY 記載（Health Connect 同期・Export 平文）が
+表示されることを確認した。
 
 #### Known gaps
 
@@ -2302,7 +2394,8 @@ Settings → First Day of Week で Sunday→Monday に変更 → 戻る操作
   追加する
 - **Delete Data（§10.6）は未実装**：別タスクとして扱う（上記参照）
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中の
-  ため）
+  ため）——`expo-application`/`expo-constants` は iOS 側でもまだ実機で
+  リンクを確認していない（今回リンクを確認したのは Android のみ）
 
 ## Phase 4 実装状況
 

@@ -131,6 +131,36 @@ drain トリガや破壊的操作を追加することになるため、この2�
   `Platform.OS === 'android'` でガードすること——Health Connect は
   Android 専用機能（§9.11）なので、iOS でこの画面自体を表示しない。
 
+### package.json にあるのに未リンクなネイティブモジュール（Gradle デーモンのキャッシュ）
+
+`expo-application`/`expo-constants` は Phase 1 から `package.json` の
+dependencies にあったが、実際には一度もネイティブ側でリンクされておらず、
+2026-09-21（Settings > Version 表示で `expo-application` を初めて使おうと
+した際）まで気づかれていなかった。`npx expo-modules-autolinking resolve -p
+android --json` を直接実行すると両方とも解決対象に含まれるのに、Android の
+通常のネイティブビルド（`expo run:android`・`./gradlew installDebug`）を
+何度実行しても効果が無かった。
+
+**原因は Gradle デーモンの再利用**：`expo-modules-autolinking` の解決結果は
+Gradle の settings 評価フェーズでキャッシュされる。デーモンが起動したまま
+だと、依存関係の解決結果が古いまま使い回されることがある（今回は長時間
+（2日以上）起動しっぱなしだった `expo run:android` プロセスが影響していた
+可能性が高い）。
+
+**新しいネイティブモジュール（native code を持つ Expo モジュール）を
+package.json に追加した／既存の未使用モジュールを初めて import した際、
+通常のビルドで一見成功していてもリンクされていないことがある。** 疑わしい
+場合は、ビルド前に一度 `cd android && ./gradlew --stop` で Gradle デーモンを
+止めてから再ビルドすること。`android/build/generated/autolinking/
+autolinking.json`（React Native コミュニティ側の legacy autolinking 設定）
+は Expo モジュールのリンク状況の確認には使えない——別物なので確認先を
+間違えないこと。確実な確認方法は、対象モジュールの値だけが変わる形で
+JS 側のフォールバック値と native 側の値を意図的に食い違わせ（例：
+`app.json` の `version` を一時的に別の値へ変更して JS だけリロードし、
+native から読んだ値が変わらないことを見る）、実際に native 経由で
+読めているかを実機で確認すること——見た目の値が同じだと「動いているように
+見えるだけ」で気づけない。
+
 ### Android のダーク/ライト切替まわりの落とし穴
 
 画面遷移中に一瞬見える帯や、テーマ切替の反映漏れは `contentStyle`（React Navigation

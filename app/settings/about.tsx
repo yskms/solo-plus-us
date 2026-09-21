@@ -14,15 +14,25 @@ import { useTheme, spacing } from '../../constants/theme';
 const PRINCIPLES = [
   { title: 'Judgment-free', body: "Solo + Us doesn't rate your activity as high, low, good, or bad." },
   { title: 'No streak pressure', body: "There's no streak counter and nothing to keep up." },
-  { title: 'Low friction', body: 'Recording a moment takes one tap — pick a type, and it’s logged with the current time.' },
+  { title: 'Low friction', body: "Recording a moment takes one tap — pick a type, and it's logged with the current time." },
   { title: 'Privacy first', body: 'Your data is sensitive, so it stays on this device by default.' },
   { title: 'Long-term data', body: "Built for keeping records over years, not just building a short-term habit." },
 ];
 
+/**
+ * §19.1's basics, plus two exceptions to "stays on this device" that a
+ * reader of only this screen could otherwise miss (2026-09-21 review):
+ * Health Connect sync writes a subset of a record outside the app's own
+ * encrypted storage, and Export files are plaintext by design (§12.4/§13.3
+ * — see `app/settings/health-connect.tsx`/`app/settings/data.tsx` for the
+ * screens that state this at the point of action; this is only a summary).
+ */
 const PRIVACY_FACTS = [
   'No account required',
-  'Your activity data stays on this device, encrypted',
+  'Your activity data is encrypted and stored on this device',
   "We don't run a server that receives your activity data",
+  'If you turn on Health Connect sync, the date/time and whether protection was used is also written there',
+  'Files you export are not encrypted',
   'Your data is never used for advertising',
   'No analytics or crash reporting SDKs in this version',
 ];
