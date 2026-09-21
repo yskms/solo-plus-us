@@ -3,8 +3,9 @@
  * §13.3 Import flow the mockup doesn't draw but §25's `ImportPreview` /
  * `DestructiveConfirm` components (and the "12,431 件を読み込みます / 現在
  * の 8,902 件は置き換えられます" preview copy) describe. "Delete Data" (the
- * third DATA row in §17's mockup, §10.6) is intentionally not here yet —
- * out of scope for this round (see README).
+ * third DATA row in §17's mockup, §10.6) is its own screen,
+ * `app/settings/delete-data.tsx` — a single destructive action with
+ * nothing to share with this file's Export/Import step-machine.
  *
  * One file, not three routes, mirroring `components/RecoveryScreen.tsx`'s
  * step-state approach: Import is a multi-step flow (pick → validate →

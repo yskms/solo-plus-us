@@ -1134,6 +1134,8 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
   `services/SafetyExportService.ts` を再確認する必要がある
 - **Delete Data（§10.6）は未実装**：UI/UX §17 の DATA セクションの3行目。基本設計 §18 の
   Phase 3 に明記された項目ではないため今回のスコープに含めていない
+  （**解消: 2026-09-21、`phase3/delete-data` ブランチで実装——「Delete Data（§10.6）」
+  の節参照**）
 - **Export schema の Migration（§13.2）は未実装**：現行 export version が 1 のみで、
   古いバージョンが存在しないため。v2 を出す時点で `migrateExportV1ToV2` 等を追加する必要
   がある（`services/importValidation.ts` は現状 `version !== CURRENT_EXPORT_VERSION` を
@@ -1142,9 +1144,11 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
   `menu` ステップへ戻るのみで、同じ確認画面へワンタップで戻る導線は無い（Cancel から
   やり直す形になる）
 - **セーフティ Export ファイルを削除する導線が無い**：タイムスタンプ付きで毎回新しい
-  ファイルとして残るため（上記レビュー参照）、Delete Data（未実装）が無い現状では
-  蓄積し続ける。iOS は Files アプリにも公開していない（`UIFileSharingEnabled` 未設定）
-  ため、アプリ内から削除する仕組みが無い限り利用者自身も消せない
+  ファイルとして残るため（上記レビュー参照）蓄積し続ける。iOS は Files アプリにも
+  公開していない（`UIFileSharingEnabled` 未設定）ため、アプリ内から削除する仕組みが
+  無い限り利用者自身も消せない。**Delete Data（§10.6、2026-09-21実装）はこれを
+  解消しない**——`activities`/`health_sync*` テーブルの中身を消すだけで、
+  ディスク上のセーフティ Export ファイル自体には一切触れない別物（対象が違う）
 - **Import 後の Health Connect 再同期は未実装**（§13.6/D-34「recreate」）：Phase 4 の
   項目なので今は問題ないが、置換復元は `health_sync` の対応関係を全削除するため、
   Phase 4 で Health Connect を実装する際に必ず対応が必要になる箇所として残しておく
@@ -2422,10 +2426,103 @@ About の追加した PRIVACY 記載（Health Connect 同期・Export 平文）�
 
 - **Privacy Policy 行は未実装**：上記の通り、外部 URL が用意でき次第
   追加する
-- **Delete Data（§10.6）は未実装**：別タスクとして扱う（上記参照）
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中の
   ため）——`expo-application`/`expo-constants` は iOS 側でもまだ実機で
   リンクを確認していない（今回リンクを確認したのは Android のみ）
+
+**Delete Data（§10.6）は別ブランチ（`phase3/delete-data`）で実装**（解消:
+2026-09-21）——下記「Delete Data（§10.6）」の節参照。
+
+### Delete Data（§10.6、2026-09-21、実装完了）
+
+`phase3/delete-data` ブランチ。上記「Preferences・About」の節で「破壊的操作で
+`SyncCoordinator.runExclusive` を要する別種の作業」として意図的に対象外とした
+残件に着手した。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `services/ActivityService.ts` | 既存の `deleteActivity`（§10.1/§10.2、1件削除）から、トランザクションを開かない内部関数 `applyDeletePlan(tx, id)` を抽出。新規 `deleteAllActivities(db)` は1つの `db.transaction` の中でこれを全 Activity 分ループする——§10.6「§10.1 の判定表をそのまま全 Activity へ適用する」を、既存の1件削除ロジックの再利用で満たす（新しい判定ロジックは書いていない）。`ActivityRepository.deleteAllActivities`（Import の置換復元が使う生の全削除、delete ジョブを作らない）とは別物——同名だが別モジュールの別関数であることを両方の doc comment に明記した |
+| `app/settings/delete-data.tsx`（新規） | 確認画面 → 実行 の2ステップ。確認文は §17 のモック文言に準拠（Android では Health Connect 反映の注意文を追加、iOS ではその段落を出さない——Health Connect 自体が Android 専用機能のため）。実行は `SyncCoordinator.runExclusive(() => ActivityService.deleteAllActivities(db))`——`health-connect.tsx` の切断処理と同じ形（コールバックは1関数呼び出しのみ、内側から drain 相当は呼ばない）。完了後 `useDataRevision().bump()` を呼び、Today/Calendar/Insights に反映する |
+| `app/settings/index.tsx` | DATA セクションに「Delete Data」の行を追加（既存の「Export & Import」とは別行・別画面——Export/Import は1つのステップマシン画面を共有する理由があるが、Delete は共有する状態を持たない単発の破壊的操作のため） |
+| `app/_layout.tsx` | `settings/delete-data` の `Stack.Screen` タイトルを追加 |
+| `services/SyncCoordinator.ts`／`app/settings/health-connect.tsx`／`app/settings/data.tsx` | 「§10.6 は配線先が無い／対象外」としていた doc comment を、実際の配線先（`delete-data.tsx`）を指す内容に更新 |
+
+#### スコープの判断：§18 モックの進行表示画面（「Health Connect 12/47」）は作らない
+
+§18 の完全なモックは、削除実行中に外部への削除件数を「12 / 47」のようにライブで
+数え上げる専用の進行画面と、アプリ再起動後は「残り 35 件」に出し分ける表示を求めて
+いる。今回はこれを作らなかった。
+
+- 基本設計 §10.6 自身が「進行総数は永続化しないため、再起動後は残り件数だけを
+  表示する」と明記しており、再起動後に必要なのは残り件数のクエリだけ——これは
+  既存の `HealthSyncJobRepository.findAllJobsForProvider` で既に取得できる
+- Settings > Health Connect の「UNSYNCED CHANGES」（§10.4、`health-connect.tsx`）が、
+  件数表示・個別の retry/discard を**全削除が作った delete ジョブに対しても**
+  そのまま提供する——全削除専用の別集計・別ポーリング UI を重複して作る理由が無い
+- 実際、実機確認（下記）では全削除で作られた delete ジョブは数秒のうちに
+  `SyncWorkerLoop` の既存 drain によって自動的に消化され、専用の進行 UI が無くても
+  Health Connect 画面の「Last synced」が更新され「Everything is synced.」に戻る
+  ところまで確認できた
+
+この画面が実装するのは確認と（ローカルは即時完了する）実行の2ステップのみ——
+外部への反映の可視化は既存の Health Connect 画面に委ねる。ファイル冒頭の
+doc comment に同じ判断を明記した。
+
+#### セーフティ Export は行わない（§13.3 との違い）
+
+置換復元（§13.3）は実行前に必ずセーフティ Export を要求するが、全削除の確認文
+（§17 モック）にはその記載が無く、基本設計 §10.6 もセーフティ Export を要求して
+いない。実装もこれに従い、強制的なバックアップは行わない——ただし確認画面の文言に
+「先に Export しておくとよい」という非強制の一文（Settings › Export & Import への
+言及）を添えた。これは §17 の確認文そのものへの追加ではなく、確認文の下に別行として
+表示するモック非記載の補足であり、既存の Export 導線への案内に留まる。
+
+#### テスト
+
+`services/ActivityService.ts` の `deleteAllActivities` は
+`test/__tests__/activityService.integration.test.ts` に追加（`deleteActivity` と
+同じ better-sqlite3 統合テスト）：全件削除されること、Activity が無い場合に
+no-op であること、Activity ごとに異なる §10.1 の分岐（順1: 未送信 create は
+そのまま消す／順5: 同期済みマッピングのみの Activity には新規 delete ジョブが
+残る）が一括適用でも個別適用と同じ結果になることを検証。`app/settings/
+delete-data.tsx` 自体は他の画面コンポーネントと同様ユニットテスト対象外——
+`npx tsc --noEmit` と全テストスイート（28スイート・401件）のパスで検証した。
+
+#### 実機確認（Pixel 3、2026-09-21）
+
+Settings > Delete Data で確認画面（Android 向けの Health Connect 注意文つき）が
+表示されること、Cancel で Settings へ戻ることを確認した。実際に同期済み
+Activity（1件、Health Connect 接続済み・同期済みの状態）に対して Delete All Data
+を実行したところ：
+
+1. 確認直後のアラートが「Every activity has been deleted from this device. 1
+   deletion is still being sent to Health Connect」と、単数形が正しく（`1
+   deletion**s are**` ではなく `1 deletion**is**`）表示された
+2. OK で Settings 一覧へ戻った
+3. Settings > Health Connect を開くと、専用の進行 UI を一切実装していないにも
+   関わらず、既存の drain が既に完了しており「UNSYNCED CHANGES: Everything is
+   synced.」・「Last synced」が削除実行時刻に更新されていた——上記スコープ判断の
+   前提（既存の Health Connect 画面だけで進行が可視化できる）が実機で成立する
+   ことを確認した
+4. Today タブは `bump()` により即座に「No activities recorded yet.」へ切り替わり、
+   アプリ再起動を要さなかった
+
+（この確認で削除した1件は、直前までの Settings 機能検証で使っていたテスト用の
+記録——README の他の「実機確認」節と同じ、この端末での標準的な検証手順の一部。）
+
+#### Known gaps
+
+- **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため）——
+  確認文の Health Connect 段落を出し分けるコード自体は書いたが、iOS 実機/
+  シミュレータでの表示は未確認
+- **進行表示専用画面は無い**：上記「スコープの判断」参照。既存の Health Connect
+  画面（§10.4）で代替しているが、§18 モックの「12/47」ライブ進行バーそのものは
+  無い
+- **セーフティ Export ファイルの蓄積は未解消**：上記「Export/Import の UI」節の
+  Known gaps 参照——Delete Data は Activity データを消すだけで、ディスク上の
+  セーフティ Export ファイルには触れない別物
 
 ## Phase 4 実装状況
 

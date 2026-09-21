@@ -126,51 +126,82 @@ export async function updateActivity(db: Transactor, id: string, patch: Activity
  * clear the mapping (FK RESTRICT would otherwise block the Activity
  * delete) before finally deleting the Activity row.
  *
+ * Takes an already-open `tx` and does *not* open its own transaction, so
+ * both a single delete (`deleteActivity`, one `db.transaction` around one
+ * call) and a bulk delete (`deleteAllActivities`, one `db.transaction`
+ * around many calls) can share this without nesting transactions.
+ *
  * Naturally idempotent: calling this twice on an already-deleted id is a
  * no-op (every read comes back empty, every plan is 'noop', the final
  * DELETE affects zero rows) — this is what makes `undoLastRecord` safe to
  * tap more than once (D-15 "冪等に実装する").
  */
-export async function deleteActivity(db: Transactor, id: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    for (const provider of ALL_PROVIDERS) {
-      const [job, mapping] = await Promise.all([
-        HealthSyncJobRepository.findJob(tx, id, provider),
-        HealthSyncRepository.findMapping(tx, id, provider),
-      ]);
-      const mappingExists = mapping !== null;
-      const plan = planForDelete(toCurrentJobState(job), toMappingState(mapping));
+async function applyDeletePlan(tx: SqlExecutor, id: string): Promise<void> {
+  for (const provider of ALL_PROVIDERS) {
+    const [job, mapping] = await Promise.all([
+      HealthSyncJobRepository.findJob(tx, id, provider),
+      HealthSyncRepository.findMapping(tx, id, provider),
+    ]);
+    const mappingExists = mapping !== null;
+    const plan = planForDelete(toCurrentJobState(job), toMappingState(mapping));
 
-      switch (plan.action) {
-        case 'delete-job':
-          await HealthSyncJobRepository.deleteJob(tx, id, provider);
-          break;
-        case 'replace':
-          await HealthSyncJobRepository.replaceJob(tx, id, provider, {
-            operation: plan.operation,
-            externalRecordId: mapping?.externalRecordId ?? null,
-            notBefore: nowUtcIso(),
-          });
-          break;
-        case 'insert':
-          await HealthSyncJobRepository.insertJob(tx, {
-            activityId: id,
-            provider,
-            operation: plan.operation,
-            externalRecordId: mapping?.externalRecordId ?? null,
-            notBefore: nowUtcIso(),
-          });
-          break;
-        case 'noop':
-          break;
-      }
-
-      if (mappingExists) {
-        await HealthSyncRepository.deleteMapping(tx, id, provider); // §10.2 step 3, before the Activity row goes (FK RESTRICT)
-      }
+    switch (plan.action) {
+      case 'delete-job':
+        await HealthSyncJobRepository.deleteJob(tx, id, provider);
+        break;
+      case 'replace':
+        await HealthSyncJobRepository.replaceJob(tx, id, provider, {
+          operation: plan.operation,
+          externalRecordId: mapping?.externalRecordId ?? null,
+          notBefore: nowUtcIso(),
+        });
+        break;
+      case 'insert':
+        await HealthSyncJobRepository.insertJob(tx, {
+          activityId: id,
+          provider,
+          operation: plan.operation,
+          externalRecordId: mapping?.externalRecordId ?? null,
+          notBefore: nowUtcIso(),
+        });
+        break;
+      case 'noop':
+        break;
     }
 
-    await ActivityRepository.deleteActivityRow(tx, id); // §10.2 step 4
+    if (mappingExists) {
+      await HealthSyncRepository.deleteMapping(tx, id, provider); // §10.2 step 3, before the Activity row goes (FK RESTRICT)
+    }
+  }
+
+  await ActivityRepository.deleteActivityRow(tx, id); // §10.2 step 4
+}
+
+export async function deleteActivity(db: Transactor, id: string): Promise<void> {
+  await db.transaction((tx) => applyDeletePlan(tx, id));
+}
+
+/**
+ * §10.6 "全 Activity 削除" (Settings > Delete Data): applies §10.1's
+ * per-Activity branching to every Activity, in one transaction — not
+ * `ActivityRepository.deleteAllActivities`, which is a raw table wipe used
+ * only by `ImportService.performReplaceImport` *after* health_sync/
+ * health_sync_jobs have already been cleared separately (§13.3), and which
+ * deliberately creates no delete jobs (a replace-restore isn't "delete this
+ * from Health Connect too" — §10.6's own table draws that distinction).
+ *
+ * Caller's responsibility, not this function's (§9.12, same layering as
+ * `ImportService.performReplaceImport` — see `services/SyncCoordinator`'s
+ * doc comment "対象範囲"): run this through `SyncCoordinator.runExclusive`
+ * against the live app DB, and don't call it from inside another
+ * `runExclusive` callback (nesting deadlocks the serialization queue).
+ */
+export async function deleteAllActivities(db: Transactor): Promise<void> {
+  await db.transaction(async (tx) => {
+    const activities = await ActivityRepository.findAllActivities(tx);
+    for (const activity of activities) {
+      await applyDeletePlan(tx, activity.id);
+    }
   });
 }
 

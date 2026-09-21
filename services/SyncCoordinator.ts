@@ -85,10 +85,12 @@
  *   の置換復元と同じ形。渡すコールバックは `setSetting` 一発のみで、
  *   内側から drain 相当の処理は呼ばない（ネストするとデッドロックする、
  *   上記「直列化」節参照）。
- * - **全Activity削除（§10.6）は Settings UI 自体がまだ無いため配線先が
- *   無い**——実装時は必ず、アプリ本体の DB に対する呼び出し側で
- *   `runExclusive` 経由にすること（Repository/Service から直接
- *   `health_sync_jobs` を全削除しない、§9.12 の明記事項）。
+ * - **全Activity削除（§10.6）は `app/settings/delete-data.tsx` の
+ *   `handleDelete` が配線する**：`SyncCoordinator.runExclusive(() =>
+ *   ActivityService.deleteAllActivities(db))` として呼ぶ——切断処理と同じ
+ *   形。渡すコールバックは `deleteAllActivities` 一発のみで、内側から
+ *   drain 相当の処理は呼ばない（ネストするとデッドロックする、上記
+ *   「直列化」節参照）。
  */
 
 /** `isSuspended()` を導出する。0 = 通常状態、>0 = 破壊的操作が1件以上「呼ばれてから完全に終わるまで」の区間にある。 */

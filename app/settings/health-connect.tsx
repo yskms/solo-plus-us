@@ -5,10 +5,12 @@
  * （`app/settings/index.tsx` が `Platform.OS === 'android'` でこの行自体を
  * 出し分けている——Health Connect は Android 専用機能、§9.11）。
  *
- * §10.6「全 Activity 削除」の進行表示付きフローはここには無い——
- * `app/settings/data.tsx`/`index.tsx` の doc comment ですでに明示的に
- * 対象外とされている（README 参照）。切断時の警告が見るのは「未処理の
- * delete job」だけで、全削除フローとは無関係。
+ * §10.6「全 Activity 削除」（`app/settings/delete-data.tsx`）の進行表示
+ * 付きフローはここには無い——その画面の doc comment に記載の通り、意図的な
+ * スコープ判断（README 参照）。この画面の切断時の警告が見るのは「未処理の
+ * delete job」だけで、全削除フロー自体とは無関係——全削除が作った delete
+ * ジョブも他のジョブと同じ形でこの画面の UNSYNCED CHANGES に現れ、同じ
+ * retry/discard 導線で扱われる。
  *
  * ## モックからの意図的な逸脱
  * 1. §18 は Partnered/Solo 別々の ON/OFF トグルを描くが、データモデルは

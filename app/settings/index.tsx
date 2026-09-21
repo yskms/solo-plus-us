@@ -6,10 +6,12 @@
  * in README's Phase 3 section). TRACKING's "Activity Details" row
  * (§6.3/Screen 07a) links to `settings/activity-details.tsx`. DATA is a
  * single "Export &
- * Import" row rather than §17's separate Export/Import/Delete rows —
- * `settings/data.tsx` covers Export and Import; Delete (§10.6) isn't built
- * yet, so the mockup's three-row split isn't followed literally (see
- * README). "Hide App Preview" (§18 画面マスク) links to an informational
+ * Import" row plus a separate "Delete Data" row, rather than §17's three
+ * separate Export/Import/Delete rows — `settings/data.tsx` covers Export
+ * and Import (they share one step-machine screen); `settings/
+ * delete-data.tsx` covers Delete (§10.6, added 2026-09-21 — see README)
+ * as its own screen since it's a single destructive action with nothing to
+ * share with Export/Import's flow. "Hide App Preview" (§18 画面マスク) links to an informational
  * screen, not a toggle — see `lib/screenMask.ts`. "Block Screenshots" is a
  * real opt-in toggle (default off), added 2026-09-18 when always-on
  * screenshot blocking was reversed to opt-in — see CLAUDE.md's「スクリーン
@@ -122,7 +124,12 @@ export default function SettingsIndexScreen() {
         )}
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
-        <SettingsGroup rows={[{ label: 'Export & Import', onPress: () => router.push('/settings/data') }]} />
+        <SettingsGroup
+          rows={[
+            { label: 'Export & Import', onPress: () => router.push('/settings/data') },
+            { label: 'Delete Data', onPress: () => router.push('/settings/delete-data') },
+          ]}
+        />
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TRACKING</Text>
         <SettingsGroup rows={[{ label: 'Activity Details', onPress: () => router.push('/settings/activity-details') }]} />

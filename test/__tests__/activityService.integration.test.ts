@@ -251,3 +251,35 @@ describe('deleteActivity — §10.1 branching', () => {
     expect(job?.operation).toBe('delete'); // still queued for cleanup even though the provider is currently off
   });
 });
+
+describe('deleteAllActivities — §10.6 bulk-applies §10.1 to every Activity', () => {
+  it('removes every Activity row', async () => {
+    await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    await ActivityService.recordActivity(db, { context: 'partnered', instantUtc: new Date('2026-09-15T14:42:00Z') });
+
+    await ActivityService.deleteAllActivities(db);
+
+    expect(await ActivityRepository.findAllActivities(db)).toHaveLength(0);
+  });
+
+  it('is a no-op when there are no Activities at all', async () => {
+    await expect(ActivityService.deleteAllActivities(db)).resolves.toBeUndefined();
+  });
+
+  it('applies each Activity\'s own §10.1 branch rather than one blanket rule (順1 unattempted create dropped, 順5 mapping-only gets a fresh delete job)', async () => {
+    await enableHealthConnect();
+    const undoable = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') }); // 順1: unattempted create job
+    const synced = await ActivityService.recordActivity(db, { context: 'partnered', instantUtc: new Date('2026-09-15T14:42:00Z') });
+    await HealthSyncRepository.upsertMapping(db, { activityId: synced.id, provider: 'health_connect', externalRecordId: 'hc-1' });
+    await HealthSyncJobRepository.deleteJob(db, synced.id, 'health_connect'); // simulate: create job already finalized away → 順5
+
+    await ActivityService.deleteAllActivities(db);
+
+    expect(await ActivityRepository.findAllActivities(db)).toHaveLength(0);
+    expect(await HealthSyncJobRepository.findJobsForActivity(db, undoable.id)).toHaveLength(0); // 順1: dropped, not queued for external deletion
+    const survivingJob = await HealthSyncJobRepository.findJob(db, synced.id, 'health_connect');
+    expect(survivingJob?.operation).toBe('delete'); // 順5: a delete job survives the Activity itself so the outbox can still reach Health Connect
+    expect(survivingJob?.externalRecordId).toBe('hc-1');
+    expect(await HealthSyncRepository.findMapping(db, synced.id, 'health_connect')).toBeNull(); // §10.2 step 3
+  });
+});
