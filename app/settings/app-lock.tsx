@@ -8,11 +8,11 @@ import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAppLockActions } from '../../contexts/AppLock';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
+import { hasDeviceAuthEnrolled } from '../../lib/deviceAuthEnrollment';
 import { logError } from '../../lib/log';
 import type { AppLockTiming } from '../../types/Settings';
 
@@ -51,8 +51,7 @@ export default function AppLockSettingsScreen() {
       // would lock the person out of the app with no way back in — there
       // is deliberately no app-level PIN or fallback to offer instead
       // (see contexts/AppLock.tsx). Refuse rather than let that happen.
-      const level = await LocalAuthentication.getEnrolledLevelAsync();
-      if (level === LocalAuthentication.SecurityLevel.NONE) {
+      if (!(await hasDeviceAuthEnrolled())) {
         Alert.alert(
           'No device authentication set up',
           'Set up a passcode, fingerprint, or face unlock on this device before turning on App Lock.',

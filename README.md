@@ -3846,28 +3846,62 @@ dismissible なカードを出す」の案も検討したが、§15 との整合
 [app/onboarding/privacy.tsx](app/onboarding/privacy.tsx) の `onContinue`
 に、`markPrivacyIntroSeen` 成功後の処理として以下を追加。
 
-1. `expo-local-authentication` の `getEnrolledLevelAsync()` で端末に
-   認証手段（生体認証/パスコード）が登録済みか確認。「必要なら」＝
-   案内しても有効化できない端末では Alert 自体を出さない——
-   `app/settings/app-lock.tsx` の `persistEnabled` が enrollment 無しを
-   拒否するのと同じ判断
+1. [lib/deviceAuthEnrollment.ts](lib/deviceAuthEnrollment.ts)（新規）の
+   `hasDeviceAuthEnrolled()` で端末に認証手段（生体認証/パスコード）が
+   登録済みか確認。「必要なら」＝案内しても有効化できない端末では Alert
+   自体を出さない——`app/settings/app-lock.tsx` の `persistEnabled` も
+   同じ関数を使う（後述のレビュー対応で共通化）
 2. 登録済みなら `Alert.alert('Protect your entries?', ...)` を1回表示。
-   「Turn On」は `appLock.enabled` をここで直接保存せず
-   `router.push('/settings/app-lock')` で遷移させるだけ——有効化ロジック
-   （enrollment 拒否・タイミング選択）を2箇所に重複させないため。
-   「Not Now」は素通りして Today へ
-3. `cancelable`/`onDismiss` は渡していない——RN の Android `Alert.alert`
-   は `cancelable` を明示しない限り既定で `false`（実機で確認済み：
-   戻るボタンを押しても閉じない）なので、必ずどちらかのボタンでこの
-   ダイアログが終わる。他の確認 Alert（`app/settings/app-lock.tsx` の
-   「No device authentication set up」等）と同じ前提——最初は「戻る
-   ボタンで破棄されると `onPress` が呼ばれず画面に取り残される」と誤解して
-   `onDismiss` を足していたが、実機で戻るボタンがそもそも効かないことを
-   確認できたため、到達しないコードとして削除した
-4. enrollment チェック自体の失敗（`getEnrolledLevelAsync` の reject）は
+   ボタンは「Not Now」／「Go to Settings」。「Go to Settings」は
+   `appLock.enabled` をここで直接保存せず `router.push('/settings/
+   app-lock')` で遷移させるだけ——有効化ロジック（enrollment 拒否・
+   タイミング選択）を2箇所に重複させないため
+3. enrollment チェック自体の失敗（`hasDeviceAuthEnrolled` の reject）は
    `try/catch` で握り、案内を出さず Today へフォールバック——
    `reconcileHealthConnectBuildFlag` と同じ「案内できないだけで起動自体は
    止めない」判断
+
+#### レビューで見つかり、修正したもの
+
+初回実装（上記）に対する指摘。コードは変更せず指摘のみのレビューだった
+ため、対応の要否をこちらで判断して反映した。
+
+1. **【中】「Alert は必ずどちらかのボタンで終わる」という前提が不完全
+   だった**：戻るボタン/外側タップで閉じないこと（`cancelable: false`
+   既定）は実機で確認済みだったが、別の dismiss 経路を見落としていた。
+   RN の Android `Alert.alert` 実装（`DialogModule.kt`）は新しい
+   `Alert.alert` を表示する前に必ず `dismissExisting()` を呼び、表示中の
+   ダイアログを黙って dismiss する（`ACTION_DISMISSED`、どちらの
+   `onPress` も呼ばれない）。この画面のこの時点では他に `Alert.alert` を
+   呼ぶ経路は無いが、`markPrivacyIntroSeen` は既にコミット済みでこの
+   画面への戻り道も無いため、将来何かが割り込んだ場合の安全策として
+   `onDismiss`（「Not Now」と同じ扱いで Today へ）を復活させた
+2. **【中】「Go to Settings」（旧「Turn On」）は押しても App Lock が ON に
+   ならない**：Settings > App Lock 画面へ遷移するだけで、実際にトグルを
+   操作するのは利用者自身。ボタン文言が実際の挙動と食い違っていたため、
+   「Turn On」→「Go to Settings」、メッセージも「You can turn on App
+   Lock in Settings to...」に変更し、文言と挙動を一致させた
+3. **【小】`replace` → `push` を連続ディスパッチする意図がコメントに
+   無かった**：「Today を戻り先として先に用意してから App Lock 画面を
+   積む」という意図と、同一 tick 内でのディスパッチ順序に依存している
+   ことをコードコメントに明記した
+4. **【小】enrollment 判定が2箇所に重複していた**：
+   `app/onboarding/privacy.tsx` と `app/settings/app-lock.tsx` の両方に
+   `getEnrolledLevelAsync() === SecurityLevel.NONE` の判定があり、条件を
+   変える際に片方だけ直すリスクがあった。上記の通り
+   `lib/deviceAuthEnrollment.ts` に切り出して共有した
+5. **【小】README の実機確認記述が誤っていた**：「screencap が `FB is
+   protected: PERMISSION_DENIED` を返し撮れなかった——本件と無関係な
+   端末側の制約」という記述は、実は接続していた別の Android 端末
+   （Pixel 3）で起きた結果を、当時 Pixel 11 だと思い込んで書いたもの
+   だった（実機接続の途中で adb の unauthorized から気づき、ユーザーの
+   指摘で確定）。指摘そのものは「無関係と断定せず原因未特定に留めるのが
+   正確」という指摘だったが、検証し直した結果 Pixel 11 では `screencap`
+   は問題なく動作したため、この記述自体を削除した（下記「実機確認」参照）
+6. **対応不要と判断したもの**：`markPrivacyIntroSeen` を Alert 表示より
+   先に永続化している点（Alert 表示中にプロセスが落ちると、その回は
+   案内が出ないまま再起動後は Today に直行する）は、一度きり案内としては
+   許容範囲と判断し、コードは変更せず Known gaps に記録するに留めた
 
 #### テスト
 
@@ -3875,23 +3909,34 @@ dismissible なカードを出す」の案も検討したが、§15 との整合
   テスト対象外（[表示項目のカスタマイズ](#表示項目のカスタマイズ6320260921実装完了)
   の節と同じ判断）——`npx tsc --noEmit` の型チェックと、下記の実機確認で
   検証した
+- `app/settings/app-lock.tsx` を `lib/deviceAuthEnrollment.ts` 経由に
+  変更した後、既存の全テストスイート（28スイート・410件）がパスすることを
+  確認した
 
 #### 実機確認（Pixel 11、2026-09-21）
 
-`adb shell pm clear` でオンボーディング状態をリセットし、以下を確認した
-（スクリーンショットはこの端末で `screencap` が `FB is protected:
-PERMISSION_DENIED` を返し撮れなかったため、`uiautomator dump` のテキスト
-階層で確認した——本件と無関係な端末側の制約）。
+`adb shell pm clear` でオンボーディング状態をリセットし、以下を確認した。
 
-- Privacy Introduction → Continue → Alert（「Protect your entries?」）
-  →「Turn On」→ Settings > App Lock 画面へ遷移、戻るボタンで Today に
-  戻ることを確認
+- Privacy Introduction → Continue → Alert（「Protect your entries?」／
+  「You can turn on App Lock in Settings to...」）→「Go to Settings」→
+  Settings > App Lock 画面へ遷移、戻るボタンで Today に戻ることを確認
 - 再度リセットして「Not Now」経路を確認し、Settings > App Lock の
   トグルが OFF のままであることを確認
-- 再度リセットし、Alert 表示中に戻るボタンを押しても閉じない（`cancelable:
-  false` の既定通り）ことを確認——上記「実装内容」3 の判断の根拠
+- 再度リセットし、Alert 表示中に戻るボタンを押しても閉じないことを確認
+- Settings > App Lock の「Use App Lock」トグルが、共通化後の
+  `hasDeviceAuthEnrolled()` 経由でも問題なく ON にできることを確認
+  （**この検証の副作用として、この端末には App Lock が ON のまま残って
+  いる**——OFF に戻すには指紋認証/PIN が必要でこちらからは操作できない
+  ため、そのままにした。次回この端末でアプリを開く際は認証が求められる）
+- スクリーンショットは `uiautomator dump` のテキスト階層で代替した
+  （`screencap` 自体は Pixel 11 で問題なく動作することを別途確認済み——
+  上記「レビューで見つかり、修正したもの」5 参照）
 
 #### Known gaps
 
+- **`markPrivacyIntroSeen` の永続化が Alert 表示より先**：Alert 表示中に
+  アプリプロセスが終了すると、次回起動時は（オンボーディング済み扱いで）
+  Today に直行し、この案内は二度と出ない。一度きり案内としては許容範囲と
+  判断し、対応していない
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
   この機能固有の問題ではない）
