@@ -3825,3 +3825,73 @@ Android の SAF がルート直下や標準ディレクトリ（`Download` 等�
   "Choose a save location to continue" が出るだけで原因不明に見える
   （実機確認時は「新規フォルダを作成」で回避——上記手順参照）。v1 必須では
   ないが、UI 文言の改善課題として残す
+
+## v1.0 残作業 実装状況
+
+Phase 1〜4（§18）完了後、要件定義書 §25 MVP 表のうち未実装だった残り項目を
+1つずつ片付けるフェーズ。`v1.0/` ブランチ配下。
+
+### オンボーディング後の App Lock 案内（UI/UX §6、2026-09-21、実装完了）
+
+UI/UX §6 Screen 01「Continue後、必要ならApp Lock設定を案内する。」への
+対応。基本設計 §15 の画面一覧には Privacy Introduction → Today の間に
+専用画面が無い（02 → 03 に直結）ため、新規オンボーディング画面ではなく、
+Continue 直後の一度きりのネイティブ Alert として実装する方針をユーザーと
+相談のうえ選択した（他に「専用オンボーディング画面を挟む」「Today に
+dismissible なカードを出す」の案も検討したが、§15 との整合性と実装量の
+小ささからこの形にした）。
+
+#### 実装内容
+
+[app/onboarding/privacy.tsx](app/onboarding/privacy.tsx) の `onContinue`
+に、`markPrivacyIntroSeen` 成功後の処理として以下を追加。
+
+1. `expo-local-authentication` の `getEnrolledLevelAsync()` で端末に
+   認証手段（生体認証/パスコード）が登録済みか確認。「必要なら」＝
+   案内しても有効化できない端末では Alert 自体を出さない——
+   `app/settings/app-lock.tsx` の `persistEnabled` が enrollment 無しを
+   拒否するのと同じ判断
+2. 登録済みなら `Alert.alert('Protect your entries?', ...)` を1回表示。
+   「Turn On」は `appLock.enabled` をここで直接保存せず
+   `router.push('/settings/app-lock')` で遷移させるだけ——有効化ロジック
+   （enrollment 拒否・タイミング選択）を2箇所に重複させないため。
+   「Not Now」は素通りして Today へ
+3. `cancelable`/`onDismiss` は渡していない——RN の Android `Alert.alert`
+   は `cancelable` を明示しない限り既定で `false`（実機で確認済み：
+   戻るボタンを押しても閉じない）なので、必ずどちらかのボタンでこの
+   ダイアログが終わる。他の確認 Alert（`app/settings/app-lock.tsx` の
+   「No device authentication set up」等）と同じ前提——最初は「戻る
+   ボタンで破棄されると `onPress` が呼ばれず画面に取り残される」と誤解して
+   `onDismiss` を足していたが、実機で戻るボタンがそもそも効かないことを
+   確認できたため、到達しないコードとして削除した
+4. enrollment チェック自体の失敗（`getEnrolledLevelAsync` の reject）は
+   `try/catch` で握り、案内を出さず Today へフォールバック——
+   `reconcileHealthConnectBuildFlag` と同じ「案内できないだけで起動自体は
+   止めない」判断
+
+#### テスト
+
+- 画面コンポーネント（`app/`）はこのプロジェクトに前例が無くユニット
+  テスト対象外（[表示項目のカスタマイズ](#表示項目のカスタマイズ6320260921実装完了)
+  の節と同じ判断）——`npx tsc --noEmit` の型チェックと、下記の実機確認で
+  検証した
+
+#### 実機確認（Pixel 11、2026-09-21）
+
+`adb shell pm clear` でオンボーディング状態をリセットし、以下を確認した
+（スクリーンショットはこの端末で `screencap` が `FB is protected:
+PERMISSION_DENIED` を返し撮れなかったため、`uiautomator dump` のテキスト
+階層で確認した——本件と無関係な端末側の制約）。
+
+- Privacy Introduction → Continue → Alert（「Protect your entries?」）
+  →「Turn On」→ Settings > App Lock 画面へ遷移、戻るボタンで Today に
+  戻ることを確認
+- 再度リセットして「Not Now」経路を確認し、Settings > App Lock の
+  トグルが OFF のままであることを確認
+- 再度リセットし、Alert 表示中に戻るボタンを押しても閉じない（`cancelable:
+  false` の既定通り）ことを確認——上記「実装内容」3 の判断の根拠
+
+#### Known gaps
+
+- **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
+  この機能固有の問題ではない）
