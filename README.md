@@ -31,9 +31,11 @@ AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health C
 未インストール環境での ON 操作時の表示（Pixel 3、非プラットフォーム
 統合パス）。**Android 9〜13（D-20）の実機検証も完了**——存在しない
 `clientRecordId` への delete は reject され通常のリトライ・バックオフに
-乗ることを Pixel 3 実機で確認し、設計判断記録 D-20 に追記済み。§9.11 の
-リリースビルド分離・§13.6 の復元後再同期（Phase 4 の Known gap、未実装）
-は未着手。
+乗ることを Pixel 3 実機で確認し、設計判断記録 D-20 に追記済み。**§13.6
+復元後の Health Connect 再同期（`recreate`）も実装完了**——`services/
+HealthSyncResyncService.ts` と `app/settings/data.tsx` の `offerResync`
+ステップ（下記「Phase 4 実装状況」ステップ7参照）。§9.11 のリリース
+ビルド分離は未着手。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -1070,7 +1072,7 @@ UI より先に繰り上げて着手（上記「Recovery 画面」の指摘・�
   ファイルや「追加のみ」選択のために保存先選択を求めずに済むため、この順序の方が
   妥当と判断し、その理由を設計判断記録 D-27 に追記した
 - **Import 後の Health Connect 再同期（§13.6/D-34）は Phase 4 の項目**（下記 Known gaps
-  に明記）
+  に明記。**解消: 2026-09-21、§13.6 実装——「Phase 4 実装状況 > ステップ7」参照**）
 
 #### レビューで見つかり、修正したもの（2回目）
 
@@ -1137,6 +1139,7 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
 - **Import 後の Health Connect 再同期は未実装**（§13.6/D-34「recreate」）：Phase 4 の
   項目なので今は問題ないが、置換復元は `health_sync` の対応関係を全削除するため、
   Phase 4 で Health Connect を実装する際に必ず対応が必要になる箇所として残しておく
+  （**解消: 2026-09-21、§13.6 実装——「Phase 4 実装状況 > ステップ7」参照**）
 - **暗号化された Export（パスフレーズ付き）は v1.1 で検討**（§12.4 に明記、既知の対象外）
 
 ### 画面マスク
@@ -2160,7 +2163,8 @@ iOS の動作を保証しない。
 - [services/HealthConnectService.ts](services/HealthConnectService.ts)：
   `react-native-health-connect` への唯一の入口。`upsertActivity`
   （create/update 合流、§9.2/§9.4）・`deleteActivityRecord`・
-  `recreateActivity`（§9.3.1、delete 失敗時は insert しない）を提供。
+  `recreateActivity`（§9.3.1。**2026-09-21 改訂**：delete が `UNKNOWN`
+  分類で失敗した場合は insert へ進む——「ステップ7」参照）を提供。
   送るのは `time` と `protectionUsed` のみ（§9.9）、addressing は
   `clientRecordId`（= activity.id）/`clientRecordVersion`（=
   activity.syncVersion）で行い `external_record_id` は health_connect では
@@ -2908,7 +2912,10 @@ in Health Connect.」）も実機で正常に動作し、ジョブが消えて
   Android 9〜13 では「安全（副作用がない）」は成り立つが「いずれ成功する」
   は成り立たない——§13.6 実装時に別途判断が必要。詳細は
   [設計判断記録 D-20](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-20-削除の存在しないを成功として扱いread-権限は追加しない)・
-  D-34 に追記済み
+  D-34 に追記済み（**解消: 2026-09-21——`recreateActivity` を修正し、
+  delete が `UNKNOWN` 分類で失敗した場合は insert へ進むようにした
+  （§9.4 の clientRecordId upsert により二重レコードは生まれない）。
+  「Phase 4 実装状況 > ステップ7」・D-34「§13.6 実装時の結論」参照**）
 - **検証したのは「HC アプリ側で直接削除」という1経路のみ。** D-20 が
   本来想定していたのは「外部 delete に成功した直後・ローカル確定前に
   クラッシュ」というケースで、これも「対象 UID がもう存在しない」という
@@ -2954,7 +2961,10 @@ adb 経由のタップが吸われて一切効かなくなる状態を繰り返�
   D-34 の recreate 経路）への影響は未検証**——外部レコードが不在の場合、
   delete 段階で同じ reject を受け続け insert に到達できない可能性が
   あり、§13.6 実装時に別途判断が必要（詳細は上記「実機確認（Pixel 3、
-  D-20）」の注記参照）
+  D-20）」の注記参照。**解消: 2026-09-21——`recreateActivity` を修正し、
+  この delete reject（`UNKNOWN` 分類）を受けても insert へ進むように
+  なった。上記結果はいまも「delete ジョブ」自体には正確だが、recreate
+  経路はもはやここで止まらない。「Phase 4 実装状況 > ステップ7」参照**）
 - **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
   無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
   OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、
@@ -2962,3 +2972,130 @@ adb 経由のタップが吸われて一切効かなくなる状態を繰り返�
   に明文が無いため v1 は見送り（レビューで指摘・妥当と判断）。実装するなら
   `HealthConnectService.openHealthConnectSettings` のラッパーが必要
   （現状未追加）
+
+### ステップ7: 復元後の Health Connect 再同期（§13.6、実装完了）
+
+Phase 4 に残っていた唯一の機能実装。置換復元（`services/ImportService.ts`
+の `performReplaceImport`）は `health_sync`/`health_sync_jobs` を全削除
+するため、復元後は全 Activity が Health Connect に対して「未同期」に
+なる——これを §13.1「既定 OFF・明示同意制」のもとで解消する。
+
+実装後、レビューで2ラウンドの重大な指摘を受け、当初案から設計を変更
+している。以下は最終形。
+
+#### 実装内容
+
+1. **`services/HealthConnectService.ts` の `recreateActivity` 修正**
+   （§13.6/D-34、詳細は設計判断記録 D-34「§13.6 実装時の結論」参照）：
+   delete が `classifyError` で `UNKNOWN` に分類される失敗をした場合は
+   insert へ進むよう変更した。`PERMISSION_DENIED`/`UNAVAILABLE` は
+   従来通り即座に失敗。§13.6 の主要ユースケース（機種変更・復旧）では
+   復元先の Health Connect に対象レコードが1件も存在しないため、当初の
+   「delete に失敗したら常に作成しない」では Android 9〜13（D-20）で
+   recreate が**全件・恒久的に**（リトライしても解消しない）失敗して
+   いた——「大多数の環境で問題なく機能する」という当初の前提が誤って
+   いたことがレビューで判明した。二重レコードを作らない安全性は
+   `clientRecordId`（§9.4）による upsert 冪等性に由来するため、health_connect
+   ではロジック変更後も二重作成のリスクは無い。OS バージョンによる分岐、
+   エラーメッセージ文字列への依存はいずれも追加していない（D-20 の
+   2原則を維持）。
+2. **`services/HealthSyncResyncService.ts`（新規）**：
+   `queueResync(db)` と、書き込みを伴わない事前カウント
+   `countPendingResync(db)`（判定ロジックは `resolveResyncTargets` として
+   共有、2巡目のレビュー後に追加）。有効な provider ごとに全 Activity を
+   走査し、`health_sync_jobs` に該当行が無く、かつ `health_sync`
+   （mapping）の `sync_state` が `'declined'`/`'uncertain'` でないものに
+   `operation: 'recreate'` をまとめて `insertJob` する。**`sync_state
+   = 'synced'` は除外しない**（2巡目のレビューで指摘・修正——当初は
+   除外していたが、それだと Health Connect アプリ側で直接削除された
+   記録（D-20 が実機検証した経路そのもの）をこの一括操作では二度と
+   救済できなかった。ローカルは READ 権限を持たない（D-12/D-20）ため
+   「synced のままだが実は HC 側に無い」を判別できず、`recreate` は
+   常に安全（D-34）なので同期済みも含めて対象にする方を採った）。
+   `declined`/`uncertain`（D-51、利用者が明示的に「同期しない」を選んだ
+   状態）は除外し続ける——一括操作でこれを覆さない。`SyncCoordinator.
+   runExclusive` では包まない——既存の行の削除・置換を一切行わず追加のみを
+   行う点で `ActivityService.recordActivity` のジョブ挿入と同じ性質であり、
+   `runExclusive` が対象とする「破壊的操作」に該当しないため
+   （`performReplaceImport` の `runExclusive` が完了した**後**に、別の
+   ステップとして呼ぶ——同じコールバック内にネストすると
+   `SyncCoordinator.ts` の直列化キューが自己デッドロックする、CLAUDE.md
+   参照）。挿入は `HealthSyncJobRepository.insertJobsBulk`（新規、複数
+   VALUES の一括 INSERT・読み戻し無し）を使う——`@op-engineering/op-sqlite`
+   の `db.transaction()` は接続ごとに1つの FIFO キューで直列化されるため
+   （`node_modules/@op-engineering/op-sqlite/src/functions.ts` で確認）、
+   この関数の実行中はアプリ全体の他のどのトランザクション（新規記録・
+   SyncWorker の finalize 含む）も完了までブロックされる——1件あたり
+   INSERT+SELECT の2ステートメントを要する `insertJob` のループではなく
+   一括 INSERT にまとめることで、Activity 数が数百〜数千件でもこの関数
+   自体を短時間で終わらせる。
+3. **`app/settings/data.tsx` の `offerResync` ステップ（新規）**：
+   置換復元成功後、`healthConnect.enabled`（`DEVICE_OWNED_SETTING_KEYS`
+   に属し復元で変更されない）が true の場合のみ表示。「Sync to Health
+   Connect」／「Not now」の二択で、同意時のみ `queueResync` を呼ぶ。
+   HC が無効な場合はこの画面自体をスキップし、従来通り Import 完了の
+   Alert のみを表示する。
+4. **`app/settings/health-connect.tsx` の「Sync everything to Health
+   Connect」（新規、恒久的な入口）**：レビュー指摘で追加。`offerResync`
+   は一度きりの画面のため、「Not now」を押す・画面を離れる・復元直後に
+   アプリが落ちる等で同意の機会を逃すと再同期する手段が無く、復元後は
+   `health_sync` が空になり以後の編集も `planForEdit` が noop を返し
+   続ける（D-51）ため、**基本設計 §13.3.2「復元後に Activity を編集
+   すれば、通常どおり同期ジョブが作られる」という約束と矛盾する恒久的な
+   未救済状態**になっていた。Settings > Health Connect にいつでも呼べる
+   ボタンとして追加し、`queueResync` を再利用する。**この入口は §13.6
+   が本来規定する「復元後の再同期」の範囲を超えて使える**（2巡目の
+   レビュー指摘）——例えば HC を初めて ON にした直後に押せば、過去の
+   全履歴を一括送信できる。センシティブなデータを外部へまとめて送る
+   操作のため、確認ダイアログを出す前に `countPendingResync` で対象件数を
+   数え、件数を明示したうえで同意を取る（`handleResyncEverything`）。
+5. **`app/settings/health-connect.tsx` の N+1 クエリ修正**：
+   レビュー指摘。Unsynced changes 一覧の描画（5秒ポーリングごと）が
+   `findActivityById` をジョブ1件ごとに呼んでいたが、`queueResync`
+   により一度に数百〜数千件のジョブが増えうるようになったため、
+   `findAllActivities` の一括読み込み1回＋ Map 参照に変更した。
+
+#### テスト
+
+- `services/__tests__/HealthConnectService.test.ts`：`recreateActivity` の
+  分岐（`UNKNOWN` は insert へ進む／`PERMISSION_DENIED`・`UNAVAILABLE`
+  は進まない／insert も失敗すればジョブ全体は失敗のまま）
+- `test/__tests__/exportImport.integration.test.ts`：`queueResync`/
+  `countPendingResync` の統合テスト——全 Activity × 有効 provider に
+  `recreate` が積まれること、HC 無効時は何も積まれないこと、既存ジョブが
+  ある Activity はスキップされ上書きされないこと（ユニーク制約違反が
+  起きないことの直接的な証拠）、連続2回呼んでも冪等であること、
+  Activity 0件のエッジケース、`synced` mapping は再送される一方
+  `declined`/`uncertain` はスキップされること、`countPendingResync` が
+  書き込みをせず `queueResync` と同じ件数を返すこと
+- `test/__tests__/syncWorker.integration.test.ts`：`queueResync` が積んだ
+  ジョブが実際に `SyncWorker.drainDueJobs` で処理されるまでの
+  end-to-end（積まれたジョブが即 due であること・claim/finalize まで
+  通ること）
+
+#### Known gaps
+
+- **実機での一連のフロー確認は未実施**：ロジック・UI 文言の実装と
+  ユニット/統合テストは完了しているが、実際に置換復元→同意画面→
+  「Sync to Health Connect」（または Settings > Health Connect の
+  「Sync everything to Health Connect」）→ Unsynced changes への反映、
+  という流れを実機で確認するタスクが残る（`schema.ts` の変更は無いため、
+  確認にあたって既存アプリのアンインストールは不要）。特に Android 9〜13
+  実機での `recreateActivity` の insert-after-delete-failure 経路
+  （D-20 と同じ Pixel 3 環境で再検証可能）
+- **Health Connect のレート制限は未調査（D-41）**：`queueResync` は
+  積んだジョブすべてを即 due（`not_before` = 実行時刻）にするため、
+  数百〜数千件の recreate が SyncWorker の claim/finalize ループで
+  連続して Health Connect に送られる。1件ずつ順次処理するため一度に
+  大量呼び出しが飛ぶわけではないが、連続呼び出しに対するレート制限の
+  有無・挙動は未確認
+- **Unsynced changes 一覧は全件描画（2巡目のレビュー指摘、未対応）**：
+  N+1 は解消したが、`jobs.map` による `ScrollView` 全件描画自体は変えて
+  いない。`queueResync`/「Sync everything」により、復元直後やHCを初めて
+  ONにした直後はジョブが Activity 全件（数百〜数千件）になりうるため、
+  件数上限付き表示（「ほか N 件」）や仮想化リストへの変更が引き続き
+  検討課題として残る。**3巡目のレビューで指摘された通り、`sync_state
+  = 'synced'` も再送対象にしたため（上記1の修正）、「Sync everything」を
+  押した直後は既に同期済みだった Activity まで一時的に Unsynced changes
+  に並ぶ**——drain されるまでの一過性で仕様違反ではないが、この Known
+  gap が顕在化しやすくなる方向の変更である

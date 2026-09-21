@@ -53,6 +53,12 @@ export async function findMappingsForActivity(
   return ((result.rows ?? []) as unknown as HealthSyncDbRow[]).map(rowToHealthSync);
 }
 
+/** Mirrors `HealthSyncJobRepository.findAllJobsForProvider` — one bulk read for callers that would otherwise check every Activity one at a time (`services/HealthSyncResyncService.ts`, §13.6). */
+export async function findAllMappingsForProvider(executor: SqlExecutor, provider: Provider): Promise<HealthSyncRow[]> {
+  const result = await executor.execute('SELECT * FROM health_sync WHERE provider = ?', [provider]);
+  return ((result.rows ?? []) as unknown as HealthSyncDbRow[]).map(rowToHealthSync);
+}
+
 /**
  * Called by `SyncWorker`'s finalize step — "the external call succeeded" is
  * recorded here regardless of whether the job row can also be cleared

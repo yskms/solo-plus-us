@@ -25,6 +25,8 @@ import { shareExportFile } from '../../services/ExportSharingService';
 import { performSafetyExport } from '../../services/SafetyExportService';
 import { validateExportFile } from '../../services/importValidation';
 import { performReplaceImport, performAppendImport } from '../../services/ImportService';
+import { queueResync } from '../../services/HealthSyncResyncService';
+import { getSetting } from '../../services/SettingsRepository';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
 import { countAllActivities } from '../../repositories/ActivityRepository';
 import { SafetyExportFailedError } from '../../lib/errors';
@@ -35,6 +37,7 @@ type Step =
   | { kind: 'menu' }
   | { kind: 'modeChoice'; file: ExportFileV1; currentCount: number }
   | { kind: 'confirmReplace'; file: ExportFileV1; currentCount: number }
+  | { kind: 'offerResync'; importedCount: number }
   | { kind: 'busy'; label: string };
 
 function describeValidationErrors(errors: { path: string; message: string }[]): string {
@@ -179,19 +182,66 @@ export default function DataSettingsScreen() {
     }
 
     setStep({ kind: 'busy', label: 'Replacing your data…' });
+    let result: { importedCount: number };
     try {
       // §9.12: this is the one call site that runs performReplaceImport
       // against the *live* app DB — must go through SyncCoordinator so it
       // can't race SyncWorker (see ImportService.performReplaceImport's
       // doc comment for why the wrapping lives here, not in that function).
-      const result = await SyncCoordinator.runExclusive(() => performReplaceImport(db, file));
-      bump();
-      setStep({ kind: 'menu' });
-      Alert.alert('Import complete', `${result.importedCount} activities restored. ${safetyExportLocationShortNotice()}`);
+      result = await SyncCoordinator.runExclusive(() => performReplaceImport(db, file));
     } catch (error) {
       logError('performReplaceImport failed', error);
       setStep({ kind: 'menu' });
       Alert.alert('Could not replace data', `${safetyExportLocationShortNotice()} Please try again.`);
+      return;
+    }
+    bump();
+
+    // §13.1/§13.6: re-sync to Health Connect is opt-in only — the replace
+    // above never queues sync jobs itself (exportImport.integration.test.ts
+    // "does not re-queue sync jobs"). `healthConnect.enabled` is
+    // DEVICE_OWNED (types/Settings.ts) and performReplaceImport never
+    // touches it, so it's safe to read straight after the replace.
+    let hcEnabled = false;
+    try {
+      hcEnabled = (await getSetting(db, 'healthConnect.enabled')) ?? false;
+    } catch (error) {
+      // Reading this alone failing must not be reported as "could not
+      // replace data" — the replace itself already succeeded. Falling back
+      // to not offering the resync screen is the safe default — this no
+      // longer loses the opportunity permanently, since Settings > Health
+      // Connect also has a "Sync everything to Health Connect" action
+      // (queueResync's other entry point) that reaches the
+      // exact same state.
+      logError('Reading healthConnect.enabled after replace import failed', error);
+    }
+
+    if (hcEnabled) {
+      setStep({ kind: 'offerResync', importedCount: result.importedCount });
+    } else {
+      setStep({ kind: 'menu' });
+      Alert.alert('Import complete', `${result.importedCount} activities restored. ${safetyExportLocationShortNotice()}`);
+    }
+  };
+
+  const handleOfferResync = async (shouldSync: boolean, importedCount: number) => {
+    if (!shouldSync) {
+      setStep({ kind: 'menu' });
+      return;
+    }
+    setStep({ kind: 'busy', label: 'Queuing Health Connect sync…' });
+    try {
+      await queueResync(db);
+      // Nudge SyncWorkerLoop's existing DataRevision trigger so the newly
+      // queued jobs get a chance to drain without waiting for its 10s
+      // periodic tick (same reasoning as health-connect.tsx's handleRetry).
+      bump();
+      setStep({ kind: 'menu' });
+      Alert.alert('Import complete', 'Health Connect sync has been queued. Check progress anytime in Settings › Health Connect.');
+    } catch (error) {
+      logError('queueResync failed', error);
+      setStep({ kind: 'offerResync', importedCount });
+      Alert.alert('Could not queue Health Connect sync', 'Please try again.');
     }
   };
 
@@ -308,6 +358,38 @@ export default function DataSettingsScreen() {
                 accessibilityRole="button"
               >
                 <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {step.kind === 'offerResync' && (
+          <View style={styles.section}>
+            <Text style={[styles.headline, { color: colors.textPrimary }]}>{step.importedCount} activities restored.</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>{safetyExportLocationShortNotice()}</Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>
+              Health Connect sync is on for this device, but Solo + Us doesn&apos;t automatically resend restored data.
+            </Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>
+              If you continue, every restored activity will be resent to Health Connect, replacing what&apos;s there now.
+            </Text>
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>
+              A few records may need a manual retry — you can check progress anytime in Settings › Health Connect.
+            </Text>
+            <View style={styles.actions}>
+              <Pressable
+                onPress={() => handleOfferResync(true, step.importedCount)}
+                style={[styles.button, { backgroundColor: colors.solo }]}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.buttonText, { color: colors.background }]}>Sync to Health Connect</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleOfferResync(false, step.importedCount)}
+                style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.buttonText, { color: colors.textPrimary }]}>Not now</Text>
               </Pressable>
             </View>
           </View>

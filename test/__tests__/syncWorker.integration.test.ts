@@ -25,6 +25,7 @@ import * as ActivityRepository from '../../repositories/ActivityRepository';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { processNextDueJob, drainDueJobs } from '../../services/SyncWorker';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
+import { queueResync } from '../../services/HealthSyncResyncService';
 
 let db: TestDb;
 
@@ -302,6 +303,38 @@ describe('processNextDueJob — recreate (§9.3.1)', () => {
     const job = await HealthSyncJobRepository.findJob(db, activity.id, 'health_connect');
     expect(job).toBeNull();
     const mapping = await HealthSyncRepository.findMapping(db, activity.id, 'health_connect');
+    expect(mapping).not.toBeNull();
+  });
+});
+
+describe('queueResync → SyncWorker end-to-end (§13.6)', () => {
+  it('jobs queued by queueResync are immediately due and are drained as recreate', async () => {
+    // Simulates the post-restore state directly on `db`: an Activity with
+    // no health_sync_jobs row for health_connect (exactly what a
+    // performReplaceImport — §13.3, which never queues jobs itself — plus
+    // a since-enabled/still-enabled provider leaves behind), rather than
+    // re-running the whole Export/Import round trip (already covered by
+    // exportImport.integration.test.ts) just to reach that state.
+    await setSetting(db, 'healthConnect.enabled', false);
+    const restored = await ActivityService.recordActivity(db, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+    expect(await HealthSyncJobRepository.findJob(db, restored.id, 'health_connect')).toBeNull();
+    await setSetting(db, 'healthConnect.enabled', true);
+
+    const queued = await queueResync(db);
+    expect(queued).toEqual({ queuedCount: 1, skippedCount: 0 });
+
+    // notBefore = now at insert time — due immediately, no extra wait for the worker to pick it up.
+    const job = await HealthSyncJobRepository.findJob(db, restored.id, 'health_connect');
+    expect(job?.operation).toBe('recreate');
+    expect(job?.claimedAt).toBeNull();
+
+    mockRecreateActivity.mockResolvedValue({ ok: true, externalRecordId: null });
+    const result = await drainDueJobs(db, 'health_connect');
+
+    expect(result).toEqual({ processedCount: 1, stoppedReason: 'drained' });
+    expect(mockRecreateActivity).toHaveBeenCalledWith(expect.objectContaining({ id: restored.id }));
+    expect(await HealthSyncJobRepository.findJob(db, restored.id, 'health_connect')).toBeNull();
+    const mapping = await HealthSyncRepository.findMapping(db, restored.id, 'health_connect');
     expect(mapping).not.toBeNull();
   });
 });

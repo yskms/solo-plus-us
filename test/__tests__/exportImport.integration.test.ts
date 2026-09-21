@@ -9,6 +9,7 @@ import * as ActivityService from '../../services/ActivityService';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import { buildExportPayload, serializeExportFile, serializeExportCsv } from '../../services/ExportService';
 import { performReplaceImport, performAppendImport } from '../../services/ImportService';
+import { queueResync, countPendingResync } from '../../services/HealthSyncResyncService';
 import { validateExportFile } from '../../services/importValidation';
 import { setSetting, getSetting } from '../../services/SettingsRepository';
 import * as HealthSyncRepository from '../../repositories/HealthSyncRepository';
@@ -141,6 +142,149 @@ describe('Export → Import round trip', () => {
     const restored = (await ActivityRepository.findAllActivities(destDb))[0];
     const jobs = await HealthSyncJobRepository.findJobsForActivity(destDb, restored.id);
     expect(jobs).toHaveLength(0); // ...no job is queued by Import itself
+  });
+
+  describe('queueResync (§13.6 — explicit, opt-in re-sync after replace-restore)', () => {
+    it('queues a recreate job for every restored activity, for every active provider', async () => {
+      await ActivityService.recordActivity(sourceDb, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+      await ActivityService.recordActivity(sourceDb, { context: 'partnered', instantUtc: new Date('2026-01-01T00:00:00Z') });
+      const exportFile = await buildExportPayload(sourceDb);
+      const validated = validateExportFile(JSON.parse(serializeExportFile(exportFile)));
+      if (!validated.valid) throw new Error('unexpected invalid export');
+
+      await setSetting(destDb, 'healthConnect.enabled', true);
+      await performReplaceImport(destDb, validated.file);
+
+      const result = await queueResync(destDb);
+      expect(result).toEqual({ queuedCount: 2, skippedCount: 0 });
+
+      const restored = await ActivityRepository.findAllActivities(destDb);
+      for (const activity of restored) {
+        const jobs = await HealthSyncJobRepository.findJobsForActivity(destDb, activity.id);
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0].operation).toBe('recreate');
+        expect(jobs[0].externalRecordId).toBeNull();
+      }
+    });
+
+    it('queues nothing when Health Connect is not enabled', async () => {
+      await ActivityService.recordActivity(sourceDb, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+      const exportFile = await buildExportPayload(sourceDb);
+      const validated = validateExportFile(JSON.parse(serializeExportFile(exportFile)));
+      if (!validated.valid) throw new Error('unexpected invalid export');
+
+      await performReplaceImport(destDb, validated.file); // healthConnect.enabled left at its default (false)
+
+      const result = await queueResync(destDb);
+      expect(result).toEqual({ queuedCount: 0, skippedCount: 0 });
+      expect(await HealthSyncJobRepository.findAllJobsForProvider(destDb, 'health_connect')).toHaveLength(0);
+    });
+
+    it('skips an activity that already has a pending job, without disturbing it', async () => {
+      await ActivityService.recordActivity(sourceDb, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+      await ActivityService.recordActivity(sourceDb, { context: 'partnered', instantUtc: new Date('2026-01-01T00:00:00Z') });
+      const exportFile = await buildExportPayload(sourceDb);
+      const validated = validateExportFile(JSON.parse(serializeExportFile(exportFile)));
+      if (!validated.valid) throw new Error('unexpected invalid export');
+
+      await setSetting(destDb, 'healthConnect.enabled', true);
+      await performReplaceImport(destDb, validated.file);
+
+      const restored = await ActivityRepository.findAllActivities(destDb);
+      const [withJob, withoutJob] = restored;
+      // Simulates a new create job landing (e.g. from an edit) in the window
+      // between the restore completing and the person tapping "sync".
+      await HealthSyncJobRepository.insertJob(destDb, {
+        activityId: withJob.id,
+        provider: 'health_connect',
+        operation: 'create',
+        notBefore: '2026-01-01T00:00:00.000Z',
+      });
+
+      const result = await queueResync(destDb);
+      expect(result).toEqual({ queuedCount: 1, skippedCount: 1 });
+
+      const untouchedJob = (await HealthSyncJobRepository.findJobsForActivity(destDb, withJob.id))[0];
+      expect(untouchedJob.operation).toBe('create'); // not overwritten
+
+      const newJob = (await HealthSyncJobRepository.findJobsForActivity(destDb, withoutJob.id))[0];
+      expect(newJob.operation).toBe('recreate');
+    });
+
+    it('is idempotent — a second call queues nothing further, without a unique-constraint error', async () => {
+      await ActivityService.recordActivity(sourceDb, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+      const exportFile = await buildExportPayload(sourceDb);
+      const validated = validateExportFile(JSON.parse(serializeExportFile(exportFile)));
+      if (!validated.valid) throw new Error('unexpected invalid export');
+
+      await setSetting(destDb, 'healthConnect.enabled', true);
+      await performReplaceImport(destDb, validated.file);
+
+      const first = await queueResync(destDb);
+      expect(first).toEqual({ queuedCount: 1, skippedCount: 0 });
+
+      const second = await queueResync(destDb);
+      expect(second).toEqual({ queuedCount: 0, skippedCount: 1 });
+    });
+
+    it('queues nothing when there are no activities', async () => {
+      await setSetting(destDb, 'healthConnect.enabled', true);
+      const result = await queueResync(destDb);
+      expect(result).toEqual({ queuedCount: 0, skippedCount: 0 });
+    });
+
+    it('re-queues a `synced` mapping (recovers records deleted directly in the Health Connect app, D-20) but skips `declined`/`uncertain` (D-51/D-35)', async () => {
+      // Unlike the other cases above, this exercises the function's *other*
+      // entry point (app/settings/health-connect.tsx's persistent button) —
+      // called any time, not necessarily right after a replace-restore, so
+      // health_sync isn't necessarily empty.
+      // healthConnect.enabled starts false so recordActivity below doesn't
+      // auto-queue a `create` job for any of these (planForRecord always
+      // inserts one when a provider is already active) — only the mapping
+      // rows set up explicitly afterward should matter here.
+      const synced = await ActivityService.recordActivity(destDb, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+      const declined = await ActivityService.recordActivity(destDb, { context: 'solo', instantUtc: new Date('2026-01-01T00:00:00Z') });
+      const uncertain = await ActivityService.recordActivity(destDb, { context: 'solo', instantUtc: new Date('2026-03-01T00:00:00Z') });
+      const untouched = await ActivityService.recordActivity(destDb, { context: 'partnered', instantUtc: new Date('2026-06-01T00:00:00Z') });
+
+      await HealthSyncRepository.upsertMapping(destDb, { activityId: synced.id, provider: 'health_connect', externalRecordId: null });
+      await HealthSyncRepository.upsertDeclinedOrUncertainMapping(destDb, { activityId: declined.id, provider: 'health_connect', syncState: 'declined' });
+      await HealthSyncRepository.upsertDeclinedOrUncertainMapping(destDb, { activityId: uncertain.id, provider: 'health_connect', syncState: 'uncertain' });
+      await setSetting(destDb, 'healthConnect.enabled', true);
+
+      const result = await queueResync(destDb);
+      // `synced` IS re-queued (2nd review round) — a stale `synced` mapping
+      // can't be told apart from "still actually in Health Connect" without
+      // READ permission (D-12/D-20), and `recreate` is always safe to repeat
+      // (D-34) — but a person's explicit "don't sync this" choice
+      // (`declined`/`uncertain`) must not be silently overridden by a bulk
+      // action.
+      expect(result).toEqual({ queuedCount: 2, skippedCount: 2 });
+      expect(await HealthSyncJobRepository.findJobsForActivity(destDb, declined.id)).toHaveLength(0);
+      expect(await HealthSyncJobRepository.findJobsForActivity(destDb, uncertain.id)).toHaveLength(0);
+      const syncedJob = (await HealthSyncJobRepository.findJobsForActivity(destDb, synced.id))[0];
+      expect(syncedJob.operation).toBe('recreate');
+      const newJob = (await HealthSyncJobRepository.findJobsForActivity(destDb, untouched.id))[0];
+      expect(newJob.operation).toBe('recreate');
+    });
+
+    it('countPendingResync previews the exact count queueResync would queue, without writing anything', async () => {
+      await ActivityService.recordActivity(sourceDb, { context: 'solo', instantUtc: new Date('2026-09-14T14:42:00Z') });
+      await ActivityService.recordActivity(sourceDb, { context: 'partnered', instantUtc: new Date('2026-01-01T00:00:00Z') });
+      const exportFile = await buildExportPayload(sourceDb);
+      const validated = validateExportFile(JSON.parse(serializeExportFile(exportFile)));
+      if (!validated.valid) throw new Error('unexpected invalid export');
+
+      await setSetting(destDb, 'healthConnect.enabled', true);
+      await performReplaceImport(destDb, validated.file);
+
+      expect(await countPendingResync(destDb)).toBe(2);
+      expect(await HealthSyncJobRepository.findAllJobsForProvider(destDb, 'health_connect')).toHaveLength(0); // read-only — nothing written
+
+      const result = await queueResync(destDb);
+      expect(result.queuedCount).toBe(2);
+      expect(await countPendingResync(destDb)).toBe(0); // everything now has a pending job
+    });
   });
 
   it('rejects importing a file with a tampered/invalid activity — nothing is written (all-or-nothing)', async () => {

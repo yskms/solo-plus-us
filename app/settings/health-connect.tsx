@@ -46,6 +46,7 @@ import * as SyncCoordinator from '../../services/SyncCoordinator';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as HealthSyncManualActions from '../../services/HealthSyncManualActions';
+import { queueResync, countPendingResync } from '../../services/HealthSyncResyncService';
 import {
   describeJobAction,
   connectionStatus,
@@ -58,9 +59,8 @@ import { formatMonthDay } from '../../lib/relativeDate';
 import { formatCalendarDateTime } from '../../lib/timeFormat';
 import { parseStrictUtcIso, deriveLocalDateTime, resolveOffsetMinutesForZone, getDeviceTimeZoneId } from '../../lib/datetime';
 import { logError } from '../../lib/log';
-import type { SqlExecutor } from '../../database/SqlExecutor';
 import type { HealthSyncJobRow } from '../../types/HealthSync';
-import type { ActivityContext } from '../../types/Activity';
+import type { Activity, ActivityContext } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
 
 /** §10.4/§9.6 の「現在処理中です」— claim 中のジョブに手動操作が競合した場合。 */
@@ -89,10 +89,17 @@ interface UnsyncedRowData {
   context: ActivityContext | null;
 }
 
-async function buildRow(db: SqlExecutor, job: HealthSyncJobRow): Promise<UnsyncedRowData> {
+/**
+ * Takes a pre-fetched `activitiesById` map rather than querying per job —
+ * §13.6's `queueResync` can leave hundreds/thousands of jobs
+ * here at once, and this used to call `findActivityById` once per row
+ * (N+1, re-run on every 5s poll tick). One `findAllActivities` call in
+ * `load()` below replaces all of those round trips with a single query.
+ */
+function buildRow(job: HealthSyncJobRow, activitiesById: ReadonlyMap<string, Activity>): UnsyncedRowData {
   const canHaveActivity = job.operation !== 'delete' && job.lastErrorCode !== 'LOCAL_ACTIVITY_NOT_FOUND';
   if (canHaveActivity) {
-    const activity = await ActivityRepository.findActivityById(db, job.activityId);
+    const activity = activitiesById.get(job.activityId);
     if (activity) {
       return { job, dateLabel: formatMonthDay(activity.occurredLocalDate), context: activity.context };
     }
@@ -178,6 +185,7 @@ export default function HealthConnectSettingsScreen() {
   const [jobs, setJobs] = useState<UnsyncedRowData[]>([]);
   const [toggleAction, setToggleAction] = useState<'enable' | 'disable' | null>(null);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [resyncing, setResyncing] = useState(false);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -349,7 +357,15 @@ export default function HealthConnectSettingsScreen() {
           getSetting(db, 'preferences.timeFormat'),
           HealthSyncJobRepository.findAllJobsForProvider(db, 'health_connect'),
         ]);
-        const rows = await Promise.all(jobRows.map((job) => buildRow(db, job)));
+        // One bulk read instead of one findActivityById per job (N+1) —
+        // §13.6's queueResync can leave hundreds/thousands of
+        // jobs here at once, re-read on every 5s poll tick (buildRow doc
+        // comment above).
+        const activitiesById =
+          jobRows.length > 0
+            ? new Map((await ActivityRepository.findAllActivities(db)).map((activity) => [activity.id, activity]))
+            : new Map<string, Activity>();
+        const rows = jobRows.map((job) => buildRow(job, activitiesById));
         if (mountedRef.current) {
           setLastSyncedAt(lastSyncedValue);
           setTimeFormat(timeFormatValue);
@@ -540,6 +556,74 @@ export default function HealthConnectSettingsScreen() {
     }
   };
 
+  /**
+   * §13.6 のもう一つの入口（`services/HealthSyncResyncService.ts` の doc
+   * comment 参照）。`offerResync`（Import 直後の一度きりの同意画面）を
+   * 逃した／その後に再同期したくなった場合の恒久的な救済導線として追加
+   * した——復元後は `health_sync` が空になり、以後の編集も `planForEdit`
+   * が noop を返し続ける（D-51）ため、この導線が無いと二度と再同期できない
+   * 状態に固定されてしまう（レビュー指摘）。この導線は §13.6 が本来想定する
+   * 「復元後の再同期」を超えて使える（例：HC を初めて ON にした直後に押せば
+   * 過去の全履歴を一括送信できる）——`HealthSyncResyncService.ts` の doc
+   * comment 参照。センシティブなデータを外部へまとめて送る操作のため、
+   * 送信前に必ず対象件数を確認ダイアログへ出す（下記 `handleResyncEverything`）。
+   */
+  const performResyncEverything = async () => {
+    setResyncing(true);
+    try {
+      const result = await queueResync(db);
+      // Nudge SyncWorkerLoop's existing DataRevision trigger, same reasoning
+      // as handleRetry above — queued jobs get a chance to drain without
+      // waiting for the 10s periodic tick.
+      bump();
+      if (result.queuedCount === 0) {
+        // Only reachable if something else (another job, another mapping)
+        // changed between handleResyncEverything's count and this call.
+        Alert.alert('Nothing to sync', 'Every activity is already syncing, or was intentionally excluded from sync.');
+      } else {
+        Alert.alert(
+          'Sync queued',
+          `${result.queuedCount} activit${result.queuedCount === 1 ? 'y' : 'ies'} queued to sync. Check progress below.`,
+        );
+      }
+    } catch (error) {
+      logError('queueResync (manual re-sync from Settings) failed', error);
+      Alert.alert('Could not queue sync', 'Please try again.');
+    } finally {
+      if (mountedRef.current) setResyncing(false);
+    }
+  };
+
+  /**
+   * §13.1「既定 OFF・明示同意制」を、恒久的なボタンでも満たすには「押せば
+   * 何が起きるか」を事前に伝える必要がある——特にこの入口は復元直後に限らず
+   * いつでも押せるため、対象が数年分の全履歴になりうる（レビュー指摘）。
+   * `countPendingResync` で実際に送信される件数を数えてから確認ダイアログに
+   * 出す。
+   */
+  const handleResyncEverything = async () => {
+    let pendingCount: number;
+    try {
+      pendingCount = await countPendingResync(db);
+    } catch (error) {
+      logError('countPendingResync failed', error);
+      Alert.alert('Could not check sync status', 'Please try again.');
+      return;
+    }
+    if (pendingCount === 0) {
+      Alert.alert('Nothing to sync', 'Every activity is already syncing, or was intentionally excluded from sync.');
+      return;
+    }
+    Alert.alert(
+      `Sync ${pendingCount} activit${pendingCount === 1 ? 'y' : 'ies'} to Health Connect?`,
+      "This resends everything that isn't already syncing, replacing what's in Health Connect for any that already exist there.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sync', onPress: performResyncEverything },
+      ],
+    );
+  };
+
   // `enabled === null` は構造的には `loaded` と同時に解消するはず（`load()`
   // が enabled を読んでから `setLoaded(true)` する、上記コメント参照）だが、
   // それを暗黙の実行順序だけに頼らず、ここで明示的に型として確認する——
@@ -608,6 +692,33 @@ export default function HealthConnectSettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>RE-SYNC</Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>
+            If some records were never sent to Health Connect, or were removed there without Solo + Us knowing — for
+            example, after restoring a backup — you can resend everything now.
+          </Text>
+          {!enabled && (
+            <Text style={[styles.caption, { color: colors.textTertiary }]}>Turn on Sync to Health Connect first.</Text>
+          )}
+          <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Pressable
+              onPress={handleResyncEverything}
+              disabled={!enabled || resyncing}
+              style={[styles.optionRow, { opacity: !enabled || resyncing ? 0.4 : 1 }]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Sync everything to Health Connect</Text>
+            </Pressable>
+          </View>
+          {resyncing && (
+            <View style={styles.busyRow}>
+              <ActivityIndicator color={colors.textSecondary} />
+              <Text style={[styles.caption, { color: colors.textSecondary }]}>Queuing…</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
             UNSYNCED CHANGES{jobs.length > 0 ? `  ${jobs.length}` : ''}
           </Text>
@@ -658,6 +769,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     minHeight: minTouchTarget,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    minHeight: minTouchTarget,
+    paddingVertical: spacing.sm,
   },
   optionLabel: { fontSize: 15, fontWeight: '500' },
   lastSyncedRow: {

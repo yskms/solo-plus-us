@@ -46,10 +46,16 @@
  * 他の原因でも返りうる code であり、`message` はライブラリ／Health
  * Connect アプリのバージョンが変われば変わりうる非契約な文字列のため、
  * これに依存する分岐は静かに壊れる。詳細は設計判断記録 D-20 の確認結果を
- * 参照。またこの reject は `recreateActivity` の内部 delete でも同様に
- * 起こる——外部レコードが不在の状態で recreate すると、Android 9〜13 では
- * insert に到達できないまま手動待ちに落ちる（§13.6 実装時は D-34 の
- * 追記を参照）。
+ * 参照。
+ *
+ * この reject は `recreateActivity` の内部 delete でも同様に起こる——
+ * §13.6（Import 後の再同期）の主要ユースケース（機種変更・復旧）では
+ * 復元先の Health Connect に対象レコードが1件も存在しないため、Android
+ * 9〜13 では delete が確実に reject される。`recreateActivity` は
+ * `UNKNOWN` 分類（この「存在しない」ケースが実際に分類される先）に限り
+ * insert へ進む——`PERMISSION_DENIED`/`UNAVAILABLE` は従来通り即失敗の
+ * まま。安全性の根拠は本ファイル下部の `recreateActivity` の doc comment
+ * と設計判断記録 D-34「2026-09-21 追記」参照。
  */
 import {
   deleteRecordsByUuids,
@@ -64,6 +70,7 @@ import {
 } from 'react-native-health-connect';
 import type { Activity } from '../types/Activity';
 import type { SyncErrorCode } from '../types/HealthSync';
+import { logError } from '../lib/log';
 
 const RECORD_TYPE = 'SexualActivity' as const;
 const WRITE_PERMISSION = { accessType: 'write' as const, recordType: RECORD_TYPE };
@@ -171,13 +178,43 @@ export async function deleteActivityRecord(activityId: string): Promise<HealthCo
 /**
  * §9.3.1 の recreate 操作。delete → insert の2段階だが、外側（SyncWorker）
  * からは1回の呼び出しに見える——「delete 済み」という永続状態を持たない
- * （§9.3.1「状態遷移」）ため、delete が失敗したら insert せずここで
- * 失敗を返し、次回リトライは必ず delete からやり直す。
+ * （§9.3.1「状態遷移」）ため、次回リトライは必ず delete からやり直す。
+ *
+ * **2026-09-21 改訂（外部レビューを受けての決定、設計判断記録 D-34 参照）：
+ * delete が `UNKNOWN` 分類で失敗した場合は insert へ進む。**
+ * `PERMISSION_DENIED`/`UNAVAILABLE` は従来通り即座に失敗を返す——これらは
+ * insert を試みても同じ理由で失敗するだけで、進む意味が無い。
+ *
+ * 当初の設計（delete が失敗したら常に insert しない）は、§13.6 の主要
+ * ユースケース（機種変更・復旧）では復元先の Health Connect に対象
+ * レコードが1件も存在しないため、Android 9〜13（D-20 実測どおり delete
+ * が reject される）で recreate が全件恒久的に失敗する結果になっていた。
+ *
+ * 二重レコードを作らないという安全性は、health_connect が clientRecordId
+ * でアドレッシングすること（§9.4）に由来する——insert は常に同じ
+ * clientRecordId（`toRecord` 参照）を使うため、delete が失敗していても
+ * insert は新規レコードを作らず upsert として振る舞う（version の大小は
+ * HC 側が自動的に処理する）。唯一の理論的リスクは、delete が「存在しない」
+ * 以外の一過性の理由で失敗し、かつ対象が実際により高い
+ * clientRecordVersion で存在している場合に insert が黙って無視され、
+ * ジョブが誤って成功扱いになることだが、これは通常の `update` ジョブでも
+ * 起こりうる既知のリスクと同種であり、「常に安全（副作用のある永続状態を
+ * 持たない）」という D-34 の性質は変わらない。
  */
 export async function recreateActivity(
   activity: Pick<Activity, 'id' | 'occurredAtUtc' | 'protectionUsed' | 'syncVersion'>,
 ): Promise<HealthConnectResult> {
   const deleted = await deleteActivityRecord(activity.id);
-  if (!deleted.ok) return deleted;
+  if (!deleted.ok) {
+    if (deleted.errorCode !== 'UNKNOWN') return deleted;
+    // Activity の内容は含めない（§8.7）。`deleted.errorCode` は常に
+    // 'UNKNOWN'（直前の if で確定済み）なのでログには含めない——
+    // リリースビルドでは `lib/log.ts` の `logError` が
+    // `error instanceof Error` でない値を落とす（name だけになる）ため、
+    // 第2引数に情報を持たせても実質伝わらない。このログ自体は DEV
+    // ビルド向けの診断用（この分岐に実際に入ることは、Android 9〜13 で
+    // 「外部レコードが不在の recreate」が正常に機能していることの証拠）。
+    logError('HealthConnectService: recreateActivity delete failed as UNKNOWN — proceeding to insert anyway (clientRecordId upsert is idempotent, §9.4)', undefined);
+  }
   return upsertActivity(activity);
 }

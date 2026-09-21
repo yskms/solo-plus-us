@@ -4,7 +4,8 @@
  * 検証は README「Phase 4」参照）。ここで検証するのはこのファイル自身の
  * 変換・分岐（§9.4/§9.9 のレコード組み立て、§9.7 の resolve/reject の
  * 単純な扱い、`ExceptionsUtils.kt` の code 一覧に基づくエラー分類、
- * recreate の「delete 失敗なら insert しない」）だけ。
+ * recreate の「delete が UNKNOWN 失敗なら insert へ進む／
+ * PERMISSION_DENIED・UNAVAILABLE なら進まない」2026-09-21 改訂）だけ。
  */
 const mockInitialize = jest.fn();
 const mockGetSdkStatus = jest.fn();
@@ -166,13 +167,43 @@ describe('recreateActivity (§9.3.1)', () => {
     expect(result).toEqual({ ok: true, externalRecordId: null });
   });
 
-  it('does NOT insert when the delete step fails — "delete がそれ以外のエラーなら作成しない" (§9.3.1)', async () => {
+  it('does NOT insert when delete fails as UNAVAILABLE — insert would fail for the same reason (2026-09-21 revision)', async () => {
     mockDeleteRecordsByUuids.mockRejectedValue(Object.assign(new Error('boom'), { code: 'SERVICE_UNAVAILABLE' }));
 
     const result = await HealthConnectService.recreateActivity(activity);
 
     expect(mockInsertRecords).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, errorCode: 'UNAVAILABLE' });
+  });
+
+  it('does NOT insert when delete fails as PERMISSION_DENIED (2026-09-21 revision)', async () => {
+    mockDeleteRecordsByUuids.mockRejectedValue(Object.assign(new Error('denied'), { code: 'PERMISSION_ERROR' }));
+
+    const result = await HealthConnectService.recreateActivity(activity);
+
+    expect(mockInsertRecords).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, errorCode: 'PERMISSION_DENIED' });
+  });
+
+  it('DOES proceed to insert when delete fails as UNKNOWN — Android 9〜13\'s "record does not exist" case, confirmed on Pixel 3 (2026-09-21 revision, §9.4 clientRecordId idempotency)', async () => {
+    mockDeleteRecordsByUuids.mockRejectedValue(
+      Object.assign(new Error('Request contains invalid UID.'), { code: 'UNDERLYING_ERROR' }),
+    );
+    mockInsertRecords.mockResolvedValue(['native-uuid']);
+
+    const result = await HealthConnectService.recreateActivity(activity);
+
+    expect(mockInsertRecords).toHaveBeenCalledWith([expect.objectContaining({ recordType: 'SexualActivity' })]);
+    expect(result).toEqual({ ok: true, externalRecordId: null });
+  });
+
+  it('still fails the whole job if insert also fails after an UNKNOWN delete failure', async () => {
+    mockDeleteRecordsByUuids.mockRejectedValue(Object.assign(new Error('boom'), { code: 'UNDERLYING_ERROR' }));
+    mockInsertRecords.mockRejectedValue(Object.assign(new Error('boom'), { code: 'UNDERLYING_ERROR' }));
+
+    const result = await HealthConnectService.recreateActivity(activity);
+
+    expect(result).toEqual({ ok: false, errorCode: 'UNKNOWN' });
   });
 
   it('does not persist a "delete done" substate — a retried recreate always starts from delete again (§9.3.1)', async () => {
