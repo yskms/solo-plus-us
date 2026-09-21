@@ -32,10 +32,14 @@ AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health C
 統合パス）。**Android 9〜13（D-20）の実機検証も完了**——存在しない
 `clientRecordId` への delete は reject され通常のリトライ・バックオフに
 乗ることを Pixel 3 実機で確認し、設計判断記録 D-20 に追記済み。**§13.6
-復元後の Health Connect 再同期（`recreate`）も実装完了**——`services/
-HealthSyncResyncService.ts` と `app/settings/data.tsx` の `offerResync`
-ステップ（下記「Phase 4 実装状況」ステップ7参照）。§9.11 のリリース
-ビルド分離は未着手。
+復元後の Health Connect 再同期（`recreate`）も実装・実機確認完了**——
+`services/HealthSyncResyncService.ts` と `app/settings/data.tsx` の
+`offerResync` ステップ（下記「Phase 4 実装状況」ステップ7参照）。
+`recreateActivity` の insert-after-delete-failure 経路を Pixel 3（D-20と
+同じ Android 12）で、置換復元→`offerResync`→Sync→Settings 反映の
+一連の流れを Pixel 11（Android 14+ プラットフォーム統合パス）で、
+それぞれ実機確認済み。**これにより Phase 4 の実機確認タスクは完了**。
+§9.11 のリリースビルド分離は未着手。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -3106,17 +3110,52 @@ insert-after-delete-failure 経路の実機検証」は解消。
 （`FLAG_SECURE` の副作用）。UI 確認は `uiautomator dump` のテキスト階層で
 代替した——同じ制約を踏む場合はこの方法が有効。
 
+#### 実機確認（Pixel 11、置換復元→同意画面→Sync→Settings 反映、2026-09-21）
+
+Android 14+ のプラットフォーム統合パス（Pixel 11）で、§13.6 の主要
+ユースケース（置換復元→`offerResync`→Health Connect 再同期）を一気通貫で
+確認した。
+
+**手順**：Activity を1件記録（自動同期で HC にも反映）→ Settings > Data >
+Export JSON でバックアップを作成→同じファイルを Import from a backup で
+選択→「Replace all data」→安全バックアップ保存先フォルダを選択（新規
+フォルダ作成が必要だった——ルートや `Download` 直下は「このフォルダは
+使用できません」と拒否された。プライバシー保護のための SAF 制限と思われる）
+→復元実行。
+
+**結果**：
+- 復元後、`offerResync` 画面（「Health Connect sync is on for this
+  device, but Solo + Us doesn't automatically resend restored data.」）が
+  設計通り表示された
+- 「Sync to Health Connect」→「Health Connect sync has been queued.」→
+  「Import complete」の Alert まで到達
+- Settings > Health Connect で Last synced が実行直後の時刻に更新され、
+  Unsynced changes が「Everything is synced.」に戻った
+- Health Connect アプリ側で該当エントリ（12:49・Solo + Us）が実在する
+  ことを確認。**同じ日に無関係な孤立レコード（1:21・Solo + Us）が1件
+  存在していたが、これは調査の結果、今回のテストとは無関係と判明**——
+  HC の「最近のアクセス」ログ（過去24時間）に Solo + Us からの書き込みは
+  12:49（記録時の自動同期）と 12:57（再同期の finalize）の2件しかなく、
+  1:21 台のアクセスは存在しない。アプリの `firstInstallTime` が本日
+  01:25:03 であることから、この孤立レコードは本日の再インストール以前の
+  別セッションで作成され、その後ローカル側は入れ替わったが HC 側には
+  残り続けているもの（app は READ 権限を持たないため検知・清掃できない、
+  D-12/D-20 の原則通り）と判断した。今回の置換復元テストが重複レコードを
+  作っていないことは、ローカルの Activity 件数（1件）と HC の「今日」の
+  Solo + Us 書き込みアクセス件数（12:49 の1回きり、recreate の
+  delete+insert を合わせても1回として記録される）が一致していることから
+  確認できる
+
+これにより、Known gaps に残っていた「置換復元→同意画面→Sync のフロー
+確認」も解消。Phase 4 の実機確認タスクは完了。
+
+**実機検証中に踏んだ NOTE**：置換復元前の安全バックアップ保存先は
+Android の SAF がルート直下や標準ディレクトリ（`Download` 等）直下への
+`ACTION_OPEN_DOCUMENT_TREE` 許可を拒否する場合がある。実機確認時は
+「新規フォルダを作成」で専用サブフォルダを切ってから選択すると確実。
+
 #### Known gaps
 
-- **置換復元→同意画面→Sync のフロー確認は未実施**：ロジック・UI 文言の
-  実装とユニット/統合テストは完了しているが、実際に置換復元→同意画面
-  （`offerResync`）→「Sync to Health Connect」→ Unsynced changes への
-  反映、という一連の流れを実機で確認するタスクが残る（`schema.ts` の
-  変更は無いため、確認にあたって既存アプリのアンインストールは不要）。
-  **`recreateActivity` の insert-after-delete-failure 経路自体は
-  Pixel 3 で確認済み（上記「実機確認（Pixel 3、recreateActivity の
-  insert-after-delete-failure）」参照）——残るのは `offerResync` 画面
-  （置換復元後に一度だけ出る同意 UI）を経由する経路の確認のみ**
 - **Health Connect のレート制限は未調査（D-41）**：`queueResync` は
   積んだジョブすべてを即 due（`not_before` = 実行時刻）にするため、
   数百〜数千件の recreate が SyncWorker の claim/finalize ループで
