@@ -16,6 +16,7 @@
  * neither existed yet, so Phase 4 only had to add the sender and the toggle.
  */
 import { buildOccurredAtFields, getDeviceTimeZoneId, addSecondsIso, nowUtcIso } from '../lib/datetime';
+import { isHealthConnectBuildEnabled } from '../lib/healthConnectBuild';
 import * as ActivityRepository from '../repositories/ActivityRepository';
 import * as HealthSyncRepository from '../repositories/HealthSyncRepository';
 import * as HealthSyncJobRepository from '../repositories/HealthSyncJobRepository';
@@ -39,6 +40,30 @@ const ALL_PROVIDERS: readonly Provider[] = ['health_connect', 'healthkit'];
 export async function getActiveProviders(executor: SqlExecutor): Promise<Provider[]> {
   const healthConnectEnabled = await getSetting(executor, 'healthConnect.enabled');
   return healthConnectEnabled ? ['health_connect'] : [];
+}
+
+/**
+ * §9.11/§25.1 レビュー指摘（2026-09-21）: `healthConnect.enabled` は
+ * with-health-connect ビルドで true にした後、同じ applicationId を
+ * without-health-connect ビルドへ入れ替えても DB には残り続ける
+ * （アップグレードはアプリデータを保持する）。permission が Manifest に
+ * 無いビルドで `getActiveProviders` が health_connect を active と
+ * 返し続けると、`drainDueJobs` がジョブを claim しては失敗させ続ける一方、
+ * それを見る/中止する UI（`app/settings/health-connect.tsx`）はビルド側で
+ * 到達不能にしている（§10.5「未処理が残っている間は件数を表示し続ける」が
+ * 実質破綻する）ため、起動時に一度だけ是正する。
+ *
+ * `contexts/DatabaseContext.tsx` の `attemptOpen`（DB 接続を確立し、
+ * アプリ本体へ公開する前）から呼ぶ——この時点では SyncWorker は構造上
+ * まだ起動しえないため、`SyncCoordinator.runExclusive` は不要
+ * （`services/SyncCoordinator.ts` の「初期化は runExclusive で包んでいない
+ * ——意図的」と同じ理由）。
+ */
+export async function reconcileHealthConnectBuildFlag(executor: SqlExecutor): Promise<void> {
+  if (isHealthConnectBuildEnabled()) return;
+  const enabled = await getSetting(executor, 'healthConnect.enabled');
+  if (!enabled) return;
+  await setSetting(executor, 'healthConnect.enabled', false);
 }
 
 /** D-15/D-44: the Undo window's sync delay is a fixed 5 seconds from the record instant, expressed as `not_before` on the persistent job — not a JS timer, so it survives the app being killed. */

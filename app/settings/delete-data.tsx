@@ -35,6 +35,7 @@ import * as ActivityService from '../../services/ActivityService';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
 import { getSetting } from '../../services/SettingsRepository';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { logError } from '../../lib/log';
 
 type Step = 'confirm' | 'busy';
@@ -115,6 +116,21 @@ export default function DeleteDataScreen() {
       if (pendingDeleteCount === 0) {
         title = 'All data deleted';
         message = 'Every activity has been permanently deleted.';
+      } else if (!isHealthConnectBuildEnabled()) {
+        // §9.11/§25.1 レビュー指摘（2026-09-21・4回目）: ビルド種別の分岐を
+        // healthConnectEnabled（ランタイム状態、`reconcileHealthConnectBuildFlag`
+        // が起動時に false へ是正するはず）より先に置く——その是正が何らかの
+        // 理由で失敗していても（`DatabaseContext.tsx` は try/catch で握って
+        // 起動を継続させる設計のため、失敗しても気づかれにくい）、到達不能な
+        // 「Settings › Health Connect で再接続」を案内することが無いように
+        // する。without-health-connect ビルドでは Settings › Health Connect
+        // 自体が到達不能（`app/settings/health-connect.tsx` がリダイレクトする）
+        // ので、そこへ案内しない。これらのジョブは permission が無い以上この
+        // ビルドでは永久に送信できない——with-health-connect ビルドへ更新
+        // された場合にのみ再開する（`services/ActivityService.ts` の
+        // `reconcileHealthConnectBuildFlag` doc comment参照）。
+        title = 'Deleted from this device';
+        message = `Every activity has been deleted from this device. This version of the app can't sync ${pendingDeleteCount} pending Health Connect deletion${pendingDeleteCount > 1 ? 's' : ''} — they'll be sent automatically if this device gets an update with Health Connect support.`;
       } else if (healthConnectEnabled) {
         title = 'Deleted from this device';
         message = `Every activity has been deleted from this device. ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's are' : ' is'} still being sent to Health Connect — check progress anytime in Settings › Health Connect.`;

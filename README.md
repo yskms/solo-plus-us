@@ -42,7 +42,10 @@ AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health C
 同じ Android 12）で、置換復元→`offerResync`→Sync→Settings 反映の
 一連の流れを Pixel 11（Android 14+ プラットフォーム統合パス）で、
 それぞれ実機確認済み。**これにより Phase 4 の実機確認タスクは完了**。
-§9.11 のリリースビルド分離は未着手。
+§9.11 のリリースビルド分離（`without-health-connect`/`with-health-connect`）も
+実装・実機確認完了（`app.config.js`・`lib/healthConnectBuild.ts`・`eas.json`。
+Pixel 3 実機で HEALTH セクションが非表示になることとクラッシュが無いことを
+確認済み）。
 詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
@@ -3518,12 +3521,46 @@ adb 経由のタップが吸われて一切効かなくなる状態を繰り返�
 タップが本当に届いているか（`dumpsys window | grep mCurrentFocus` が
 自アプリを指しているか）を先に確認すること。
 
+#### §9.11 リリースビルド分離（2026-09-21、実装・実機確認完了）
+
+`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED` で `app.config.js` が Manifest の
+permission（`WRITE_SEXUAL_ACTIVITY`）と rationale plugin を切り替え、
+`lib/healthConnectBuild.ts`（`isHealthConnectBuildEnabled()`）が
+`app/settings/index.tsx` の HEALTH セクション表示を同じフラグでゲートする
+（ネイティブモジュール自体は両ビルドで維持——理由は CLAUDE.md 参照）。
+`eas.json` を新規作成し、`production`（without-health-connect）/
+`production-with-health-connect` の2プロファイルを用意（EAS build は
+未実行、ビルド枠温存のため）。
+
+ローカル検証：①`expo prebuild` で両条件の生成 Manifest を diff し
+permission/rationale activity の有無を確認、②Pixel 3 実機（無効化フラグ、
+`.env.local` 経由）で HEALTH セクションが非表示になること・クラッシュが
+無いことを確認。**なお `EXPO_PUBLIC_*` は dev-client のライブリロードでは
+shell export だけでは反映されず `.env.local` が必要**（`expo export`/
+EAS Build の静的バンドルでは shell export のみで正しく動くことを確認
+済み）——詳細は CLAUDE.md 参照。
+
+**レビュー指摘を反映済み（2026-09-21・コード変更なしのレビュー→別コミットで対応）：**
+- フラグの既定値を「未設定=有効」から「`=== '1'` のときだけ有効」（opt-in）
+  へ変更——env 指定漏れが安全側に倒れるように
+  （`.env.local.example` を追加、`eas.json` の development/preview には
+  明示的に `"1"` を設定）
+- with-health-connect ビルドで ON にした端末へ without ビルドを重ねても
+  `healthConnect.enabled` が true のまま残る問題を、起動時の是正
+  （`services/ActivityService.ts` の `reconcileHealthConnectBuildFlag`、
+  `contexts/DatabaseContext.tsx` から呼ぶ）で解消
+- `app/settings/health-connect.tsx` への deep link 直接到達（Settings 一覧の
+  行を隠すだけでは防げない）を、画面自体のリダイレクトガードで解消
+- `app.config.js` の `android.permissions` 上書き・plugin 挿入位置の脆さを修正
+
+**未検証のまま残る項目（ストア申請前に確認すること）：** `eas.json` の
+`production` と `production-with-health-connect` は同じ `versionCode`
+空間を共有する（`extends` で `autoIncrement` を継承）。`appVersionSource:
+"local"` と動的 config（`app.config.js`）の組み合わせで EAS CLI が
+ローカルバージョンを正しく読み書きできるかは EAS build 未実行のため未検証。
+
 #### Known gaps（次のステップ）
 
-- **§9.11 のリリースビルド分離（`without-health-connect` /
-  `with-health-connect`）は未着手**。現状は単一ビルドに permission が常に
-  含まれる。ストア申請ステップの直前に対応する想定（`eas.json` 自体が
-  まだ存在しない）
 - **Settings UI の実機確認は完了**（上記「実機確認（Pixel 11、
   初回/2回目/3回目）」「実機確認（Pixel 3、D-20）」参照）：HC ON→権限
   ダイアログ→Connected 表示、Activity 記録/削除→HC への反映、Last synced

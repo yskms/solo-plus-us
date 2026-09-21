@@ -171,3 +171,115 @@ Day/Night モード、ステータスバー）にあることが多く、`values
 `constants/theme.ts`・`plugins/withAndroidNightColors.js`・`app.json` の3箇所に
 手動同期が必要（自動参照する手段が無い）。詳細と発見の経緯は README「Phase 3
 実装状況 > Appearance」参照。
+
+### ローカルで Health Connect を触るには `.env.local` が必要（既定は無効）
+
+`npm run android`/`expo start` は**既定で without-health-connect
+（HC 無効）**。`cp .env.local.example .env.local` しないと、Settings に
+HEALTH セクション自体が出ない（機能が無いのではなく、意図的にビルドごと
+隠している——詳細は次の節）。schema.ts 変更後のアンインストールと同じく、
+「コードのバグでは？」と無駄に調査する前にまずこれを疑うこと。
+
+### リリースビルド分離（`without-health-connect`/`with-health-connect`）はネイティブモジュールを除去しない
+
+§9.11/§25.1 の実装（`app.config.js`・`lib/healthConnectBuild.ts`・
+`eas.json`）は、`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED` で **Manifest の
+permission（`android.permission.health.WRITE_SEXUAL_ACTIVITY`）と
+`withHealthConnectPermissionsRationale` plugin だけ** を切り替えている。
+`react-native-health-connect` ネイティブモジュール自体は両ビルドとも
+リンクされたまま——これは手抜きではなく意図的な設計判断。**既定値
+（env 未設定）は「無効」**（`=== '1'` のときだけ有効、opt-in）——当初は
+「未設定 = 有効」だったが、env 指定を忘れた/新しい build profile が
+黙って permission 入りに倒れるのは危険側だとレビューで指摘され直した
+（`app.config.js`・`lib/healthConnectBuild.ts` の doc comment参照）。
+ローカルの `expo run:android`/`expo start` を HC 込みで使いたい場合は
+`.env.local.example` を `.env.local` にコピーすること。
+
+- Health apps declaration の提出トリガーは「配布 AAB の Manifest に
+  health permission が含まれているか」であって、ネイティブモジュールの
+  リンク有無ではない（§9.11 本文）。permission を切れば要件は満たされる。
+  ただしライブラリ自身の `<queries><package android:name="com.google.
+  android.apps.healthdata" /></queries>` は without ビルドでも Manifest に
+  残る（審査トリガーになる permission ではないので問題無いが、「HC の痕跡が
+  完全に消える」わけではない——レビュー指摘、2026-09-21）。
+- ネイティブモジュールの物理除外（autolinking の `exclude`）は、
+  Gradle デーモンのキャッシュ問題（本ファイル「package.json にあるのに
+  未リンクなネイティブモジュール」の節）を踏むリスクの割に実益が無い
+  ため、あえてやっていない。**「ネイティブモジュールも除外すべきでは」
+  という直感で `exclude` 設定を足すような変更はしないこと**——上記の
+  理由で不要かつリスクだけが増える。
+
+**「行を隠せば実行時参照は起こり得ない」は誤りだった（レビュー指摘、
+2026-09-21・実装当日に発見）。** 当初 `app/settings/index.tsx` が
+`isHealthConnectBuildEnabled()` で HEALTH 行を隠すだけで十分だと考えたが、
+以下の2経路で破られる：
+
+1. **同一 applicationId での with→without 入れ替え。** `healthConnect.
+   enabled` は暗号化 DB の設定として永続化され、アプリの入れ替え
+   （`adb install -r` 相当のアップグレード）では消えない。以前
+   with-health-connect ビルドで ON にしていた端末へ without ビルドを
+   重ねると、`getActiveProviders`（`services/ActivityService.ts`）が
+   health_connect を active と返し続け、`drainDueJobs` が permission の無い
+   ビルドでジョブを claim しては失敗させ続ける——しかもそれを見る/止める
+   UI（`health-connect.tsx`）は行が隠れていて到達不能。
+2. **deep link での直接到達。** `app/settings/index.tsx` が行を隠しても、
+   `soloplusus://settings/health-connect` は Expo Router のルートとして
+   常に開ける。ON トグルを押すと `healthConnect.enabled = true` が書き込め
+   てしまう（iOS は同じ「行を隠すだけ」だが、そちらはネイティブ呼び出しが
+   必ず throw する Proxy なので安全側に倒れる——ビルドフラグのケースは
+   ネイティブモジュールが生きたまま応答するため、同じロジックが通用しない）。
+
+**対処（両方実装済み）：**
+- `services/ActivityService.ts` の `reconcileHealthConnectBuildFlag()` を
+  `contexts/DatabaseContext.tsx` の DB 接続確立直後（アプリへ公開する前）に
+  1回呼び、`!isHealthConnectBuildEnabled()` なら `healthConnect.enabled` を
+  false に是正する（この時点では SyncWorker は構造上まだ起動しえないため
+  `SyncCoordinator.runExclusive` は不要——「初期化は runExclusive で
+  包んでいない」と同じ理由。呼び出しは try/catch で握り、失敗しても DB
+  接続自体は開いたまま起動を続ける——`ensureLocaleDefaultsPersisted` の
+  ような「失敗したら以降の表示が壊れる」処理とは重みが違うため）。
+- `app/settings/health-connect.tsx` の default export は薄いラッパーで、
+  `!isHealthConnectBuildEnabled()` なら中身（全 hooks を持つ
+  `HealthConnectSettingsScreenInner`）をマウントせず
+  `<Redirect href="/settings" />`（`expo-router`）を返す（2回目のレビュー
+  指摘で `useEffect`+`router.replace` の自作から差し替え——コンポーネント
+  分割なら形式的にも Rules of Hooks 違反にならない）。
+
+**ただし `reconcileHealthConnectBuildFlag` が解決するのは「provider が
+active のまま止まる」「トグル画面が到達不能」の2点だけで、with-health-
+connect ビルドで積まれた delete ジョブ自体が消えるわけではない
+（3回目のレビュー指摘、2026-09-21）。** permission が無いビルドではその
+ジョブを HC へ送る手段が無いため、jobs テーブルには残り続ける
+（`drainDueJobs` の provider-disabled 早期 return で claim されないだけ
+——§10.5 の「無効化中もジョブは保持される」と同じ扱い）。
+`app/settings/delete-data.tsx` の全削除完了メッセージは、
+`!isHealthConnectBuildEnabled()` のときだけ「このバージョンでは送信できない
+（HC 対応版に更新されれば自動的に再開する）」という文言に分岐させている
+——`healthConnect.enabled` が既に false なのに旧来の「Settings › Health
+Connect で再接続してください」を出すと、到達不能な画面へ誘導することになる
+ため。**with→without の入れ替えは、実際の配布（Play では片方のみ）ではなく
+主にローカルでのビルド取り違え対策として作った経路であり、「ジョブが
+いつか必ず送信される」ところまでは保証しない**——保証するのは「壊れた
+UI 状態や誤った案内を出さない」ところまで。
+
+「行を隠すだけで到達不能」という単純化は、**設定が他の経路（アップグレード・
+deep link・将来の Import 等）で変わりうる場合は成立しない**——今後同種の
+ビルドフラグ分岐を足すときは、UI を隠すことと「その状態に実際になれない」
+ことを混同しないこと。
+
+**`EXPO_PUBLIC_*` は `expo start`/`expo run:android` の dev-client 経由の
+ライブリロードでは、shell の export だけでは反映されない（実機で実際に
+踏んだ、2026-09-21）。** `app.config.js`（prebuild 時、素の Node プロセスが
+`process.env` を読むだけ）は shell export で問題なく動くが、JS 側
+（`lib/healthConnectBuild.ts` 等、bundle に埋め込まれる値）は別の仕組み
+（`expo/virtual/env`、実体は `.env`/`.env.local`/`.env.development`/
+`.env.development.local` からのみ値を取る require-context）を経由しており、
+dev-client のライブ bundle ではこれが優先され、shell export した値が
+反映されない（`undefined` になる）。**`npx expo export`（＝`eas build` が
+実際に使う本番相当の静的バンドル生成)では shell export だけで正しく
+リテラルへインライン展開される**（`return false;` まで定数畳み込みされる
+ことを実際に確認済み）——つまり `eas.json` の `env` を使うリリースビルドは
+問題なく動く。ローカルで dev-client 接続のまま JS 側の分岐だけを試したい
+場合は、`.env.local`（gitignore 済み）に書いてから `expo start --clear`
+すること。`app.config.js` と JS 側の判定で挙動が食い違って見えたら、まず
+これを疑うこと。
