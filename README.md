@@ -99,7 +99,8 @@ Android 9〜13 は androidx の AIDL インターフェースに cancel を渡�
 詳細は基本設計 §9.4/§9.7/§9.12・設計判断記録 D-04/D-20/D-41 の「確認結果」参照。
 DB 設計には影響しないため Phase 1 は着手できる。**チェックは「v1.0 投入を妨げる要因なし」の意味であり、
 全 OS バージョンでの実機検証完了を意味しない。**
-Phase 4 に向けて残っている確認事項（見送り条件ではない）は、上記の Android 9〜13 の削除挙動の実機検証のみ。
+Phase 4 に向けて残っている確認事項（見送り条件ではない）は、上記の Android 9〜13 の削除挙動の実機検証のみ
+（**2026-09-21 に実施済み——下記追記および「実機確認（Pixel 3、D-20）」参照**）。
 **Pixel 3（最終公式 OS が Android 12。Health Connect は Android 13 以下では Play ストア配布の別アプリの
 ため、未確認の非プラットフォーム統合パス＝`HealthConnectClientImpl` 経由の AIDL 呼び出しをそのまま
 実機で踏める）が検証機として使える**（2026-09-19 確認）。`HealthConnectService` 実装時（Phase 4）に
@@ -2458,9 +2459,10 @@ delete が防御的cleanupを落とす、declinedとuncertainを区別できな�
   全26スイート・352件パス
 - **副次的な影響**：`uncertain` からの delete は `external_record_id=NULL`
   のまま HC へ delete を投げるため、「存在しない clientRecordId への
-  delete」が通常運用で発生する経路になった。README「ステータス」節の
-  Phase 4 前提条件にある Android 9〜13（D-20）実機検証の優先度が
-  上がったことを D-51 に記録済み
+  delete」が通常運用で発生する経路になった。この経路がカバーすべき
+  Android 9〜13（D-20）実機検証は 2026-09-21 に実施済み——Pixel 3 で
+  reject されることを確認した（詳細は下記「実機確認（Pixel 3、D-20）」・
+  設計判断記録 D-20 参照）
 - **受け入れた制約**：`health_sync` は Export に含まれない（D-42）ため、
   置換復元（D-10）を実行すると `uncertain`/`declined` は失われ `none` に
   戻る——D-10 の既存設計と整合的なので意識して受け入れる
@@ -2796,17 +2798,20 @@ gradle 再ビルドは不要だった）。
 - **claim 中の行の無効化表示**：create/update ジョブ・delete ジョブの両方で
   「Syncing…」表示中は Retry now/Discard 系ボタンがグレーアウトすることを
   確認
-- **Retry now の実際の再試行**：`adb shell pm revoke <pkg>
-  android.permission.health.WRITE_SEXUAL_ACTIVITY` で権限を剥奪して
-  ジョブを `PERMISSION_DENIED` で失敗させ（"Permission needed" 表示・
-  "Not synced to Health Connect" 行を確認）、`pm grant` で戻したあと
-  Retry now をタップして実際に同期が成功することを確認した。**注記**：
-  1回目の失敗の自動バックオフは5秒（`SyncWorker.ts` の
-  `BACKOFF_SECONDS_BY_ATTEMPT`）で、周期 drain（10秒間隔）も並走している
-  ため、タップした瞬間に処理が始まったのか自動バックオフが数秒先んじて
-  いたのかは UI 観察だけでは厳密に切り分けられない——いずれにしても
-  `requestManualRetry`（`not_before` を即時化するだけ）から
-  `processNextDueJob` までの経路が実機で正しく完走することは確認できた
+- **Retry now の実際の再試行**：初回は権限剥奪→復元→即 Retry now という
+  手順で確認したが、自動バックオフ（1回目失敗で5秒後に再試行）と周期
+  drain（10秒間隔）が並走しており、タップした瞬間に処理が始まったのか
+  自動再試行が先んじていたのかを区別できていなかった（レビュー指摘）。
+  `services/SyncWorker.ts` の `not_before IS NOT NULL` という due 判定
+  （`repositories/HealthSyncJobRepository.ts` の `claimNextDueJob`）を
+  踏まえ、`MAX_AUTOMATIC_ATTEMPTS` を一時的に `10`→`1` に変更（TEMP、
+  確認後に `git diff` が空になることを確認して復元）した状態で再検証：
+  1回目の失敗で即座に `not_before = NULL`（自動再試行の対象から構造的に
+  外れる）の手動待ちへ落ちることを確認し、**権限復元後も無操作で
+  35秒以上（切断中20秒＋ Connected 状態で15秒）放置してジョブが
+  一切変化しないこと**を確認したうえで Retry now をタップ→即座に成功
+  （Last synced 更新・ジョブ消滅）。これにより「Retry now が実際に
+  同期を成立させている」ことを自動再試行の関与なしに確認できた
 - **`permission-revoked` の表示**：上記の権限剥奪操作で確認。**発見**：
   `pm revoke` で Health Connect の permission を取り消すと、対象アプリの
   プロセスが即座に kill される（ホーム画面に落ちる）——通常の Android
@@ -2877,14 +2882,43 @@ D-20 本題（存在しない `clientRecordId` への delete）を検証した�
 `git diff` が空になることを確認してから削除）。`classifyError()` の
 switch に `UNDERLYING_ERROR` は無いため `UNKNOWN` に分類され、§9.6 の
 通常のリトライ・バックオフに乗る——**Android 9〜13 では「存在しない」
-削除は成功にならず、上限到達まで自動リトライを繰り返した末に手動待ち
-（Retry now/discard）に落ちる。** これは D-20 の「ラッパーが識別できない
-場合は既知の制限として受け入れる」という想定どおりの帰結で、実装変更は
-不要と判断した。詳細な確認結果は
-[設計判断記録 D-20](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-20-削除の存在しないを成功として扱いread-権限は追加しない)
-に追記済み。「Stop retrying」による破棄（確認文言「Stop retrying this
-deletion? / This record may remain in Health Connect.」）も実機で
-正常に動作し、ジョブが消えて「Everything is synced.」に戻ることを確認した。
+削除は成功にならず、`attempts` が `MAX_AUTOMATIC_ATTEMPTS`（10）に到達
+するまで自動リトライを繰り返した末に手動待ち（Retry now/discard）に
+落ちる。** バックオフ表 `[5,15,60,300,900,3600,21600,86400]` 秒により、
+1回目の失敗から10回目の失敗（手動待ちに落ちる瞬間）まで実時間で約
+55.4 時間（≈2.3 日）かかる——この間ずっと「Not synced to Health
+Connect」相当の表示が残る。これは D-20 の「ラッパーが識別できない場合は
+既知の制限として受け入れる」という想定どおりの帰結で、**`delete`
+ジョブに関しては**実装変更は不要と判断した。「Stop retrying」による
+破棄（確認文言「Stop retrying this deletion? / This record may remain
+in Health Connect.」）も実機で正常に動作し、ジョブが消えて
+「Everything is synced.」に戻ることを確認した。
+
+**この結論の範囲についての注記**（レビュー指摘、2026-09-21）：
+
+- **`recreateActivity`（§9.3.1）への影響は未検証・要注意。**
+  `services/HealthConnectService.ts` の `recreateActivity` は「delete が
+  失敗したら insert せずここで失敗を返す」（D-34）ため、Android 9〜13 で
+  `operation: 'recreate'` のジョブが「外部レコードが実在しない」状態に
+  当たった場合、delete の段階で今回確認した reject を受け続け、**insert
+  に一度も到達できないまま同じ約55時間のサイクルで手動待ちに落ちる**。
+  現状 `operation: 'recreate'` を生成するコードは存在しない（§13.6 は
+  Known gap、未実装）ため実害は出ていないが、D-34 の「`NOT_FOUND` を
+  成功扱いにしている以上、先頭からの再実行は常に安全」という記述は
+  Android 9〜13 では「安全（副作用がない）」は成り立つが「いずれ成功する」
+  は成り立たない——§13.6 実装時に別途判断が必要。詳細は
+  [設計判断記録 D-20](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-20-削除の存在しないを成功として扱いread-権限は追加しない)・
+  D-34 に追記済み
+- **検証したのは「HC アプリ側で直接削除」という1経路のみ。** D-20 が
+  本来想定していたのは「外部 delete に成功した直後・ローカル確定前に
+  クラッシュ」というケースで、これも「対象 UID がもう存在しない」という
+  点では同じはずだが、HC 内部の実装（トゥームストーンの有無等）次第で
+  挙動が完全に一致しない可能性は理論上残る
+- **検証環境は Pixel 3 / Android 12（API 31）/ Health Connect
+  v2026.08.06.00 の1台1バージョンのみ。** Health Connect は単一 APK
+  として配布されるため大きく異なる可能性は低いと考えるが、「Android
+  9〜13 では」という断定は、この1点の検証に基づくものであることを
+  明記しておく
 
 **実機検証中に踏んだ、この端末固有の妨害要因**（アプリのバグではない）：
 検証の後半、Gmail の大量通知により通知シェードが開いたまま固着し、
@@ -2912,10 +2946,15 @@ adb 経由のタップが吸われて一切効かなくなる状態を繰り返�
   参照）、HC 未インストール環境での ON 操作時の表示（Pixel 3 で確認、
   Pixel 11 の platform 統合パスでは検証不能）
 - **Android 9〜13（非プラットフォーム統合パス）での D-20 実機検証は
-  完了**（上記「実機確認（Pixel 3、D-20）」参照）：存在しない
-  `clientRecordId` への delete は `UNDERLYING_ERROR`/「Request contains
-  invalid UID.」で reject され、`UNKNOWN` 分類→通常のリトライ・バック
-  オフに乗ることを確認した。設計判断記録 D-20 に確認結果を追記済み
+  `delete` ジョブについて完了**（上記「実機確認（Pixel 3、D-20）」参照）：
+  存在しない `clientRecordId` への delete は `UNDERLYING_ERROR`/
+  「Request contains invalid UID.」で reject され、`UNKNOWN` 分類→通常の
+  リトライ・バックオフ（手動待ちまで約55時間）に乗ることを確認した。
+  設計判断記録 D-20 に確認結果を追記済み。**`recreateActivity`（§13.6/
+  D-34 の recreate 経路）への影響は未検証**——外部レコードが不在の場合、
+  delete 段階で同じ reject を受け続け insert に到達できない可能性が
+  あり、§13.6 実装時に別途判断が必要（詳細は上記「実機確認（Pixel 3、
+  D-20）」の注記参照）
 - **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
   無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
   OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、

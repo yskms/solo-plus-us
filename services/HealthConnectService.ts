@@ -36,6 +36,20 @@
  * 単に reject 自体が起きないことで自動的に満たされ、Android 9〜13 では
  * 識別できないため保守的に「delete 失敗時は create へ進まない」側に倒れる
  * （recreate の「削除がそれ以外のエラーなら作成しない」と整合する）。
+ *
+ * **実測（2026-09-21、Pixel 3 / Android 12、Health Connect
+ * v2026.08.06.00）**：存在しない `clientRecordId` への delete は実際に
+ * reject される——`{code: "UNDERLYING_ERROR", message: "Request contains
+ * invalid UID."}`（`classifyError` の default 分岐で `UNKNOWN` になる）。
+ * **`message` 文字列に依存して「これは存在しないだけだから成功扱いにする」
+ * という特別扱いを追加しないこと。** `UNDERLYING_ERROR` は Binder 切断等
+ * 他の原因でも返りうる code であり、`message` はライブラリ／Health
+ * Connect アプリのバージョンが変われば変わりうる非契約な文字列のため、
+ * これに依存する分岐は静かに壊れる。詳細は設計判断記録 D-20 の確認結果を
+ * 参照。またこの reject は `recreateActivity` の内部 delete でも同様に
+ * 起こる——外部レコードが不在の状態で recreate すると、Android 9〜13 では
+ * insert に到達できないまま手動待ちに落ちる（§13.6 実装時は D-34 の
+ * 追記を参照）。
  */
 import {
   deleteRecordsByUuids,
