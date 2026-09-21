@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solo + Us — Privacy Policy / プライバシーポリシー</title>
+<style>
+  :root {
+    --bg: #F8F7FA;
+    --surface: #FFFFFF;
+    --text: #1C1B1F;
+    --text-muted: #5B5866;
+    --border: #E4E1E8;
+    --accent: #6750A4;
+    --accent-contrast: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141218;
+      --surface: #1D1B20;
+      --text: #E6E1E9;
+      --text-muted: #ABA6B2;
+      --border: #322F37;
+      --accent: #D0BCFF;
+      --accent-contrast: #1D1B20;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, sans-serif;
+    line-height: 1.75;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  header {
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .meta {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 12px;
+  }
+  .lang-switch {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 20px;
+  }
+  .lang-switch button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    padding: 8px 18px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .lang-switch button.active {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+  section.doc {
+    display: none;
+  }
+  section.doc.active {
+    display: block;
+  }
+  h2 {
+    font-size: 1.05rem;
+    margin: 32px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  p { margin: 0 0 12px; }
+  ul { margin: 0 0 12px; padding-left: 1.3em; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 28px 8px;
+  }
+  footer {
+    margin-top: 28px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Solo + Us</h1>
+    <p class="subtitle">Privacy Policy / プライバシーポリシー</p>
+    <div class="lang-switch" role="tablist" aria-label="Language">
+      <button id="btn-en" class="active" role="tab" aria-selected="true" aria-controls="doc-en" onclick="setLang('en')">English</button>
+      <button id="btn-ja" role="tab" aria-selected="false" aria-controls="doc-ja" onclick="setLang('ja')">日本語</button>
+    </div>
+    <p class="meta">Last updated / 最終更新日: 2026-09-21</p>
+  </header>
+
+  <div class="card">
+    <!-- ===================== 日本語版 ===================== -->
+    <section id="doc-ja" class="doc" lang="ja" role="tabpanel" aria-labelledby="btn-ja">
+      <p>
+        Solo + Us（以下「本アプリ」）は、Solo / Partnered
+        な性的活動を長期間記録し、自分自身の変化を振り返るための
+        Personal Wellness アプリです。本ポリシーは、本アプリが取り扱う情報と
+        その取り扱い方針について説明します。
+      </p>
+
+      <h2>1. 基本方針</h2>
+      <ul>
+        <li>アカウント登録は不要です。</li>
+        <li>記録データは原則として端末内にのみ保存されます（例外は「4. Health Connect との連携」を参照）。</li>
+        <li>独自サーバーへ記録データを送信することはありません。</li>
+        <li>記録データを広告目的で利用することはありません。</li>
+        <li>不要な Analytics・広告 SDK・クラッシュレポート SDK は導入していません。</li>
+      </ul>
+
+      <h2>2. 収集する情報</h2>
+      <p>
+        本アプリは、利用者が明示的に入力した場合に限り、以下の情報を
+        端末内に保存します。いずれも任意入力であり、入力を必須とする項目は
+        「記録日時」と「分類（Solo / Partnered）」のみです。
+      </p>
+      <ul>
+        <li>記録日時</li>
+        <li>分類（Solo / Partnered）</li>
+        <li>Outcome（Orgasm、Ejaculation、Protection 使用の有無）</li>
+        <li>状況メモ（Duration、記録前後の気分、自由記述メモ）</li>
+        <li>記録のタイムゾーン情報（例: Asia/Tokyo、UTC からのオフセット）</li>
+        <li>表示項目のカスタマイズなど、本アプリの設定</li>
+      </ul>
+      <p>
+        本アプリは、利用者の性別・氏名・メールアドレス・GPS 等の位置情報など、
+        個人を特定しうる情報を収集しません。ただし上記のタイムゾーン情報は、
+        正確な位置情報ではないものの、おおまかな地域を推測できる情報である点に
+        ご留意ください。
+      </p>
+
+      <h2>3. データの保存方法</h2>
+      <ul>
+        <li>すべての記録データは、SQLCipher により暗号化された端末内データベースにのみ保存されます。</li>
+        <li>暗号鍵は端末の Keychain（iOS）/ Android Keystore に保管され、生体認証の情報とは独立しています。</li>
+        <li>Android では、記録データを OS の自動バックアップ・端末間移行（デバイス間コピー）の対象から明示的に除外しています。</li>
+        <li>iOS では現時点でこの除外を実装しておらず、データベースファイル自体は iCloud / iTunes のバックアップに含まれます。ただし暗号鍵は端末外に出ない設定のため、そのバックアップから復元してもデータベースを復号することはできません。</li>
+        <li>
+          以上の結果として、端末の紛失・初期化・アンインストールが発生すると、記録データは実質的に復元できなくなります。復元手段は次項のエクスポート／インポートのみです。
+        </li>
+      </ul>
+
+      <h2>4. Health Connect との連携（Android）</h2>
+      <p>
+        本アプリは、利用者が設定画面で明示的に有効化した場合に限り、
+        Android の Health Connect と連携します。既定では無効です。
+      </p>
+      <ul>
+        <li>Health Connect へ送信される情報は「日時」と「Protection（避妊具等の使用有無）」のみです。</li>
+        <li>Solo / Partnered の区別、Orgasm / Ejaculation、Duration、気分、メモは送信されません。</li>
+        <li>現在の設定は連携の ON / OFF のみで、Solo / Partnered を個別に選んで同期対象を絞る設定はありません。連携を有効にすると、両方の記録が同期対象になります。</li>
+        <li>現時点では本アプリから Health Connect への書き込みのみを行い、Health Connect からのデータ読み込みは行いません。</li>
+        <li>連携はいつでも設定画面から無効化・切断できます。</li>
+        <li>Health Connect 上に保存されたデータの取り扱いは、Google の Health Connect のプライバシーポリシーに従います。</li>
+      </ul>
+
+      <h2>5. アプリロック</h2>
+      <p>
+        本アプリは、端末の Face ID / Touch ID / 指紋認証、または端末パスコードによる
+        ロック機能を提供します。認証そのものは OS が行い、本アプリはその結果のみを
+        受け取ります。アプリ独自の PIN は実装していません。
+      </p>
+
+      <h2>6. バックアップとエクスポート</h2>
+      <ul>
+        <li>利用者は、アプリ内の操作により、記録データを平文の JSON または CSV ファイルとしてエクスポートできます。</li>
+        <li>JSON 形式はバックアップ・復元（インポート）に対応した正本形式です。CSV 形式は表計算ソフト等での閲覧・集計を目的とした一方向のエクスポートであり、インポート（復元）には利用できません。</li>
+        <li>通常のエクスポートは利用者が明示的に操作した場合にのみ生成され、OS 標準の共有機能を通じて送信先を利用者自身が選択します。共有後、アプリ内に作成された一時ファイルは削除されます。</li>
+        <li>エクスポートファイルは暗号化されていない平文です。保管・共有時はファイルの取り扱いにご注意ください。</li>
+        <li>
+          「置換インポート（バックアップから丸ごと復元）」を実行する際は、安全のため、
+          置換前の記録データを平文 JSON として自動的にバックアップするファイルが端末に
+          生成されます。このファイルは共有シートを経由しないため上記の自動削除の対象外で、
+          現時点ではアプリ内に削除用の操作を用意しておらず、端末に残り続けます（iOS では
+          §3 の通り iCloud / iTunes バックアップの対象にもなります）。不要な場合は、端末の
+          ファイル管理アプリ等から手動で削除してください。
+        </li>
+        <li>エクスポートした JSON ファイルから記録データをインポート（復元）することも可能です。</li>
+      </ul>
+
+      <h2>7. データの削除</h2>
+      <p>
+        利用者は、アプリ内の設定から記録データを削除できます。また、アプリを
+        アンインストールすると端末内のデータベースも削除されます（Android では
+        前述の通り OS バックアップの対象外のため、アンインストール後の復元はできません。
+        iOS のバックアップの扱いは §3 を参照してください）。
+      </p>
+      <p>
+        Health Connect と連携している場合、記録を削除するとその削除を Health Connect
+        側にも反映する処理が行われます。ただし、Health Connect 連携が無効になっている間や、
+        削除の反映がまだ完了していない間は、その記録が Health Connect 側に残り続けることが
+        あります。連携を有効な状態に戻すと、未反映の削除は改めて Health Connect 側へ反映されます。
+      </p>
+
+      <h2>8. 対象年齢</h2>
+      <p>
+        本アプリは 18 歳以上の成人を対象としています。本アプリが児童を対象として
+        意図的に情報を収集することはありません。
+      </p>
+
+      <h2>9. 本ポリシーの変更</h2>
+      <p>
+        本ポリシーは、本アプリの開発状況に応じて更新されることがあります。
+        変更内容は本ページおよび
+        <a href="https://github.com/yskms/solo-plus-us" target="_blank" rel="noopener">GitHub リポジトリ</a>
+        のコミット履歴で確認できます。
+      </p>
+
+      <h2>10. データ管理者・お問い合わせ</h2>
+      <p>
+        本アプリの開発者（データ管理者）は <strong>yskms.studio</strong> です。
+        本アプリに関するご質問・ご意見は、下記のいずれかの方法でお願いします。
+      </p>
+      <ul>
+        <li>
+          メール:
+          <a href="mailto:yskms.studio@gmail.com">yskms.studio@gmail.com</a>
+        </li>
+        <li>
+          GitHub Issue:
+          <a href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">
+            https://github.com/yskms/solo-plus-us/issues
+          </a>
+          （公開の場である点にご留意ください）
+        </li>
+      </ul>
+    </section>
+
+    <!-- ===================== English version ===================== -->
+    <section id="doc-en" class="doc active" lang="en" role="tabpanel" aria-labelledby="btn-en">
+      <p>
+        Solo + Us ("the App") is a personal wellness app for recording Solo
+        and Partnered sexual activity over time, so you can reflect on your
+        own patterns. This policy explains what information the App handles
+        and how it is treated.
+      </p>
+
+      <h2>1. Our Approach</h2>
+      <ul>
+        <li>No account or sign-up is required.</li>
+        <li>Your records are, in principle, stored only on your device (see "4. Health Connect Integration" for the one exception).</li>
+        <li>We do not operate our own server, and your records are never sent to any server of ours.</li>
+        <li>We do not use your records for advertising purposes.</li>
+        <li>We do not include any analytics SDK, advertising SDK, or crash-reporting SDK.</li>
+      </ul>
+
+      <h2>2. Information We Collect</h2>
+      <p>
+        The App stores the following information on your device only when
+        you explicitly enter it. Only "date/time" and "category (Solo /
+        Partnered)" are required; everything else is optional.
+      </p>
+      <ul>
+        <li>Date and time of the record</li>
+        <li>Category (Solo / Partnered)</li>
+        <li>Outcome (orgasm, ejaculation, whether protection was used)</li>
+        <li>Optional context (duration, mood before/after, free-text notes)</li>
+        <li>Time zone information for each record (e.g. "Asia/Tokyo" and its UTC offset)</li>
+        <li>App settings such as which fields are shown</li>
+      </ul>
+      <p>
+        The App does not collect information that could identify you, such
+        as your gender, name, email address, or GPS-based location. Note
+        that the time zone stored with each record is not precise location
+        data, but it can suggest your general region.
+      </p>
+
+      <h2>3. How Data Is Stored</h2>
+      <ul>
+        <li>All records are stored only in an on-device database encrypted with SQLCipher.</li>
+        <li>The encryption key is stored in the device's Keychain (iOS) / Android Keystore, independently of biometric data.</li>
+        <li>On Android, your records are explicitly excluded from the OS's automatic backup and device-to-device transfer.</li>
+        <li>On iOS, this exclusion is not yet implemented, so the database file itself is included in iCloud/iTunes backups. However, the encryption key never leaves the device, so the database cannot be decrypted even if it is restored from such a backup.</li>
+        <li>
+          As a result, if your device is lost, reset, or the App is
+          uninstalled, your records effectively cannot be recovered. The
+          only way to restore them is through export/import, described below.
+        </li>
+      </ul>
+
+      <h2>4. Health Connect Integration (Android)</h2>
+      <p>
+        The App integrates with Android Health Connect only if you
+        explicitly enable it in Settings. It is disabled by default.
+      </p>
+      <ul>
+        <li>Only "date/time" and "protection used" are sent to Health Connect.</li>
+        <li>The Solo/Partnered distinction, orgasm/ejaculation, duration, mood, and notes are never sent.</li>
+        <li>The current setting is a single on/off toggle for this integration — there is no separate option to sync only Solo or only Partnered records. Enabling sync applies to both.</li>
+        <li>Currently the App only writes to Health Connect; it does not read data back from Health Connect.</li>
+        <li>You can disable or disconnect this integration at any time from Settings.</li>
+        <li>Data stored in Health Connect itself is governed by Google's Health Connect privacy policy.</li>
+      </ul>
+
+      <h2>5. App Lock</h2>
+      <p>
+        The App offers a lock screen using your device's Face ID / Touch ID
+        / fingerprint, or device passcode. Authentication itself is handled
+        by the OS; the App only receives the result. The App does not
+        implement its own PIN.
+      </p>
+
+      <h2>6. Backup and Export</h2>
+      <ul>
+        <li>You can export your records as a plain-text JSON or CSV file from within the App.</li>
+        <li>JSON is the canonical backup/restore format and can be imported back into the App. CSV is a one-way export intended for viewing or analysis in spreadsheet software, and cannot be imported back.</li>
+        <li>A regular export is only generated when you explicitly request it, and you choose the destination through the OS's standard share sheet. Temporary files created for sharing are deleted afterward.</li>
+        <li>Export files are not encrypted. Please handle them carefully when storing or sharing.</li>
+        <li>
+          When you run a "replace import" (restoring your data from a
+          backup, which overwrites what's currently on the device), the
+          App automatically creates a plain-text JSON safety backup of your
+          existing records before making any changes. This file does not
+          go through the share sheet, so it is not auto-deleted, and the
+          App does not currently offer a way to delete it from within its
+          UI — it remains on your device (and, on iOS, is included in
+          iCloud/iTunes backups as described in section 3) until you remove
+          it yourself using your device's file manager.
+        </li>
+        <li>You can also import a JSON export to restore your records.</li>
+      </ul>
+
+      <h2>7. Data Deletion</h2>
+      <p>
+        You can delete your records from within the App's settings.
+        Uninstalling the App also deletes the on-device database (on
+        Android this cannot be recovered afterward, since it is excluded
+        from OS backups as described above; see section 3 for how iOS
+        backups are currently handled).
+      </p>
+      <p>
+        If Health Connect sync is enabled, deleting a record also queues a
+        request to delete the corresponding entry from Health Connect.
+        However, while sync is disabled, or while a deletion has not yet
+        been processed, that entry can remain in Health Connect for a
+        while. Re-enabling sync will resume any pending deletions.
+      </p>
+
+      <h2>8. Age Rating</h2>
+      <p>
+        The App is intended for adults aged 18 and over. It does not
+        knowingly collect information from children.
+      </p>
+
+      <h2>9. Changes to This Policy</h2>
+      <p>
+        This policy may be updated as the App evolves. You can review
+        changes on this page and in the commit history of the
+        <a href="https://github.com/yskms/solo-plus-us" target="_blank" rel="noopener">GitHub repository</a>.
+      </p>
+
+      <h2>10. Data Controller &amp; Contact</h2>
+      <p>
+        The developer (data controller) of this App is <strong>yskms.studio</strong>.
+        For any questions or feedback about the App, please use one of the
+        following:
+      </p>
+      <ul>
+        <li>
+          Email:
+          <a href="mailto:yskms.studio@gmail.com">yskms.studio@gmail.com</a>
+        </li>
+        <li>
+          GitHub Issue:
+          <a href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">
+            https://github.com/yskms/solo-plus-us/issues
+          </a>
+          (please note this is a public forum)
+        </li>
+      </ul>
+    </section>
+  </div>
+
+  <footer>Solo + Us</footer>
+</div>
+
+<script>
+  function setLang(lang) {
+    document.getElementById('doc-ja').classList.toggle('active', lang === 'ja');
+    document.getElementById('doc-en').classList.toggle('active', lang === 'en');
+    document.getElementById('btn-ja').classList.toggle('active', lang === 'ja');
+    document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+    document.getElementById('btn-ja').setAttribute('aria-selected', String(lang === 'ja'));
+    document.getElementById('btn-en').setAttribute('aria-selected', String(lang === 'en'));
+    document.documentElement.lang = lang;
+    try { localStorage.setItem('solo-plus-us-privacy-lang', lang); } catch (e) {}
+  }
+  (function () {
+    // URL (?lang=ja or #ja) takes priority over the remembered choice, so a
+    // direct link (e.g. from a store review screen) always lands correctly
+    // regardless of what a past visitor last picked in this browser.
+    var params;
+    try { params = new URLSearchParams(location.search); } catch (e) { params = null; }
+    var fromUrl = (params && params.get('lang')) || location.hash.replace('#', '') || null;
+    if (fromUrl === 'ja' || fromUrl === 'en') {
+      setLang(fromUrl);
+      return;
+    }
+    try {
+      var saved = localStorage.getItem('solo-plus-us-privacy-lang');
+      if (saved === 'ja') setLang('ja');
+    } catch (e) {}
+  })();
+</script>
+</body>
+</html>
