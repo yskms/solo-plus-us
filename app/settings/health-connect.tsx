@@ -6,17 +6,18 @@
  * 出し分けている——Health Connect は Android 専用機能、§9.11）。
  *
  * **§9.11/§25.1 レビュー指摘（2026-09-21）：without-health-connect ビルドでは
- * この画面自体をリダイレクトで閉じる。** `app/settings/index.tsx` が行を
+ * この画面自体を `Redirect` で閉じる。** `app/settings/index.tsx` が行を
  * 隠すだけでは、`soloplusus://settings/health-connect` の deep link で
  * 直接開けてしまい、permission が Manifest に無いビルドで
  * `healthConnect.enabled` を true にできてしまう（iOS は `Platform.OS`
  * のみで画面自体はガードしていないが、そちらは呼び出しが必ず throw する
  * Proxy で安全側に倒れる——このビルドフラグのケースはネイティブモジュールが
- * 生きたまま応答するため、同じ「index で隠すだけ」に頼れない）。
- * `isHealthConnectBuildEnabled()` はビルド時定数（`EXPO_PUBLIC_*` は
- * bundle 時にリテラル展開される）で、この画面の生存期間中に変わることは
- * ないため、他の hooks より前でこの早期 return を行っても Rules of Hooks
- * 違反にはならない（hook 呼び出し回数はこのビルドである限り常に一定）。
+ * 生きたまま応答するため、同じ「index で隠すだけ」に頼れない）。default
+ * export（`HealthConnectSettingsScreen`）は分岐して `Redirect` を返すか
+ * 中身（`HealthConnectSettingsScreenInner`、以下の全 hooks）をマウントする
+ * だけの薄いラッパーで、Inner 自身は無条件に呼ばれる限り hooks 呼び出し
+ * 回数が常に一定——形式的にも Rules of Hooks 違反にならない（詳細は
+ * `HealthConnectSettingsScreen` 自身の doc comment参照）。
  *
  * §10.6「全 Activity 削除」（`app/settings/delete-data.tsx`）の進行表示
  * 付きフローはここには無い——その画面の doc comment に記載の通り、意図的な
@@ -51,7 +52,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
@@ -183,19 +184,26 @@ function UnsyncedRow({
 
 const POLL_INTERVAL_MS = 5000;
 
-/** without-health-connect ビルドでこの画面を deep link 等で開いたときに `/settings` へ戻す。ファイル冒頭の doc comment参照。 */
-function BuildDisabledRedirect() {
-  useEffect(() => {
-    router.replace('/settings');
-  }, []);
-  return null;
-}
-
+/**
+ * without-health-connect ビルドでは deep link 等で開かれても中身
+ * （`HealthConnectSettingsScreenInner`、以下の全 hooks を持つ）を
+ * マウントせず `/settings` へ `Redirect` する。default export をこの薄い
+ * ラッパーに分離しているのは、2回目のレビュー指摘（2026-09-21）——
+ * `isHealthConnectBuildEnabled()` はビルド時定数なので条件分岐が hooks
+ * より前にあっても実害は無いが、lint（未導入）や将来の React の静的解析が
+ * 「hooks より前の早期 return」を額面通りに Rules of Hooks 違反として扱う
+ * 可能性があり、正当性の説明がコメントだけに依存するのは脆い。コンポーネント
+ * 分割なら Inner 自身は無条件に呼ばれる限り hooks 呼び出し回数は常に一定で、
+ * 形式的にも違反にならない。
+ */
 export default function HealthConnectSettingsScreen() {
   if (!isHealthConnectBuildEnabled()) {
-    return <BuildDisabledRedirect />;
+    return <Redirect href="/settings" />;
   }
+  return <HealthConnectSettingsScreenInner />;
+}
 
+function HealthConnectSettingsScreenInner() {
   const { colors } = useTheme();
   const db = useDatabase();
   const { revision, bump } = useDataRevision();

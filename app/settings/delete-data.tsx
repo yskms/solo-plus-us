@@ -35,6 +35,7 @@ import * as ActivityService from '../../services/ActivityService';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
 import * as HealthSyncJobRepository from '../../repositories/HealthSyncJobRepository';
 import { getSetting } from '../../services/SettingsRepository';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { logError } from '../../lib/log';
 
 type Step = 'confirm' | 'busy';
@@ -118,6 +119,16 @@ export default function DeleteDataScreen() {
       } else if (healthConnectEnabled) {
         title = 'Deleted from this device';
         message = `Every activity has been deleted from this device. ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's are' : ' is'} still being sent to Health Connect — check progress anytime in Settings › Health Connect.`;
+      } else if (!isHealthConnectBuildEnabled()) {
+        // §9.11/§25.1 レビュー指摘（2026-09-21）: without-health-connect ビルド
+        // では Settings › Health Connect 自体が到達不能（`app/settings/
+        // health-connect.tsx` がリダイレクトする）ので、そこへ案内しない。
+        // これらのジョブは permission が無い以上このビルドでは永久に送信
+        // できない——with-health-connect ビルドへ更新された場合にのみ再開する
+        // （`services/ActivityService.ts` の `reconcileHealthConnectBuildFlag`
+        // doc comment参照）。
+        title = 'Deleted from this device';
+        message = `Every activity has been deleted from this device. This version of the app can't sync ${pendingDeleteCount} pending Health Connect deletion${pendingDeleteCount > 1 ? 's' : ''} — they'll be sent automatically if this device gets an update with Health Connect support.`;
       } else {
         title = 'Deleted from this device';
         message = `Every activity has been deleted from this device. Health Connect has ${pendingDeleteCount} deletion${pendingDeleteCount > 1 ? 's' : ''} waiting — reconnect in Settings › Health Connect to resume.`;

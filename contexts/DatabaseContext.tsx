@@ -17,6 +17,7 @@ import { hasSeenPrivacyIntro } from '../lib/onboarding';
 import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
 import { reconcileHealthConnectBuildFlag } from '../services/ActivityService';
 import { DatabaseCorruptOrWrongKeyError, DatabaseKeyUnavailableError, MigrationRestoreFailedError } from '../lib/errors';
+import { logError } from '../lib/log';
 import { useTheme } from '../constants/theme';
 import { RecoveryScreen } from '../components/RecoveryScreen';
 
@@ -48,8 +49,16 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       await ensureLocaleDefaultsPersisted(db);
       // §9.11/§25.1 レビュー指摘: without-health-connect ビルドへの入れ替え後も
       // healthConnect.enabled が true のまま残っていないか是正する（詳細は
-      // `services/ActivityService.ts` の doc comment参照）。
-      await reconcileHealthConnectBuildFlag(db);
+      // `services/ActivityService.ts` の doc comment参照）。DB 自体は正常に
+      // 開けているので、この是正だけが失敗しても「DB が開けない」画面
+      // （Recovery）に倒すべきではない——最悪でも「HC が有効なままの
+      // without ビルド」に留まるだけで、次回起動時に再試行される
+      // （3回目のレビュー指摘、2026-09-21）。
+      try {
+        await reconcileHealthConnectBuildFlag(db);
+      } catch (error) {
+        logError('reconcileHealthConnectBuildFlag failed', error);
+      }
       const needsOnboarding = !(await hasSeenPrivacyIntro(db));
       // §7.2 "起動を継続してエラーを表示する": a failed migration that fell
       // back to the pre-migration schema still returns a usable `db` —

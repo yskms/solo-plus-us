@@ -356,6 +356,16 @@ describe('deleteAllActivities — §10.6 bulk-applies §10.1 to every Activity',
   });
 });
 
+/**
+ * §9.11/§25.1 レビュー指摘（2026-09-21）: this suite flips
+ * `process.env[ENV_KEY]` at test time to simulate both build variants —
+ * that's a Jest/Node-only affordance. In the real app bundle,
+ * `lib/healthConnectBuild.ts`'s `process.env.EXPO_PUBLIC_HEALTH_CONNECT_
+ * ENABLED` reference is inlined to a literal boolean by babel at build
+ * time (`expo export`/`eas build` — confirmed by inspecting the exported
+ * bundle), so it can never change at runtime on a real device. Don't read
+ * "dynamic here" as "dynamic in production."
+ */
 describe('reconcileHealthConnectBuildFlag — §9.11/§25.1 release build split', () => {
   const ENV_KEY = 'EXPO_PUBLIC_HEALTH_CONNECT_ENABLED';
   const originalEnv = process.env[ENV_KEY];

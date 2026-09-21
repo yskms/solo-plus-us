@@ -172,6 +172,14 @@ Day/Night モード、ステータスバー）にあることが多く、`values
 手動同期が必要（自動参照する手段が無い）。詳細と発見の経緯は README「Phase 3
 実装状況 > Appearance」参照。
 
+### ローカルで Health Connect を触るには `.env.local` が必要（既定は無効）
+
+`npm run android`/`expo start` は**既定で without-health-connect
+（HC 無効）**。`cp .env.local.example .env.local` しないと、Settings に
+HEALTH セクション自体が出ない（機能が無いのではなく、意図的にビルドごと
+隠している——詳細は次の節）。schema.ts 変更後のアンインストールと同じく、
+「コードのバグでは？」と無駄に調査する前にまずこれを疑うこと。
+
 ### リリースビルド分離（`without-health-connect`/`with-health-connect`）はネイティブモジュールを除去しない
 
 §9.11/§25.1 の実装（`app.config.js`・`lib/healthConnectBuild.ts`・
@@ -227,11 +235,32 @@ permission（`android.permission.health.WRITE_SEXUAL_ACTIVITY`）と
   1回呼び、`!isHealthConnectBuildEnabled()` なら `healthConnect.enabled` を
   false に是正する（この時点では SyncWorker は構造上まだ起動しえないため
   `SyncCoordinator.runExclusive` は不要——「初期化は runExclusive で
-  包んでいない」と同じ理由）。
-- `app/settings/health-connect.tsx` 自体が `isHealthConnectBuildEnabled()`
-  を他の hooks より前でチェックし、無効なら `/settings` へ `router.replace`
-  する（`BuildDisabledRedirect`）。この値はビルド時定数なので、hooks より
-  前の早期 return でも Rules of Hooks 違反にならない。
+  包んでいない」と同じ理由。呼び出しは try/catch で握り、失敗しても DB
+  接続自体は開いたまま起動を続ける——`ensureLocaleDefaultsPersisted` の
+  ような「失敗したら以降の表示が壊れる」処理とは重みが違うため）。
+- `app/settings/health-connect.tsx` の default export は薄いラッパーで、
+  `!isHealthConnectBuildEnabled()` なら中身（全 hooks を持つ
+  `HealthConnectSettingsScreenInner`）をマウントせず
+  `<Redirect href="/settings" />`（`expo-router`）を返す（2回目のレビュー
+  指摘で `useEffect`+`router.replace` の自作から差し替え——コンポーネント
+  分割なら形式的にも Rules of Hooks 違反にならない）。
+
+**ただし `reconcileHealthConnectBuildFlag` が解決するのは「provider が
+active のまま止まる」「トグル画面が到達不能」の2点だけで、with-health-
+connect ビルドで積まれた delete ジョブ自体が消えるわけではない
+（3回目のレビュー指摘、2026-09-21）。** permission が無いビルドではその
+ジョブを HC へ送る手段が無いため、jobs テーブルには残り続ける
+（`drainDueJobs` の provider-disabled 早期 return で claim されないだけ
+——§10.5 の「無効化中もジョブは保持される」と同じ扱い）。
+`app/settings/delete-data.tsx` の全削除完了メッセージは、
+`!isHealthConnectBuildEnabled()` のときだけ「このバージョンでは送信できない
+（HC 対応版に更新されれば自動的に再開する）」という文言に分岐させている
+——`healthConnect.enabled` が既に false なのに旧来の「Settings › Health
+Connect で再接続してください」を出すと、到達不能な画面へ誘導することになる
+ため。**with→without の入れ替えは、実際の配布（Play では片方のみ）ではなく
+主にローカルでのビルド取り違え対策として作った経路であり、「ジョブが
+いつか必ず送信される」ところまでは保証しない**——保証するのは「壊れた
+UI 状態や誤った案内を出さない」ところまで。
 
 「行を隠すだけで到達不能」という単純化は、**設定が他の経路（アップグレード・
 deep link・将来の Import 等）で変わりうる場合は成立しない**——今後同種の
