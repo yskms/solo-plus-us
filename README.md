@@ -1908,6 +1908,9 @@ Pixel 11（API 34+、arm64-v8a）で確認。`fix/screen-mask-android14-register
 Partnered の通常記録、いずれも問題なし。iOS は上記「iOS ローカルビルドがブロック中」
 （CLAUDE.md 参照、Xcode 26.3 の Swift/C++ コンパイラ不具合）のため未確認のまま。
 
+Activity Detail の DATE & TIME 編集は、Pixel 11 で日付変更 → Save → force-stop →
+再起動後も永続化されることを確認済み（2026-09-21）。
+
 #### Known gaps
 
 - **iOS の実機/シミュレータでの動作確認が未実施**：CLAUDE.md 参照（Xcode 26.3 の
