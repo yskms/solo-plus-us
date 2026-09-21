@@ -355,3 +355,39 @@ describe('deleteAllActivities — §10.6 bulk-applies §10.1 to every Activity',
     expect(await getSetting(db, 'healthConnect.lastSyncedAt')).toBeNull();
   });
 });
+
+describe('reconcileHealthConnectBuildFlag — §9.11/§25.1 release build split', () => {
+  const ENV_KEY = 'EXPO_PUBLIC_HEALTH_CONNECT_ENABLED';
+  const originalEnv = process.env[ENV_KEY];
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = originalEnv;
+  });
+
+  it('resets healthConnect.enabled to false when the build lacks HC (e.g. leftover from a with-health-connect install)', async () => {
+    delete process.env[ENV_KEY]; // without-health-connect build (opt-in default)
+    await enableHealthConnect();
+
+    await ActivityService.reconcileHealthConnectBuildFlag(db);
+
+    expect(await getSetting(db, 'healthConnect.enabled')).toBe(false);
+  });
+
+  it('is a no-op (stays false) when healthConnect.enabled is already false', async () => {
+    delete process.env[ENV_KEY];
+
+    await ActivityService.reconcileHealthConnectBuildFlag(db);
+
+    expect(await getSetting(db, 'healthConnect.enabled')).toBe(false);
+  });
+
+  it('leaves healthConnect.enabled alone on a with-health-connect build', async () => {
+    process.env[ENV_KEY] = '1';
+    await enableHealthConnect();
+
+    await ActivityService.reconcileHealthConnectBuildFlag(db);
+
+    expect(await getSetting(db, 'healthConnect.enabled')).toBe(true);
+  });
+});
