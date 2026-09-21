@@ -249,7 +249,7 @@ export default function ActivityDetailScreen() {
   const visible = Object.fromEntries(
     ACTIVITY_DETAIL_FIELDS.map(({ field, settingKey }) => [
       field,
-      isFieldVisible(field, detailSettings[settingKey], activity, revealed),
+      isFieldVisible(field, detailSettings[settingKey], activity, activity.context, revealed),
     ]),
   ) as Record<ActivityDetailField, boolean>;
   const hiddenFields = ACTIVITY_DETAIL_FIELDS.filter(({ field }) => !visible[field]);
@@ -332,7 +332,11 @@ export default function ActivityDetailScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        accessibilityElementsHidden={addMoreVisible}
+        importantForAccessibility={addMoreVisible ? 'no-hide-descendants' : 'auto'}
+      >
         <Text style={[styles.contextTitle, { color: colors.textPrimary }]}>{contextLabel(activity.context)}</Text>
 
         <View style={styles.fieldBlock}>

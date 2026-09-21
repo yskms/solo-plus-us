@@ -2162,18 +2162,31 @@ iOS の動作を保証しない。
    だけ表示する。永続化しない——次にこの画面を開いたときは設定と記録済み
    値の判定に戻る。`DateTimePickerSheet` と同じ理由（App Lock オーバーレイ
    がネイティブ `<Modal>` の外側を覆えない、`contexts/AppLock.tsx` 参照）で
-   素の絶対配置 `View`
+   素の絶対配置 `View`。ただし `DateTimePickerSheet` は iOS 専用でハード
+   ウェアバックに遭遇しないのに対しこちらは Android でも出るため、
+   `BackHandler`（`contexts/AppLock.tsx` と同じパターン）を明示的に登録
+   ——無いと Android のバックキーでシートではなく画面自体が pop していた
+   （1回目のレビューで指摘、修正済み）
+6. **Screen 04「Partnered の場合」**：`isFieldVisible` は `context ===
+   'partnered'` のとき Protection を常に表示する（設定・記録済みに関わらず）
+   ——「Solo で選べないようハードゲートはしない」なので Solo 側は通常通り
+   設定/記録済み/revealed のルールに従う。当初実装から漏れていた仕様の
+   1項目（1回目のレビューで指摘、修正済み）。Health Connect が送るのは
+   時刻と避妊具使用の有無のみ（Screen 08）のため、これが漏れていると
+   Partnered の記録で HC 同期の実質的な中身が常に空になりやすい方向に
+   効く、という実害の指摘も受けた
 
 #### テスト
 
 - `lib/__tests__/activityDetailsFields.test.ts`：`hasRecordedValue`
-  （false/0 を「未記録」と混同しないこと、mood が before/after いずれかで
-  記録済み扱いになること）・`isFieldVisible`（設定 ON／記録済み／
-  revealed の3経路それぞれで可視になること、いずれにも該当しなければ
-  非表示になること）
+  （false/0・空文字列を「未記録」と混同しないこと、mood が before/after
+  いずれかで記録済み扱いになること）・`isFieldVisible`（設定 ON／記録済み
+  ／revealed の3経路それぞれで可視になること、いずれにも該当しなければ
+  非表示になること、Partnered で Protection が既定表示されること、この
+  既定表示が Solo や他フィールドには波及しないこと）——11件
 - 画面コンポーネント自体（`app/`）はこのプロジェクトに前例が無く
   ユニットテスト対象外——`npx tsc --noEmit` の型チェックと全テスト
-  スイート（28スイート・394件）のパスのみで検証した
+  スイート（28スイート・398件）のパスのみで検証した
 
 #### 実機確認（Pixel 3、2026-09-21）
 
@@ -2189,12 +2202,30 @@ Activity を再度開いたところ、Ejaculation（未記録）は設定通り
 ——§6.3「記録済みの値は、表示項目の設定に関わらず常に表示する」が実機で
 意図通り動作することを確認した。
 
+**2回目のレビュー指摘を受けた再検証**：Partnered で新規記録すると、
+Protection が設定 OFF・未記録のまま既定表示されることを確認した。
+「+ Add more details」を開いた状態でハードウェアバックキーを押すと、
+画面全体ではなくシートだけが閉じることを確認した（修正前は画面が pop
+していたはずの経路）。残り3項目（Ejaculation/Duration/Mood before &
+after）を1つずつ「+」で追加していき、最後の1件（Mood）を追加した時点で
+シートが自動的に閉じることを確認した。
+
 #### Known gaps
 
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
   この機能固有の問題ではない）
-- **AddMoreDetailsSheet で複数項目を連続して追加する経路・Duration/Mood の
-  出し分けは未確認**（上記実機確認では Protection の1項目のみ検証）
+- **Android の TalkBack で AddMoreDetailsSheet 表示中に背後のフォームへ
+  到達できないことは未確認**：`app/activity/[id].tsx` の `ScrollView` に
+  `accessibilityElementsHidden`/`importantForAccessibility="no-hide-
+  descendants"` を `contexts/AppLock.tsx` と同じパターンで実装したが、
+  TalkBack を有効にした実機での確認はしていない
+- **`AddMoreDetailsSheet` の「Mood before」「Mood after」を1行に統合して
+  いるのは Screen 04「+ Add more details」の元モック（2行に分けて列挙）
+  からの意図的な逸脱**：Screen 07a の設定が `activityDetails.mood` という
+  単一キーで両方を一括制御する以上、シート側だけ個別に分けると「before は
+  reveal 済み・after は未 reveal」という設定側には存在しない状態が生まれる
+  ため、単一キーに揃えた（詳細は `lib/activityDetailsFields.ts` のコメント
+  参照）
 - **§10.6「全 Activity 削除」等、将来この画面に破壊的操作が増える場合の
   再検討は対象外**：本項は表示項目の出し分けのみのスコープ
 

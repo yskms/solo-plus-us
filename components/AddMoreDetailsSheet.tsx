@@ -6,9 +6,19 @@
  * `DateTimePickerSheet` と同じ理由で、React Native の `<Modal>` ではなく
  * 素の絶対配置 `View`（`contexts/AppLock.tsx` 参照：ネイティブモーダルは
  * App Lock オーバーレイのビュー階層の外側で描画されるため、覆えない）。
+ * **ただし `DateTimePickerSheet` は iOS 専用（`Platform.OS !== 'ios'` で
+ * 早期 return）でハードウェアバックに遭遇しないのに対し、このシートは
+ * Android でも表示される。** `<Modal>` を使わない判断だけを引き継いで
+ * ハードウェアバックの処理を引き継がないと、バックキーでシートではなく
+ * Activity Detail 画面自体が pop してしまう（編集中の入力も失われる）ため、
+ * `contexts/AppLock.tsx` と同じパターンで明示的に処理する。同じ理由で、
+ * このシートが表示されている間は背後のフォームを TalkBack が読み上げ・
+ * 操作できないよう、呼び出し側（`app/activity/[id].tsx`）で背後の
+ * コンテンツに `importantForAccessibility="no-hide-descendants"` を当てる
+ * こと。
  */
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import type { ActivityDetailField } from '../lib/activityDetailsFields';
 
@@ -21,6 +31,24 @@ interface AddMoreDetailsSheetProps {
 
 export function AddMoreDetailsSheet({ visible, hiddenFields, onReveal, onClose }: AddMoreDetailsSheetProps) {
   const { colors } = useTheme();
+
+  useEffect(() => {
+    if (!visible) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [visible, onClose]);
+
+  // Revealing the last hidden field empties the list out from under this
+  // sheet (`hiddenFields` is derived by the caller from the same `revealed`
+  // set this sheet's onPress just grew) — close rather than leave a
+  // header-and-Done-only sheet with nothing to add.
+  useEffect(() => {
+    if (visible && hiddenFields.length === 0) onClose();
+  }, [visible, hiddenFields.length, onClose]);
+
   if (!visible) return null;
 
   return (

@@ -44,7 +44,7 @@ export default function ActivityDetailsSettingsScreen() {
   const persist = async (key: ActivityDetailSettingKey, next: boolean) => {
     if (!values) return;
     const previous = values[key];
-    setValues({ ...values, [key]: next });
+    setValues((current) => (current ? { ...current, [key]: next } : current));
     setBusyKey(key);
     try {
       await setSetting(db, key, next);
