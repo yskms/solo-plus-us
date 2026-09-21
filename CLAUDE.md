@@ -171,3 +171,48 @@ Day/Night モード、ステータスバー）にあることが多く、`values
 `constants/theme.ts`・`plugins/withAndroidNightColors.js`・`app.json` の3箇所に
 手動同期が必要（自動参照する手段が無い）。詳細と発見の経緯は README「Phase 3
 実装状況 > Appearance」参照。
+
+### リリースビルド分離（`without-health-connect`/`with-health-connect`）はネイティブモジュールを除去しない
+
+§9.11/§25.1 の実装（`app.config.js`・`lib/healthConnectBuild.ts`・
+`eas.json`）は、`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED` で **Manifest の
+permission（`android.permission.health.WRITE_SEXUAL_ACTIVITY`）と
+`withHealthConnectPermissionsRationale` plugin だけ** を切り替えている。
+`react-native-health-connect` ネイティブモジュール自体は両ビルドとも
+リンクされたまま——これは手抜きではなく意図的な設計判断。
+
+- Health apps declaration の提出トリガーは「配布 AAB の Manifest に
+  health permission が含まれているか」であって、ネイティブモジュールの
+  リンク有無ではない（§9.11 本文）。permission を切れば要件は満たされる。
+- 「実行時に HC を参照しない」も、新規のガードコードなしで成立している：
+  `services/SyncWorker.ts` の `drainDueJobs` は
+  `services/ActivityService.ts` の `getActiveProviders` に
+  `'health_connect'` が含まれない限り `HealthConnectService.*` を一切
+  呼ばずに早期 return する。この設定は `app/settings/health-connect.tsx`
+  の ON トグル以外から true にならず、そのトグル自体は
+  `app/settings/index.tsx` が `isHealthConnectBuildEnabled()` で
+  ビルドごと非表示にしている——ユーザーが一度も有効化できない以上、
+  実行時参照は起こり得ない。
+- ネイティブモジュールの物理除外（autolinking の `exclude`）は、
+  Gradle デーモンのキャッシュ問題（本ファイル「package.json にあるのに
+  未リンクなネイティブモジュール」の節）を踏むリスクの割に実益が無い
+  ため、あえてやっていない。**「ネイティブモジュールも除外すべきでは」
+  という直感で `exclude` 設定を足すような変更はしないこと**——上記の
+  理由で不要かつリスクだけが増える。
+
+**`EXPO_PUBLIC_*` は `expo start`/`expo run:android` の dev-client 経由の
+ライブリロードでは、shell の export だけでは反映されない（実機で実際に
+踏んだ、2026-09-21）。** `app.config.js`（prebuild 時、素の Node プロセスが
+`process.env` を読むだけ）は shell export で問題なく動くが、JS 側
+（`lib/healthConnectBuild.ts` 等、bundle に埋め込まれる値）は別の仕組み
+（`expo/virtual/env`、実体は `.env`/`.env.local`/`.env.development`/
+`.env.development.local` からのみ値を取る require-context）を経由しており、
+dev-client のライブ bundle ではこれが優先され、shell export した値が
+反映されない（`undefined` になる）。**`npx expo export`（＝`eas build` が
+実際に使う本番相当の静的バンドル生成)では shell export だけで正しく
+リテラルへインライン展開される**（`return false;` まで定数畳み込みされる
+ことを実際に確認済み）——つまり `eas.json` の `env` を使うリリースビルドは
+問題なく動く。ローカルで dev-client 接続のまま JS 側の分岐だけを試したい
+場合は、`.env.local`（gitignore 済み）に書いてから `expo start --clear`
+すること。`app.config.js` と JS 側の判定で挙動が食い違って見えたら、まず
+これを疑うこと。

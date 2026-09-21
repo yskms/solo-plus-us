@@ -18,15 +18,19 @@
  * ショットに関する方針」and `lib/screenMask.ts`. HEALTH's "Health Connect"
  * row (§18 Screen 08) covers ON/OFF and the unsynced-changes retry/discard
  * flow (§9.6/§10.4/§10.5) — see `settings/health-connect.tsx`'s doc comment
- * for its intentional deviations from the §18 mockup. That section is
- * `Platform.OS === 'android'`-only (レビュー指摘) — Health Connect itself is
+ * for its intentional deviations from the §18 mockup. That section requires
+ * `Platform.OS === 'android'` (レビュー指摘) — Health Connect itself is
  * Android-only (§9.11) and the iOS counterpart (`healthkit` provider) isn't
  * implemented, so on iOS there is nothing this row could actually do; showing
  * it there would open a screen whose every action (`HealthConnectService.
  * isAvailable()`/`ensureInitialized()`/etc., all backed by a Proxy that
  * throws on iOS — see `node_modules/react-native-health-connect/lib/
  * commonjs/index.js`'s `moduleProxy`) fails, matching this file's own rule
- * of not showing rows for things that don't work here.
+ * of not showing rows for things that don't work here. It also requires
+ * `isHealthConnectBuildEnabled()` (`lib/healthConnectBuild.ts`) — §9.11/
+ * §25.1's release build split, where `without-health-connect` omits the HC
+ * permission from the Manifest entirely (see `app.config.js`); this row must
+ * stay hidden there too, same "no dead links" rule.
  *
  * ABOUT's "Privacy Policy" row is intentionally still missing (2026-09-21):
  * §17's mockup lists it, but there is no hosted policy URL yet — the user
@@ -55,6 +59,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 
 interface Row {
   label: string;
@@ -116,7 +121,7 @@ export default function SettingsIndexScreen() {
           ]}
         />
 
-        {Platform.OS === 'android' && (
+        {Platform.OS === 'android' && isHealthConnectBuildEnabled() && (
           <>
             <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>HEALTH</Text>
             <SettingsGroup rows={[{ label: 'Health Connect', onPress: () => router.push('/settings/health-connect') }]} />

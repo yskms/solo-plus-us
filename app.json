@@ -23,8 +23,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.health.WRITE_SEXUAL_ACTIVITY"]
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "bundler": "metro",
@@ -55,7 +54,6 @@
       "./plugins/withAndroidNightColors.js",
       "expo-localization",
       "@react-native-community/datetimepicker",
-      "./plugins/withHealthConnectPermissionsRationale.js",
       [
         "expo-build-properties",
         {

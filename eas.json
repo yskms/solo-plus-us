@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_HEALTH_CONNECT_ENABLED": "0"
+      }
+    },
+    "production-with-health-connect": {
+      "extends": "production",
+      "env": {
+        "EXPO_PUBLIC_HEALTH_CONNECT_ENABLED": "1"
+      }
+    }
+  }
+}
