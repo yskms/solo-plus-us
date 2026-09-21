@@ -3903,15 +3903,42 @@ dismissible なカードを出す」の案も検討したが、§15 との整合
    案内が出ないまま再起動後は Today に直行する）は、一度きり案内としては
    許容範囲と判断し、コードは変更せず Known gaps に記録するに留めた
 
+#### レビューで見つかり、修正したもの（2回目）
+
+上記1回目の修正を確認したレビューで見つかった、いずれも軽微な指摘。
+
+1. **【軽微】`onDismiss` のコメントが Android 限定であることに触れて
+   いなかった**：iOS では `Alert.alert` は `Alert.prompt` に委譲され
+   （`Alert.js`）、`userInterfaceStyle` 以外の `options` は読まれない
+   ため `onDismiss` は no-op（実害は無い——`dismissExisting()` 自体が
+   Android の `DialogModule` 固有の挙動で、iOS 側には同種の「黙って
+   前のアラートを消す」経路が無い）。「この保険は全プラットフォームで
+   効く」と読めてしまうコメントだったため、Android 限定である旨を明記した
+2. **【軽微】`lib/deviceAuthEnrollment.ts` にユニットテストが無かった**：
+   README の「画面コンポーネント（`app/`）はユニットテスト対象外」という
+   根拠は `lib/` に切り出したこの関数には及ばない。
+   `lib/__tests__/screenMask.test.ts` の `expo-screen-capture` モックに
+   倣い、`lib/__tests__/deviceAuthEnrollment.test.ts` を追加した（詳細は
+   下記「テスト」）
+3. **【軽微】実機の App Lock 残留状態のメモに、次回の解消手段が無かった**：
+   下記「実機確認」に `adb shell pm clear` で暗号化 DB ごと消えるため
+   App Lock も一緒に解除される旨を追記した
+
 #### テスト
 
 - 画面コンポーネント（`app/`）はこのプロジェクトに前例が無くユニット
   テスト対象外（[表示項目のカスタマイズ](#表示項目のカスタマイズ6320260921実装完了)
   の節と同じ判断）——`npx tsc --noEmit` の型チェックと、下記の実機確認で
   検証した
+- `lib/__tests__/deviceAuthEnrollment.test.ts`（新規）：`lib/` に切り出した
+  `hasDeviceAuthEnrolled()` は前例（`lib/__tests__/screenMask.test.ts` の
+  `expo-screen-capture` モック）に倣い `expo-local-authentication` を
+  `jest.mock` してテスト対象に追加（レビューで指摘——画面コンポーネント側の
+  「ユニットテスト対象外」という判断根拠は `lib/` に切り出したこの関数には
+  及ばない）。`SecurityLevel.NONE`／`SECRET`／`BIOMETRIC_WEAK`／
+  `BIOMETRIC_STRONG` の判定3件
 - `app/settings/app-lock.tsx` を `lib/deviceAuthEnrollment.ts` 経由に
-  変更した後、既存の全テストスイート（28スイート・410件）がパスすることを
-  確認した
+  変更した後、全テストスイート（29スイート・413件）がパスすることを確認した
 
 #### 実機確認（Pixel 11、2026-09-21）
 
@@ -3925,9 +3952,12 @@ dismissible なカードを出す」の案も検討したが、§15 との整合
 - 再度リセットし、Alert 表示中に戻るボタンを押しても閉じないことを確認
 - Settings > App Lock の「Use App Lock」トグルが、共通化後の
   `hasDeviceAuthEnrolled()` 経由でも問題なく ON にできることを確認
-  （**この検証の副作用として、この端末には App Lock が ON のまま残って
-  いる**——OFF に戻すには指紋認証/PIN が必要でこちらからは操作できない
-  ため、そのままにした。次回この端末でアプリを開く際は認証が求められる）
+  （この検証の副作用でこの端末に App Lock が ON のまま残ったが、OFF に
+  戻すには指紋認証/PIN が必要でこちらからは操作できないためユーザーに
+  指紋認証で OFF にしてもらった。次回同様の状態になった場合、
+  `adb shell pm clear com.yskms.soloplusus` でオンボーディング状態を
+  リセットすれば暗号化 DB ごと消えるため App Lock も一緒に解除される
+  ——オンボーディングの再現手順と同じコマンドで足りる）
 - スクリーンショットは `uiautomator dump` のテキスト階層で代替した
   （`screencap` 自体は Pixel 11 で問題なく動作することを別途確認済み——
   上記「レビューで見つかり、修正したもの」5 参照）

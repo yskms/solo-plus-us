@@ -84,20 +84,23 @@ export default function PrivacyIntroScreen() {
           },
         },
       ],
-      // `onDismiss` isn't for the back button/outside tap — Android's
-      // `Alert.alert` defaults to `cancelable: false` (confirmed on
-      // device: back press does not close it), same as every other
-      // confirmation Alert.alert in this codebase. It's for a narrower
-      // case: `DialogModule.showNewAlert()` (RN's Android alert host)
-      // always calls `dismissExisting()` before showing a new dialog, so
-      // if *any* other `Alert.alert` fires while this one is up, this one
-      // is silently dismissed — `ACTION_DISMISSED`, no button `onPress`.
-      // Nothing today fires an Alert during this specific window, but
-      // markPrivacyIntroSeen has already committed by this point and this
-      // screen has no way back in (no back button into onboarding, per
-      // the file header) — so if that ever changes, this is what stands
-      // between the person and being stuck here for the rest of the
-      // session. Treated the same as "Not Now".
+      // `onDismiss` is Android-only — on iOS, Alert.alert delegates to
+      // Alert.prompt, which never reads it (RN's Alert.js), and iOS has
+      // no equivalent of the failure mode below. It isn't for the back
+      // button/outside tap either — Android's `Alert.alert` defaults to
+      // `cancelable: false` (confirmed on device: back press does not
+      // close it), same as every other confirmation Alert.alert in this
+      // codebase. It's for a narrower case: `DialogModule.showNewAlert()`
+      // (RN's Android alert host) always calls `dismissExisting()` before
+      // showing a new dialog, so if *any* other `Alert.alert` fires while
+      // this one is up, this one is silently dismissed —
+      // `ACTION_DISMISSED`, no button `onPress`. Nothing today fires an
+      // Alert during this specific window, but markPrivacyIntroSeen has
+      // already committed by this point and this screen has no way back
+      // in (no back button into onboarding, per the file header) — so if
+      // that ever changes, this is what stands between the person and
+      // being stuck here for the rest of the session. Treated the same
+      // as "Not Now".
       { onDismiss: () => router.replace('/(tabs)') },
     );
   };
