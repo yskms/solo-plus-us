@@ -3073,16 +3073,50 @@ Phase 4 に残っていた唯一の機能実装。置換復元（`services/Impor
   end-to-end（積まれたジョブが即 due であること・claim/finalize まで
   通ること）
 
+#### 実機確認（Pixel 3、`recreateActivity` の insert-after-delete-failure、2026-09-21）
+
+D-20 と同じ Android 12（Pixel 3、Health Connect v2026.08.06.00）で、
+`recreateActivity` の delete 失敗→insert 進行の経路を確認した。
+
+**手順**：Health Connect アプリ側で対象 Activity の性行為エントリを直接
+削除（「接続されているアプリが、このデータにアクセスできなくなります」の
+確認ダイアログ経由）→アプリの Settings > Health Connect で
+「Sync everything to Health Connect」→確認ダイアログ（「Sync 1 activity to
+Health Connect?」）→SYNC。
+
+**結果**：
+- LogBox の警告バナーに `HealthConnectService: recreateActivity delete
+  failed as UNKNOWN — proceeding to insert anyway (clientRecordId upsert is
+  idempotent, §9.4)` が実際に出力された——`services/HealthConnectService.ts`
+  の `recreateActivity` 内、`UNKNOWN` 分類時の診断ログ（DEV ビルド向け）が
+  意図通りこの分岐に到達したことの直接的な証拠
+- Settings > Health Connect の Last synced が実行直後の時刻に更新され、
+  Unsynced changes が「Everything is synced.」に戻った（ジョブが
+  finalize まで到達し、手動待ちに落ちていないことを確認）
+- Health Connect アプリ側で該当エントリ（10:31・Solo + Us）が実際に
+  再作成されていることを確認——delete 失敗後に本当に insert まで到達し、
+  外部レコードが復元されたことの直接証拠
+
+これにより、Known gaps に残っていた「`recreateActivity` の
+insert-after-delete-failure 経路の実機検証」は解消。
+
+**実機検証中に踏んだ、この端末固有の妨害要因**（アプリのバグではない）：
+「Hide App Preview」が Android 12 では常時 ON 固定のため（上記 CLAUDE.md
+の既知の制約）、アプリ画面表示中は `adb shell screencap` が常に失敗する
+（`FLAG_SECURE` の副作用）。UI 確認は `uiautomator dump` のテキスト階層で
+代替した——同じ制約を踏む場合はこの方法が有効。
+
 #### Known gaps
 
-- **実機での一連のフロー確認は未実施**：ロジック・UI 文言の実装と
-  ユニット/統合テストは完了しているが、実際に置換復元→同意画面→
-  「Sync to Health Connect」（または Settings > Health Connect の
-  「Sync everything to Health Connect」）→ Unsynced changes への反映、
-  という流れを実機で確認するタスクが残る（`schema.ts` の変更は無いため、
-  確認にあたって既存アプリのアンインストールは不要）。特に Android 9〜13
-  実機での `recreateActivity` の insert-after-delete-failure 経路
-  （D-20 と同じ Pixel 3 環境で再検証可能）
+- **置換復元→同意画面→Sync のフロー確認は未実施**：ロジック・UI 文言の
+  実装とユニット/統合テストは完了しているが、実際に置換復元→同意画面
+  （`offerResync`）→「Sync to Health Connect」→ Unsynced changes への
+  反映、という一連の流れを実機で確認するタスクが残る（`schema.ts` の
+  変更は無いため、確認にあたって既存アプリのアンインストールは不要）。
+  **`recreateActivity` の insert-after-delete-failure 経路自体は
+  Pixel 3 で確認済み（上記「実機確認（Pixel 3、recreateActivity の
+  insert-after-delete-failure）」参照）——残るのは `offerResync` 画面
+  （置換復元後に一度だけ出る同意 UI）を経由する経路の確認のみ**
 - **Health Connect のレート制限は未調査（D-41）**：`queueResync` は
   積んだジョブすべてを即 due（`not_before` = 実行時刻）にするため、
   数百〜数千件の recreate が SyncWorker の claim/finalize ループで
