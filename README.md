@@ -22,12 +22,15 @@ Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI 
 `HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
 AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
 （`app/settings/health-connect.tsx`）まで実装完了。**Pixel 11 実機で
-ON→権限→Connected・記録/削除の自動同期・破棄（confirm ダイアログ＋実際の
-discard）は確認済み**（下記「Phase 4 実装状況」の「実機確認（Pixel 11、
-初回/2回目）」参照、実機テストでのみ再現するタイミング依存バグを2件
-発見・修正済み）。Retry の実際の再試行・切断警告・claim 中表示等の残りの
-確認・Android 9〜13 実機検証（D-20）・§9.11 のリリースビルド分離は未着手。
-詳細は下記の各「実装状況」を参照。
+Settings UI のほぼ全項目を確認済み**（下記「Phase 4 実装状況」の
+「実機確認（Pixel 11、初回/2回目/3回目）」参照、実機テストでのみ再現する
+タイミング依存バグを2件発見・修正済み）：ON→権限→Connected・記録/削除の
+自動同期・破棄・claim 中の行の無効化・Retry now の実際の再試行・delete job
+が残っている状態での OFF 切断警告と再接続後の再開・`permission-revoked`
+表示・バックグラウンド/フォアグラウンド遷移。**残るのは HC 未インストール
+環境での ON 操作時の表示のみ**（ユーザー確認待ち）。Android 9〜13 実機検証
+（D-20）・§9.11 のリリースビルド分離・§13.6 の復元後再同期（Phase 4 の
+Known gap、未実装）は未着手。詳細は下記の各「実装状況」を参照。
 
 ## ドキュメント
 
@@ -2767,6 +2770,61 @@ mirror effect 自体を廃止し、`enabledRef` を更新すべき3箇所（`loa
 更新する形にした——読み込み失敗パスだけ意図的に触らない、という
 非対称性は、自動追従をやめて書き手を管理する以外に保てない。
 
+#### 実機確認（Pixel 11、3回目）
+
+2回目で未実施のまま残していた項目のうち、HC 未インストール環境の ON 操作
+以外をすべて確認した。claim 中の状態や「未 claim のまま OFF にする」瞬間は
+自然発生ではタイミングが合わないため、`services/HealthConnectService.ts`
+の `upsertActivity`/`deleteActivityRecord` 冒頭に一時的な `await
+new Promise((r) => setTimeout(r, ...))` を差し込んで意図的に外部呼び出しを
+遅延させ、確認後に `git diff` が空になることを確認してから元に戻す、という
+手法で検証した（`services/HealthConnectService.ts` はネイティブ層を持たない
+純粋な TS のため、この差し替えは Metro の Fast Refresh だけで反映され、
+gradle 再ビルドは不要だった）。
+
+- **claim 中の行の無効化表示**：create/update ジョブ・delete ジョブの両方で
+  「Syncing…」表示中は Retry now/Discard 系ボタンがグレーアウトすることを
+  確認
+- **Retry now の実際の再試行**：`adb shell pm revoke <pkg>
+  android.permission.health.WRITE_SEXUAL_ACTIVITY` で権限を剥奪して
+  ジョブを `PERMISSION_DENIED` で失敗させ（"Permission needed" 表示・
+  "Not synced to Health Connect" 行を確認）、`pm grant` で戻したあと
+  Retry now をタップして実際に同期が成功することを確認した。**注記**：
+  1回目の失敗の自動バックオフは5秒（`SyncWorker.ts` の
+  `BACKOFF_SECONDS_BY_ATTEMPT`）で、周期 drain（10秒間隔）も並走している
+  ため、タップした瞬間に処理が始まったのか自動バックオフが数秒先んじて
+  いたのかは UI 観察だけでは厳密に切り分けられない——いずれにしても
+  `requestManualRetry`（`not_before` を即時化するだけ）から
+  `processNextDueJob` までの経路が実機で正しく完走することは確認できた
+- **`permission-revoked` の表示**：上記の権限剥奪操作で確認。**発見**：
+  `pm revoke` で Health Connect の permission を取り消すと、対象アプリの
+  プロセスが即座に kill される（ホーム画面に落ちる）——通常の Android
+  runtime permission の revoke と同じ挙動。実機で意図的に権限を消して
+  確認する際は、revoke 直後にプロセスが死ぬ前提で手順を組むこと（今回は
+  再起動後に "Permission needed" 表示が正しく復元されることも合わせて
+  確認できた）
+- **delete job が残っている状態での OFF 切断時の警告と再接続後の再開**：
+  §10.5 の確認ダイアログ「Health Connect has N unsynced deletion(s)」→
+  「Disconnect anyway」で実際に OFF にできること、OFF 中はジョブが
+  `Not connected`/`Turn on Sync to Health Connect to retry these.` の
+  まま保持され続けること、再度 ON にすると自動的に delete が完了し
+  `Last synced` が更新されることを確認した。**注記**：claim 済み（外部
+  呼び出しが in-flight）のジョブに対して OFF にした場合は
+  `SyncCoordinator.runExclusive` がその呼び出しの settle を待ってから
+  `enabled=false` を書き込むため、待っている間にジョブ自体が成功で
+  完了することがある（§9.12 の設計通り——「呼び出し側が諦めても裏で
+  待ち続け、settle してから通常状態に戻す」が disconnect 経路でも
+  そのまま働いている）。ジョブを未 claim のまま OFF できた場合のみ、
+  警告ダイアログ通りに「OFF にしても記録は残る」状態を再現できる
+- **バックグラウンド/フォアグラウンド遷移**：ホーム→復帰を4回連続、
+  加えてバックグラウンドで15秒待機して `dumpsys cpuinfo` の累積値が
+  待機前後で変化しないこと（＝ポーリングが暴走していないこと）を確認。
+  クラッシュ・ログ上のエラーなし
+- **未実施のまま残るのは HC 未インストール環境での ON 操作時の表示のみ**。
+  実機の Health Connect 本体アプリ（`com.google.android.apps.healthdata`）
+  を無効化/アンインストールする必要があり、Solo + Us のサンドボックスを
+  超えて端末側のアプリ状態を変更するため、実施前にユーザーに確認する
+
 #### Known gaps（次のステップ）
 
 - **§9.11 のリリースビルド分離（`without-health-connect` /
@@ -2783,15 +2841,15 @@ mirror effect 自体を廃止し、`enabledRef` を更新すべき3箇所（`loa
   するようになったため優先度が上がっている）。`SyncCoordinator`・AppState
   配線・Settings UI（HC を ON にする手段）はすべて実装済みで、これが
   この検証に着手できる最初の機会になる
-- **Settings UI の実機確認は大部分完了**（上記「実機確認（Pixel 11、
-  初回/2回目）」参照）：HC ON→権限ダイアログ→Connected 表示、Activity
+- **Settings UI の実機確認はほぼ完了**（上記「実機確認（Pixel 11、
+  初回/2回目/3回目）」参照）：HC ON→権限ダイアログ→Connected 表示、Activity
   記録/削除→HC への反映、Last synced の実際の更新、破棄（confirm ダイアログ
-  ＋実際の discard）、OFF 中の Retry now 無効化＋caption は確認済み。
-  **残り**：Retry now の実際の再試行、claim 中の行の無効化、delete job が
-  残っている状態での OFF 切断時の警告と再接続後の再開、
-  `permission-revoked` の表示、HC 未インストール環境での ON 操作時の表示、
-  バックグラウンド/フォアグラウンド遷移でのクラッシュや無限ループの有無
-  （AppState 配線自体、ステップ4参照）
+  ＋実際の discard）、OFF 中の Retry now 無効化＋caption、claim 中の行の
+  無効化、Retry now の実際の再試行、delete job が残っている状態での OFF
+  切断時の警告と再接続後の再開、`permission-revoked` の表示、
+  バックグラウンド/フォアグラウンド遷移でのクラッシュ・無限ループの
+  有無（AppState 配線自体、ステップ4参照）は確認済み。**残り**：HC
+  未インストール環境での ON 操作時の表示のみ
 - **`permission-revoked`（OS 側で権限を取り消された後）からの復帰導線が
   無い**：ステータスと caption で状態は伝わるが、再許可する手段（トグルを
   OFF→ON し直す以外の導線——`requestWritePermission()` を直接呼ぶボタン、
