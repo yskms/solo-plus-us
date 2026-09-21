@@ -2238,6 +2238,72 @@ after）を1つずつ「+」で追加していき、最後の1件（Mood）を�
 - **§10.6「全 Activity 削除」等、将来この画面に破壊的操作が増える場合の
   再検討は対象外**：本項は表示項目の出し分けのみのスコープ
 
+### Preferences・About（表示系、2026-09-21、実装完了）
+
+Settings 画面の「スコープの判断」（上記 App Lock の節）で先送りにしていた
+残り2セクションのうち、表示系の Preferences・About に着手した。**Delete
+Data（§10.6）は破壊的操作で `SyncCoordinator.runExclusive` を要する別種の
+作業のため、意図的に対象外とし別タスクとして扱う**（ユーザーとの相談で
+確認済み——CLAUDE.md「Health Connect 同期の排他制御」参照）。
+
+#### 実装済み
+
+| 層 | 内容 |
+|---|---|
+| `app/settings/first-day-of-week.tsx`（新規） | Monday/Sunday の選択画面。`preferences.firstDayOfWeek` は Phase 1 から存在し `screens/CalendarScreen.tsx` 等が既に参照していたが、値を変える UI が無い「設定の器だけがある」状態だった（§6.3 着手前の `activityDetails.*` と同じパターン）。`app/settings/appearance.tsx` と同じラジオ選択の見た目 |
+| `app/settings/time-format.tsx`（新規） | 12-hour/24-hour の選択画面。`preferences.timeFormat` も同様に器だけの状態だった |
+| `app/settings/about.tsx`（新規） | 「About Solo + Us」。要件定義書 §3.1/§3.2（コンセプト・原則）と §19.1（プライバシー基本方針）に基づく事実のみで構成——Insights 同様、評価的な文言（§16 で禁止されている「Better sexual health.」的な言い回し）を混入させないよう明記 |
+| `app/settings/index.tsx` | PREFERENCES に First Day of Week/Time Format の2行を追加。ABOUT セクションを新設し「About Solo + Us」行と、非タップの `StaticValueRow`（新規コンポーネント）で「Version」を追加。バージョンは `app.json` の `expo.version` から動的に読む（モック文言の "Version 1.0" を固定値として転記しない——実際のビルドから乖離しないようにするため） |
+| `app/_layout.tsx` | 上記3画面の `Stack.Screen` タイトルを追加 |
+
+**「Privacy Policy」行は意図的に未実装**（§17 のモックには行タイトルの
+記載があるのみで、本文の指定はどこにもない）。このアプリは Health
+Connect の `WRITE_SEXUAL_ACTIVITY` 権限を使うためストア審査上も実効性の
+あるポリシーが要るが、法的文言をこちらで創作して埋めるべき内容ではない
+と判断し、ユーザーに確認した。**結論：外部にホストされた URL へのリンクと
+して実装する方針。ただし URL は現時点で未確定**のため、プレースホルダー
+URL や「Coming soon」行は作らず（本ファイルの一貫した方針——上記 App Lock
+の節参照）、URL が用意でき次第この行を追加する。
+
+#### First Day of Week/Time Format の反映先についての注意
+
+`screens/CalendarScreen.tsx` は3タブ構成のページャの1タブであり、
+Settings への画面遷移では unmount されない（`isActive` は「どのタブが
+表示中か」を表すだけで、Settings 画面がその上に push されている間も
+`true` のまま保持される）。そのため設定変更後にタブへ戻っただけでは
+`reload` の `useEffect`（依存配列 `[isActive, reload, revision]`）は
+再発火しない。両画面とも保存成功時に `useDataRevision().bump()` を呼ぶ
+ことで、Calendar 側の再読み込みをトリガーする（`contexts/DataRevision.tsx`
+の「画面遷移で拾われない書き込みは bump を呼ぶ」という既存規約どおり）。
+`app/record.tsx`/`app/activity/[id].tsx` は毎回マウント時に自前で
+`getSetting` するため bump は不要だが、実害はないため両画面とも呼んでいる。
+
+#### テスト
+
+画面コンポーネント自体はこのプロジェクトに前例が無くユニットテスト対象外
+（§6.3 と同様）——`npx tsc --noEmit` と全テストスイート（28スイート・
+398件）のパスのみで検証した。ロジック自体（`getSetting`/`setSetting`・
+`resolveLocaleDefaults`）は Phase 1 から既存のテスト対象。
+
+#### 実機確認（Pixel 11、2026-09-21）
+
+Settings → First Day of Week で Sunday→Monday に変更 → 戻る操作
+（ハードウェアバック）で Settings・Today を経由 → Calendar タブへ
+切り替えたところ、曜日ヘッダーが `M T W T F S S`（Monday 始まり）に
+即座に反映されていることを確認した——上記の `bump()` が実際に機能して
+いることの直接的な証拠。Time Format も選択状態が保存後に正しく
+チェックマークへ反映されることを確認した。About Solo + Us は内容が
+意図通り表示されることを確認した。確認後、First Day of Week は元の
+値（この端末のロケール既定である Sunday）に戻した。
+
+#### Known gaps
+
+- **Privacy Policy 行は未実装**：上記の通り、外部 URL が用意でき次第
+  追加する
+- **Delete Data（§10.6）は未実装**：別タスクとして扱う（上記参照）
+- **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中の
+  ため）
+
 ## Phase 4 実装状況
 
 基本設計 §18 の順序（clientRecordId/clientRecordVersion 確認 → 同期 → リトライ →

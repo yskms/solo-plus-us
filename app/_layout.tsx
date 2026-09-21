@@ -112,6 +112,9 @@ function AppShell() {
         <Stack.Screen name="settings/data" options={{ title: 'Data' }} />
         <Stack.Screen name="settings/activity-details" options={{ title: 'Activity Details' }} />
         <Stack.Screen name="settings/appearance" options={{ title: 'Appearance' }} />
+        <Stack.Screen name="settings/first-day-of-week" options={{ title: 'First Day of Week' }} />
+        <Stack.Screen name="settings/time-format" options={{ title: 'Time Format' }} />
+        <Stack.Screen name="settings/about" options={{ title: 'About Solo + Us' }} />
       </Stack>
       <UndoSnackbar />
     </View>
