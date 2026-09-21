@@ -44,7 +44,6 @@ const RATIONALE_ACTIVITY_KOTLIN = `package com.yskms.soloplusus
 
 import android.app.Activity
 import android.os.Bundle
-import android.util.TypedValue
 import android.view.Gravity
 import android.widget.ScrollView
 import android.widget.TextView
@@ -64,10 +63,21 @@ class PermissionsRationaleActivity : Activity() {
     // does not — resolve it from the current theme instead of hardcoding
     // black (would be unreadable against the dark windowBackground in Night
     // mode; see CLAUDE.md's Android Day/Night pitfalls note).
-    val textColor = TypedValue().let {
-      theme.resolveAttribute(android.R.attr.textColorPrimary, it, true)
-      it.data
-    }
+    //
+    // NOT theme.resolveAttribute(attr, typedValue, true) + typedValue.data
+    // — on this theme, ?android:attr/textColorPrimary resolves to a
+    // ColorStateList, not a flat color, so resolveAttribute() returns
+    // TYPE_REFERENCE and .data holds the raw resource id, not an ARGB
+    // int. Reinterpreting that id as a color produces a near-transparent
+    // value (its top byte lands as the alpha channel) — the text was
+    // being drawn, just fully invisible against the window background
+    // (confirmed on-device: sampled pixels in the text's bounds matched
+    // the background color exactly, no blending at all). obtainStyledAttributes()
+    // resolves the same attribute through a TypedArray, which correctly
+    // follows a ColorStateList reference down to its default color.
+    val textColorAttrs = obtainStyledAttributes(intArrayOf(android.R.attr.textColorPrimary))
+    val textColor = textColorAttrs.getColor(0, android.graphics.Color.WHITE)
+    textColorAttrs.recycle()
 
     val text = TextView(this).apply {
       text = "Solo + Us can optionally save the date, time, and whether " +
