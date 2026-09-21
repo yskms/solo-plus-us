@@ -17,7 +17,10 @@ Repository → Quick Record → Undo → 履歴 → Export/Import の往復）�
 Export していなければ実際には使えないため）のうち Insights・App Lock・Recovery 画面・
 Export/Import の UI・画面マスクはクローズ済み、**日時編集 UI は Android 実機（Pixel 11）で
 確認済み・iOS は未確認**（`expo run:ios` が Xcode 26.3 のコンパイラ不具合で実行できない
-ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。**Phase 4**（Health Connect 同期）
+ため——CLAUDE.md 参照、日時編集 UI 固有の問題ではない）。Phase 3 の元の範囲外だが、
+**表示項目のカスタマイズ（§6.3、v1.0 必須）も実装完了・Pixel 3 実機確認済み**
+（下記「表示項目のカスタマイズ」参照、iOS は未確認）。
+**Phase 4**（Health Connect 同期）
 に着手済み——`react-native-health-connect` 導入・permission 宣言・prebuild・
 `HealthConnectService.ts`/`SyncWorker.ts`/`SyncCoordinator`（§9.12 の mutex）・
 AppState 配線（`contexts/SyncWorkerLoop.tsx`）・Settings 画面の Health Connect UI
@@ -311,7 +314,9 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
   パスを組み立てる手段が未確認のため、バックアップ除外の実装と合わせて Phase 3 で対応する
 - **日時編集 UI**：Phase 3 で実装済み（下記「Phase 3 実装状況」参照）
 - **Settings 画面一式**：Activity Details カスタマイズ・Health Connect は未実装のまま
-  （Phase 3/4 の残り）。App Lock・Data（Export/Import UI）は Phase 3 で実装済み（下記参照）
+  （Phase 3/4 の残り）。App Lock・Data（Export/Import UI）は Phase 3 で実装済み（下記参照）。
+  **Activity Details カスタマイズは解消: 2026-09-21 実装——「§6.3 表示項目のカスタマイズ」参照
+  （本セクション末尾）。Health Connect は Phase 4 で実装済み（下記「Phase 4 実装状況」参照）**
 - **Insights**：プレースホルダーのみ（Phase 3。合計・内訳・平均間隔、§14 の統計定義）
 - **Health Connect 同期の実行部分**：`HealthConnectService` / `SyncWorker` は未実装（Phase 4）。
   ジョブのキューイング自体（`ActivityService` → `health_sync_jobs`）は実装・テスト済みで、
@@ -2118,6 +2123,80 @@ iOS の動作を保証しない。
   `AppearanceProvider` は DB 接続確立後にしかマウントできないため、DB 接続前の
   画面はこの override を原理的に見られない（OS の配色のみに従う）。ユーザーから
   見れば見た目が完全には統一されないが、許容する仕様として扱う
+
+### 表示項目のカスタマイズ（§6.3、2026-09-21、実装完了）
+
+要件定義書 §6.3／UI/UX Screen 07a。v1.0 必須（要件定義書 §25）で唯一
+まるごと未実装だった機能。`types/Settings.ts` の `activityDetails.*` 6キー
+（既定：Orgasm と Notes のみ ON）自体は Phase 1 から存在していたが、
+画面コード（`app/activity/[id].tsx`）からは一切参照されておらず「設定の器
+だけがある」状態だった（記録・詳細の出し分けのうち、実際に項目入力欄を
+持つのは Activity Detail 画面のみ——Quick Record（`app/record.tsx`）は
+§6.4「詳細項目は Quick Record では一切尋ねない」により項目入力欄自体が
+無いため、出し分けの対象外）。
+
+#### 実装内容
+
+1. **[lib/activityDetailsFields.ts](lib/activityDetailsFields.ts)（新規）**：
+   6項目の `{ field, settingKey, label }` 一覧と、可視性判定の純粋関数
+   `isFieldVisible`/`hasRecordedValue` を集約。§6.3 の不変条件「記録済みの
+   値は、表示項目の設定に関わらず常に表示する」を満たすため、可視性は
+   設定値だけでなく `Activity` の実データ（読み込み時点のスナップショット）
+   からも判定する。Mood before/after は Screen 07a のモック通り
+   `activityDetails.mood` という単一キーで両方をまとめて出し分ける
+2. **[app/settings/activity-details.tsx](app/settings/activity-details.tsx)（新規）**：
+   6項目のトグル画面。`app/settings/block-screenshots.tsx` と同じパターン
+   （`Switch` + 失敗時ロールバック）。文言は Screen 07a のルール
+   （属性推定を匂わせない、既定値の理由を説明しない、OFF を「表示しない」と
+   表現する）にそのまま従った
+3. **`app/settings/index.tsx`**：PRIVACY/HEALTH/DATA と PREFERENCES の間に
+   TRACKING セクションを追加（§17 Screen 07 のモックのセクション順）
+4. **`app/activity/[id].tsx`**：6項目それぞれを `isFieldVisible` の結果で
+   条件レンダリングに変更。可視性は `load()` 時点で読み込んだ `activity`
+   （安定したスナップショット）から計算し、編集中のライブな入力値からは
+   計算しない——そうしないと、値をクリアした瞬間にフィールド自体が消える
+   という事故になる
+5. **[components/AddMoreDetailsSheet.tsx](components/AddMoreDetailsSheet.tsx)
+   （新規）**：§6.3「その他の項目を追加」という逃げ道。非表示中の項目を
+   一覧表示し、タップした項目をその場（この記録限り、`revealed` state）
+   だけ表示する。永続化しない——次にこの画面を開いたときは設定と記録済み
+   値の判定に戻る。`DateTimePickerSheet` と同じ理由（App Lock オーバーレイ
+   がネイティブ `<Modal>` の外側を覆えない、`contexts/AppLock.tsx` 参照）で
+   素の絶対配置 `View`
+
+#### テスト
+
+- `lib/__tests__/activityDetailsFields.test.ts`：`hasRecordedValue`
+  （false/0 を「未記録」と混同しないこと、mood が before/after いずれかで
+  記録済み扱いになること）・`isFieldVisible`（設定 ON／記録済み／
+  revealed の3経路それぞれで可視になること、いずれにも該当しなければ
+  非表示になること）
+- 画面コンポーネント自体（`app/`）はこのプロジェクトに前例が無く
+  ユニットテスト対象外——`npx tsc --noEmit` の型チェックと全テスト
+  スイート（28スイート・394件）のパスのみで検証した
+
+#### 実機確認（Pixel 3、2026-09-21）
+
+Settings > Activity Details → TRACKING セクションの新規行から遷移でき、
+6項目のトグルは既定通り Orgasm/Notes のみ ON で表示された。Ejaculation を
+ON にして Activity Detail 画面を開くと Orgasm/Ejaculation/Notes のみ表示
+され、Protection/Duration/Mood は非表示、「+ Add more details」が現れた。
+そのシートで Protection をタップすると即座にフィールドが現れ（シート自体は
+開いたまま、シートの一覧からは消える）、値を入力して保存できた。**不変
+条件の検証**：保存後、Settings で Ejaculation を OFF に戻してから同じ
+Activity を再度開いたところ、Ejaculation（未記録）は設定通り非表示に
+戻った一方、Protection（記録済み）は設定が OFF のままでも表示され続けた
+——§6.3「記録済みの値は、表示項目の設定に関わらず常に表示する」が実機で
+意図通り動作することを確認した。
+
+#### Known gaps
+
+- **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
+  この機能固有の問題ではない）
+- **AddMoreDetailsSheet で複数項目を連続して追加する経路・Duration/Mood の
+  出し分けは未確認**（上記実機確認では Protection の1項目のみ検証）
+- **§10.6「全 Activity 削除」等、将来この画面に破壊的操作が増える場合の
+  再検討は対象外**：本項は表示項目の出し分けのみのスコープ
 
 ## Phase 4 実装状況
 

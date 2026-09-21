@@ -1,8 +1,10 @@
 /**
  * UI/UX §17 Screen 07 — Settings. Only the sections that actually have a
- * working destination are listed here; the rest of §17's mockup (Activity
- * Details, Preferences, About) ships as its own row once each is built,
- * rather than linking to placeholders now. DATA is a single "Export &
+ * working destination are listed here; the rest of §17's mockup
+ * (Preferences, About) ships as its own row once each is built, rather
+ * than linking to placeholders now. TRACKING's "Activity Details" row
+ * (§6.3/Screen 07a) links to `settings/activity-details.tsx`. DATA is a
+ * single "Export &
  * Import" row rather than §17's separate Export/Import/Delete rows —
  * `settings/data.tsx` covers Export and Import; Delete (§10.6) isn't built
  * yet, so the mockup's three-row split isn't followed literally (see
@@ -84,6 +86,9 @@ export default function SettingsIndexScreen() {
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA</Text>
         <SettingsGroup rows={[{ label: 'Export & Import', onPress: () => router.push('/settings/data') }]} />
+
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TRACKING</Text>
+        <SettingsGroup rows={[{ label: 'Activity Details', onPress: () => router.push('/settings/activity-details') }]} />
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PREFERENCES</Text>
         <SettingsGroup rows={[{ label: 'Appearance', onPress: () => router.push('/settings/appearance') }]} />

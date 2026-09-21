@@ -1,8 +1,13 @@
 /**
- * UI/UX §10/§11 Activity Detail. All optional fields shown unconditionally
- * for Phase 1 — the per-field "Activity Details" show/hide customization
- * (settings/activity-details.tsx, §17 UI/UX) is Phase 3, not built yet
- * (see README "Known gaps").
+ * UI/UX §10/§11 Activity Detail. Per-field show/hide customization (§6.3,
+ * `settings/activity-details.tsx`) gates which *unrecorded* fields render —
+ * the invariant (§6.3) is that a field with an already-recorded value is
+ * always shown regardless of the setting, so visibility is computed from
+ * `activity` (the loaded, stable snapshot) rather than the live-edited
+ * field state — see `lib/activityDetailsFields.ts`. `revealed` (via
+ * `AddMoreDetailsSheet`, the "その他の項目を追加" escape hatch) is
+ * per-visit only, reset on every `load()`, never persisted — deliberately
+ * does not survive leaving and reopening this screen.
  *
  * Date/time editing: originally scoped out of this screen (README read
  * UI/UX §27's Phase 3 line as limited to the Add Activity entry point
@@ -57,6 +62,7 @@ import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAppLockActions } from '../../contexts/AppLock';
 import { useNativeDateTimePicker } from '../../hooks/useNativeDateTimePicker';
 import { DateTimePickerSheet } from '../../components/DateTimePickerSheet';
+import { AddMoreDetailsSheet } from '../../components/AddMoreDetailsSheet';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
 import * as ActivityService from '../../services/ActivityService';
 import { getSetting } from '../../services/SettingsRepository';
@@ -64,8 +70,12 @@ import { contextLabel } from '../../lib/labels';
 import { formatCalendarDateTime, formatPickedDateTime } from '../../lib/timeFormat';
 import { getDeviceTimeZoneId, nowAsZonedDigits, resolveOccurredAtEdit } from '../../lib/datetime';
 import { logError } from '../../lib/log';
+import { ACTIVITY_DETAIL_FIELDS, isFieldVisible, type ActivityDetailField } from '../../lib/activityDetailsFields';
 import type { Activity } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
+
+type ActivityDetailSettingKey = (typeof ACTIVITY_DETAIL_FIELDS)[number]['settingKey'];
+type DetailSettings = Record<ActivityDetailSettingKey, boolean>;
 
 function formatDateTime(activity: Activity, timeFormat: TimeFormat): string {
   const [y, m, d] = activity.occurredLocalDate.split('-').map(Number);
@@ -187,6 +197,9 @@ export default function ActivityDetailScreen() {
   const [note, setNote] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
+  const [detailSettings, setDetailSettings] = useState<DetailSettings | null>(null);
+  const [revealed, setRevealed] = useState<Set<ActivityDetailField>>(new Set());
+  const [addMoreVisible, setAddMoreVisible] = useState(false);
   const getBase = () => (activity ? toLocalDate(activity.occurredLocalDate, activity.occurredLocalTime) : new Date());
   const getMax = () => (activity ? nowAsZonedDigits(activity.timezoneId ?? getDeviceTimeZoneId()) : new Date());
   const { customInstant, iosPickerVisible, pendingInstant, setPendingInstant, open, confirmIos, cancelIos, reset } =
@@ -194,12 +207,15 @@ export default function ActivityDetailScreen() {
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [found, tf] = await Promise.all([
+    const [found, tf, detailEntries] = await Promise.all([
       ActivityRepository.findActivityById(db, id),
       getSetting(db, 'preferences.timeFormat'),
+      Promise.all(ACTIVITY_DETAIL_FIELDS.map(async ({ settingKey }) => [settingKey, await getSetting(db, settingKey)] as const)),
     ]);
     setActivity(found);
     setTimeFormat(tf);
+    setDetailSettings(Object.fromEntries(detailEntries) as DetailSettings);
+    setRevealed(new Set()); // per-visit only (§6.3 "その他の項目を追加"), never persisted
     if (found) {
       setOrgasm(found.orgasm);
       setEjaculation(found.ejaculation);
@@ -219,13 +235,24 @@ export default function ActivityDetailScreen() {
     }, [load]),
   );
 
-  if (!activity) {
+  if (!activity || !detailSettings) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.textSecondary }}>Loading…</Text>
       </SafeAreaView>
     );
   }
+
+  // Computed from `activity` (the stable, loaded snapshot) rather than the
+  // live-edited orgasm/ejaculation/etc. state — see file doc comment: a
+  // field must not disappear mid-edit just because its value was cleared.
+  const visible = Object.fromEntries(
+    ACTIVITY_DETAIL_FIELDS.map(({ field, settingKey }) => [
+      field,
+      isFieldVisible(field, detailSettings[settingKey], activity, revealed),
+    ]),
+  ) as Record<ActivityDetailField, boolean>;
+  const hiddenFields = ACTIVITY_DETAIL_FIELDS.filter(({ field }) => !visible[field]);
 
   const save = async () => {
     let durationSeconds: number | null;
@@ -323,52 +350,74 @@ export default function ActivityDetailScreen() {
           </Pressable>
         </View>
 
-        <TriState label="Orgasm" value={orgasm} onChange={setOrgasm} colors={colors} />
-        <TriState label="Ejaculation" value={ejaculation} onChange={setEjaculation} colors={colors} />
-        <TriState label="Protection" value={protectionUsed} onChange={setProtectionUsed} colors={colors} />
+        {visible.orgasm && <TriState label="Orgasm" value={orgasm} onChange={setOrgasm} colors={colors} />}
+        {visible.ejaculation && (
+          <TriState label="Ejaculation" value={ejaculation} onChange={setEjaculation} colors={colors} />
+        )}
+        {visible.protection && (
+          <TriState label="Protection" value={protectionUsed} onChange={setProtectionUsed} colors={colors} />
+        )}
 
-        <View style={styles.fieldBlock}>
-          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Duration (minutes)</Text>
-          <TextInput
-            value={durationMinutes}
-            onChangeText={(value) => {
-              setDurationMinutes(value);
-              setDurationTouched(true);
-            }}
-            keyboardType="number-pad"
-            placeholder="Not recorded"
-            placeholderTextColor={colors.textTertiary}
-            style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border }]}
-          />
-          {!durationTouched && activity.durationSeconds != null && activity.durationSeconds % 60 !== 0 && (
-            // This field only edits whole minutes, so any duration that
-            // isn't an exact multiple of 60s displays rounded here — not
-            // just the < 60s case (90s still shows "2"). Say the real
-            // value so the rounding is never mistaken for what's actually
-            // recorded. Untouched, saving still keeps the exact original
-            // value (see `durationTouched` above); this is display-only.
-            <Text style={[styles.fieldCaption, { color: colors.textTertiary }]}>
-              Recorded as {activity.durationSeconds} seconds, shown here as{' '}
-              {Math.round(activity.durationSeconds / 60)} min. Editing this field will replace it with a whole
-              number of minutes.
-            </Text>
-          )}
-        </View>
+        {visible.duration && (
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Duration (minutes)</Text>
+            <TextInput
+              value={durationMinutes}
+              onChangeText={(value) => {
+                setDurationMinutes(value);
+                setDurationTouched(true);
+              }}
+              keyboardType="number-pad"
+              placeholder="Not recorded"
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border }]}
+            />
+            {!durationTouched && activity.durationSeconds != null && activity.durationSeconds % 60 !== 0 && (
+              // This field only edits whole minutes, so any duration that
+              // isn't an exact multiple of 60s displays rounded here — not
+              // just the < 60s case (90s still shows "2"). Say the real
+              // value so the rounding is never mistaken for what's actually
+              // recorded. Untouched, saving still keeps the exact original
+              // value (see `durationTouched` above); this is display-only.
+              <Text style={[styles.fieldCaption, { color: colors.textTertiary }]}>
+                Recorded as {activity.durationSeconds} seconds, shown here as{' '}
+                {Math.round(activity.durationSeconds / 60)} min. Editing this field will replace it with a whole
+                number of minutes.
+              </Text>
+            )}
+          </View>
+        )}
 
-        <MoodRow label="Mood before" value={moodBefore} onChange={setMoodBefore} colors={colors} />
-        <MoodRow label="Mood after" value={moodAfter} onChange={setMoodAfter} colors={colors} />
+        {visible.mood && (
+          <>
+            <MoodRow label="Mood before" value={moodBefore} onChange={setMoodBefore} colors={colors} />
+            <MoodRow label="Mood after" value={moodAfter} onChange={setMoodAfter} colors={colors} />
+          </>
+        )}
 
-        <View style={styles.fieldBlock}>
-          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Notes</Text>
-          <TextInput
-            value={note}
-            onChangeText={setNote}
-            multiline
-            placeholder="Add a note"
-            placeholderTextColor={colors.textTertiary}
-            style={[styles.textArea, { color: colors.textPrimary, borderColor: colors.border }]}
-          />
-        </View>
+        {visible.note && (
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Notes</Text>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              multiline
+              placeholder="Add a note"
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.textArea, { color: colors.textPrimary, borderColor: colors.border }]}
+            />
+          </View>
+        )}
+
+        {hiddenFields.length > 0 && (
+          <Pressable
+            onPress={() => setAddMoreVisible(true)}
+            style={styles.addMoreRow}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.addMoreLink, { color: colors.solo }]}>+ Add more details</Text>
+          </Pressable>
+        )}
 
         <Pressable
           onPress={save}
@@ -390,6 +439,13 @@ export default function ActivityDetailScreen() {
         onChange={setPendingInstant}
         onCancel={cancelIos}
         onDone={confirmIos}
+      />
+
+      <AddMoreDetailsSheet
+        visible={addMoreVisible}
+        hiddenFields={hiddenFields}
+        onReveal={(field) => setRevealed((current) => new Set(current).add(field))}
+        onClose={() => setAddMoreVisible(false)}
       />
     </SafeAreaView>
   );
@@ -439,6 +495,8 @@ const styles = StyleSheet.create({
     minHeight: 88,
     textAlignVertical: 'top',
   },
+  addMoreRow: { alignItems: 'center', minHeight: minTouchTarget, justifyContent: 'center' },
+  addMoreLink: { fontSize: 14, fontWeight: '600' },
   saveButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
   saveButtonText: { fontSize: 16, fontWeight: '700' },
   deleteButton: { alignItems: 'center', paddingVertical: 12, minHeight: minTouchTarget, justifyContent: 'center' },
