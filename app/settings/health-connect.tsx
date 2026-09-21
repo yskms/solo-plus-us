@@ -5,6 +5,19 @@
  * （`app/settings/index.tsx` が `Platform.OS === 'android'` でこの行自体を
  * 出し分けている——Health Connect は Android 専用機能、§9.11）。
  *
+ * **§9.11/§25.1 レビュー指摘（2026-09-21）：without-health-connect ビルドでは
+ * この画面自体をリダイレクトで閉じる。** `app/settings/index.tsx` が行を
+ * 隠すだけでは、`soloplusus://settings/health-connect` の deep link で
+ * 直接開けてしまい、permission が Manifest に無いビルドで
+ * `healthConnect.enabled` を true にできてしまう（iOS は `Platform.OS`
+ * のみで画面自体はガードしていないが、そちらは呼び出しが必ず throw する
+ * Proxy で安全側に倒れる——このビルドフラグのケースはネイティブモジュールが
+ * 生きたまま応答するため、同じ「index で隠すだけ」に頼れない）。
+ * `isHealthConnectBuildEnabled()` はビルド時定数（`EXPO_PUBLIC_*` は
+ * bundle 時にリテラル展開される）で、この画面の生存期間中に変わることは
+ * ないため、他の hooks より前でこの早期 return を行っても Rules of Hooks
+ * 違反にはならない（hook 呼び出し回数はこのビルドである限り常に一定）。
+ *
  * §10.6「全 Activity 削除」（`app/settings/delete-data.tsx`）の進行表示
  * 付きフローはここには無い——その画面の doc comment に記載の通り、意図的な
  * スコープ判断（README 参照）。この画面の切断時の警告が見るのは「未処理の
@@ -38,8 +51,10 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
@@ -168,7 +183,19 @@ function UnsyncedRow({
 
 const POLL_INTERVAL_MS = 5000;
 
+/** without-health-connect ビルドでこの画面を deep link 等で開いたときに `/settings` へ戻す。ファイル冒頭の doc comment参照。 */
+function BuildDisabledRedirect() {
+  useEffect(() => {
+    router.replace('/settings');
+  }, []);
+  return null;
+}
+
 export default function HealthConnectSettingsScreen() {
+  if (!isHealthConnectBuildEnabled()) {
+    return <BuildDisabledRedirect />;
+  }
+
   const { colors } = useTheme();
   const db = useDatabase();
   const { revision, bump } = useDataRevision();

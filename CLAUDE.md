@@ -179,26 +179,64 @@ Day/Night モード、ステータスバー）にあることが多く、`values
 permission（`android.permission.health.WRITE_SEXUAL_ACTIVITY`）と
 `withHealthConnectPermissionsRationale` plugin だけ** を切り替えている。
 `react-native-health-connect` ネイティブモジュール自体は両ビルドとも
-リンクされたまま——これは手抜きではなく意図的な設計判断。
+リンクされたまま——これは手抜きではなく意図的な設計判断。**既定値
+（env 未設定）は「無効」**（`=== '1'` のときだけ有効、opt-in）——当初は
+「未設定 = 有効」だったが、env 指定を忘れた/新しい build profile が
+黙って permission 入りに倒れるのは危険側だとレビューで指摘され直した
+（`app.config.js`・`lib/healthConnectBuild.ts` の doc comment参照）。
+ローカルの `expo run:android`/`expo start` を HC 込みで使いたい場合は
+`.env.local.example` を `.env.local` にコピーすること。
 
 - Health apps declaration の提出トリガーは「配布 AAB の Manifest に
   health permission が含まれているか」であって、ネイティブモジュールの
   リンク有無ではない（§9.11 本文）。permission を切れば要件は満たされる。
-- 「実行時に HC を参照しない」も、新規のガードコードなしで成立している：
-  `services/SyncWorker.ts` の `drainDueJobs` は
-  `services/ActivityService.ts` の `getActiveProviders` に
-  `'health_connect'` が含まれない限り `HealthConnectService.*` を一切
-  呼ばずに早期 return する。この設定は `app/settings/health-connect.tsx`
-  の ON トグル以外から true にならず、そのトグル自体は
-  `app/settings/index.tsx` が `isHealthConnectBuildEnabled()` で
-  ビルドごと非表示にしている——ユーザーが一度も有効化できない以上、
-  実行時参照は起こり得ない。
+  ただしライブラリ自身の `<queries><package android:name="com.google.
+  android.apps.healthdata" /></queries>` は without ビルドでも Manifest に
+  残る（審査トリガーになる permission ではないので問題無いが、「HC の痕跡が
+  完全に消える」わけではない——レビュー指摘、2026-09-21）。
 - ネイティブモジュールの物理除外（autolinking の `exclude`）は、
   Gradle デーモンのキャッシュ問題（本ファイル「package.json にあるのに
   未リンクなネイティブモジュール」の節）を踏むリスクの割に実益が無い
   ため、あえてやっていない。**「ネイティブモジュールも除外すべきでは」
   という直感で `exclude` 設定を足すような変更はしないこと**——上記の
   理由で不要かつリスクだけが増える。
+
+**「行を隠せば実行時参照は起こり得ない」は誤りだった（レビュー指摘、
+2026-09-21・実装当日に発見）。** 当初 `app/settings/index.tsx` が
+`isHealthConnectBuildEnabled()` で HEALTH 行を隠すだけで十分だと考えたが、
+以下の2経路で破られる：
+
+1. **同一 applicationId での with→without 入れ替え。** `healthConnect.
+   enabled` は暗号化 DB の設定として永続化され、アプリの入れ替え
+   （`adb install -r` 相当のアップグレード）では消えない。以前
+   with-health-connect ビルドで ON にしていた端末へ without ビルドを
+   重ねると、`getActiveProviders`（`services/ActivityService.ts`）が
+   health_connect を active と返し続け、`drainDueJobs` が permission の無い
+   ビルドでジョブを claim しては失敗させ続ける——しかもそれを見る/止める
+   UI（`health-connect.tsx`）は行が隠れていて到達不能。
+2. **deep link での直接到達。** `app/settings/index.tsx` が行を隠しても、
+   `soloplusus://settings/health-connect` は Expo Router のルートとして
+   常に開ける。ON トグルを押すと `healthConnect.enabled = true` が書き込め
+   てしまう（iOS は同じ「行を隠すだけ」だが、そちらはネイティブ呼び出しが
+   必ず throw する Proxy なので安全側に倒れる——ビルドフラグのケースは
+   ネイティブモジュールが生きたまま応答するため、同じロジックが通用しない）。
+
+**対処（両方実装済み）：**
+- `services/ActivityService.ts` の `reconcileHealthConnectBuildFlag()` を
+  `contexts/DatabaseContext.tsx` の DB 接続確立直後（アプリへ公開する前）に
+  1回呼び、`!isHealthConnectBuildEnabled()` なら `healthConnect.enabled` を
+  false に是正する（この時点では SyncWorker は構造上まだ起動しえないため
+  `SyncCoordinator.runExclusive` は不要——「初期化は runExclusive で
+  包んでいない」と同じ理由）。
+- `app/settings/health-connect.tsx` 自体が `isHealthConnectBuildEnabled()`
+  を他の hooks より前でチェックし、無効なら `/settings` へ `router.replace`
+  する（`BuildDisabledRedirect`）。この値はビルド時定数なので、hooks より
+  前の早期 return でも Rules of Hooks 違反にならない。
+
+「行を隠すだけで到達不能」という単純化は、**設定が他の経路（アップグレード・
+deep link・将来の Import 等）で変わりうる場合は成立しない**——今後同種の
+ビルドフラグ分岐を足すときは、UI を隠すことと「その状態に実際になれない」
+ことを混同しないこと。
 
 **`EXPO_PUBLIC_*` は `expo start`/`expo run:android` の dev-client 経由の
 ライブリロードでは、shell の export だけでは反映されない（実機で実際に

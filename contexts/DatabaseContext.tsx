@@ -15,6 +15,7 @@ import { getDatabase, wasRestoredFromFailedMigration } from '../database/connect
 import { clearAllClaims } from '../repositories/HealthSyncJobRepository';
 import { hasSeenPrivacyIntro } from '../lib/onboarding';
 import { ensureLocaleDefaultsPersisted } from '../services/SettingsRepository';
+import { reconcileHealthConnectBuildFlag } from '../services/ActivityService';
 import { DatabaseCorruptOrWrongKeyError, DatabaseKeyUnavailableError, MigrationRestoreFailedError } from '../lib/errors';
 import { useTheme } from '../constants/theme';
 import { RecoveryScreen } from '../components/RecoveryScreen';
@@ -45,6 +46,10 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       // §5.5/D-42: resolved once, from the OS's actual settings, and
       // persisted — never re-derived from locale on every read.
       await ensureLocaleDefaultsPersisted(db);
+      // §9.11/§25.1 レビュー指摘: without-health-connect ビルドへの入れ替え後も
+      // healthConnect.enabled が true のまま残っていないか是正する（詳細は
+      // `services/ActivityService.ts` の doc comment参照）。
+      await reconcileHealthConnectBuildFlag(db);
       const needsOnboarding = !(await hasSeenPrivacyIntro(db));
       // §7.2 "起動を継続してエラーを表示する": a failed migration that fell
       // back to the pre-migration schema still returns a usable `db` —

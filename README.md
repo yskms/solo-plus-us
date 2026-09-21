@@ -3540,6 +3540,25 @@ shell export だけでは反映されず `.env.local` が必要**（`expo export
 EAS Build の静的バンドルでは shell export のみで正しく動くことを確認
 済み）——詳細は CLAUDE.md 参照。
 
+**レビュー指摘を反映済み（2026-09-21・コード変更なしのレビュー→別コミットで対応）：**
+- フラグの既定値を「未設定=有効」から「`=== '1'` のときだけ有効」（opt-in）
+  へ変更——env 指定漏れが安全側に倒れるように
+  （`.env.local.example` を追加、`eas.json` の development/preview には
+  明示的に `"1"` を設定）
+- with-health-connect ビルドで ON にした端末へ without ビルドを重ねても
+  `healthConnect.enabled` が true のまま残る問題を、起動時の是正
+  （`services/ActivityService.ts` の `reconcileHealthConnectBuildFlag`、
+  `contexts/DatabaseContext.tsx` から呼ぶ）で解消
+- `app/settings/health-connect.tsx` への deep link 直接到達（Settings 一覧の
+  行を隠すだけでは防げない）を、画面自体のリダイレクトガードで解消
+- `app.config.js` の `android.permissions` 上書き・plugin 挿入位置の脆さを修正
+
+**未検証のまま残る項目（ストア申請前に確認すること）：** `eas.json` の
+`production` と `production-with-health-connect` は同じ `versionCode`
+空間を共有する（`extends` で `autoIncrement` を継承）。`appVersionSource:
+"local"` と動的 config（`app.config.js`）の組み合わせで EAS CLI が
+ローカルバージョンを正しく読み書きできるかは EAS build 未実行のため未検証。
+
 #### Known gaps（次のステップ）
 
 - **Settings UI の実機確認は完了**（上記「実機確認（Pixel 11、
