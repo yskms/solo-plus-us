@@ -59,12 +59,19 @@ import ja from '../../locales/ja.json';
 export const SUPPORTED_LANGUAGES = ['ja', 'en'] as const;
 export type SupportedLanguageTag = (typeof SUPPORTED_LANGUAGES)[number];
 
-/** Mirrors `services/SettingsRepository.ts`'s `resolveLocaleDefaults()`: reads the device's actual preference, falls back to `'en'` (this app's original hardcoded language) when unsupported. */
+/**
+ * Walks the device's full language preference list (`getLocales()`, ordered
+ * most- to least-preferred — e.g. a device set to Chinese with Japanese as
+ * its second language) rather than only checking the top entry, so someone
+ * whose first-choice language isn't one of `SUPPORTED_LANGUAGES` still gets
+ * their second choice when it is supported, instead of always falling
+ * through to `'en'` (this app's original hardcoded language, used only when
+ * *no* entry in the list is supported).
+ */
 export function resolveSystemLanguage(): SupportedLanguageTag {
-  const deviceLanguage = getLocales()[0]?.languageCode;
-  return (SUPPORTED_LANGUAGES as readonly string[]).includes(deviceLanguage ?? '')
-    ? (deviceLanguage as SupportedLanguageTag)
-    : 'en';
+  const supported = SUPPORTED_LANGUAGES as readonly string[];
+  const match = getLocales().find((locale) => supported.includes(locale.languageCode ?? ''));
+  return (match?.languageCode as SupportedLanguageTag | undefined) ?? 'en';
 }
 
 i18n.use(initReactI18next).init({
