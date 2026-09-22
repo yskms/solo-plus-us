@@ -4086,3 +4086,42 @@ Settings > Activity Details で既定値欄の表示（Orgasm/Ejaculation はト
   手入力の値と同じ経路を通るため、壊れている可能性は低いと判断している
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
   この機能固有の問題ではない）
+
+### 多言語対応（日本語 + 英語、設計判断記録 D-53、実装完了）
+
+`i18next`/`react-i18next` による日本語・英語対応。Settings › Language
+（`system`/`ja`/`en`、既定 `system`）で切り替える。方針・却下案は D-53、
+`lib/` へ `t` を引数で渡す規約・`npm run check-i18n`・Hermes の
+`Intl.PluralRules` 欠落への対処は CLAUDE.md「多言語対応（i18n）」参照。
+Android（Pixel 11）で確認済み、iOS は未確認。
+
+### Quick Record の詳細項目の既定値（設計判断記録 D-54、2026-09-22、実装完了）
+
+Settings › Activity Details で Orgasm/Ejaculation/Protection に既定値
+（未記録/あり/なし）を設定でき、Quick Record 時に自動で入力される。
+Orgasm/Ejaculation は表示トグル ON のときだけ適用、Protection は表示トグル
+と無関係に Partnered の記録にだけ適用する。既定値由来の値も HC 同期・統計の
+対象になる（ユーザー了承済み）。理由と帰結は D-54 参照。
+
+Android（Pixel 11）で確認済み：設定 UI（トグルとの連動・Protection の常時
+表示・狭い画面での折り返し）、Solo への Ejaculation 既定値の反映、
+Protection トグル OFF のまま Partnered へ Protection 既定値が反映されること。
+**未確認**：既定値由来の Protection が HC に PROTECTED として送信されること
+（次に HC 有効ビルドで実機確認する機会に見る）。iOS は未確認。
+
+### v1.0 のリリース方針：`without-health-connect` で出す（設計判断記録 D-55、2026-09-22 決定）
+
+要件定義書 §25.1／D-12 のゲートについて、Health apps declaration の承認を
+待たず、**v1.0 は `eas.json` の `production`（HC 権限なし）で配布する**と
+決定した。declaration は並行して準備・提出し、承認後に
+`production-with-health-connect` で v1.0.x として HC 対応版を出す。
+
+申請前に確認すること：
+
+- `production`/`production-with-health-connect` の `versionCode` 共有と、
+  `appVersionSource: "local"` + `app.config.js` の組み合わせでの EAS の
+  挙動（未検証。EAS build はビルド枠を使うため、実行前に必ず許可を取る）
+- **v1.0 公開後は D-11「ALTER TABLE のみ」が適用され、`database/schema.ts`
+  の直接編集はできなくなる**（CLAUDE.md の「schema.ts を変更した後の実機
+  テスト」の節の前提もそこで変わる）。スキーマに入れておくべき変更が
+  残っていないか、申請前に確認する

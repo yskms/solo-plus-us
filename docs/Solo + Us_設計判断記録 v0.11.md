@@ -20,6 +20,7 @@
   同様の経緯で、以前の README 記載のスコープ判断を上書き）
 - v0.15 で D-53 を追加（多言語対応(i18n)に着手。D-48 のスコープ外指定を撤回・上書き）
 - v0.16 で D-54 を追加（Quick Record 詳細項目に「既定値」を追加。§6.4 の解釈を拡張）
+- v0.17 で D-55 を追加（v1.0 は `without-health-connect` で出す。D-12 のゲートを確定）
 
 ---
 
@@ -2479,6 +2480,53 @@ Connect に送信される（`services/HealthConnectService.ts` の
 - Orgasm/Ejaculation にも将来コンテキスト依存の既定値（Partnered 専用
   など）が必要になった場合は、この節の Protection と同じパターン
   （トグルから独立させる）を踏襲すること
+
+---
+
+## D-55 v1.0 は `without-health-connect` で出す——D-12 のゲートを審査待ちせずに確定する
+
+**決定**
+
+Android v1.0 は `without-health-connect`（`eas.json` の `production`
+プロファイル、`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=0`）で配布する。
+Health apps declaration は v1.0 のリリースと並行して準備・提出し、承認後に
+`production-with-health-connect` で v1.0.x として Health Connect 対応版を
+出す（2026-09-22、ユーザー決定）。
+
+D-12 は「コードフリーズ時点で承認済みなら with、未承認なら without」という
+ゲートだったが、承認を待たずに without を選ぶことを先に確定させる。
+
+**理由**
+
+- Health Connect は §25 で「○（ゲート次第）」であり、v1.0 の必須機能では
+  ない。記録・統計・バックアップなど中心機能は HC なしで完結する
+- 初回のストア審査でアプリ本体と Health apps declaration（Reproductive and
+  Sexual Health に属するセンシティブなデータ型）を同時に抱えると、差し戻し
+  時に原因の切り分けが難しくなる
+- with→without／without→with の入れ替えで壊れないための対策
+  （`reconcileHealthConnectBuildFlag`・`health-connect.tsx` のリダイレクト
+  ガード等）は実装済みで、後から HC 対応版を重ねる経路に追加作業が要らない
+
+**却下した案**
+
+- **承認を待って with で v1.0 を出す**：審査期間が読めず、リリース日が
+  Google の審査に依存する。D-12 が避けようとしたクリティカルパスそのもの
+
+**帰結・注意点**
+
+- `production` と `production-with-health-connect` は同じ `versionCode`
+  空間を共有する（`extends` で `autoIncrement` を継承）。v1.0.x の HC 対応版は
+  v1.0 より大きい `versionCode` でなければならない。`appVersionSource:
+  "local"` と `app.config.js` の組み合わせで EAS がこれを正しく扱えるかは
+  未検証（README「Phase 4 実装状況」参照）——最初の EAS build で確認する
+- **v1.0 を公開した時点で D-11「一度リリースしたら ALTER TABLE のみ」が
+  適用される。** それまで許されていた `SCHEMA_V1_STATEMENTS`
+  （`database/schema.ts`）の直接編集はできなくなり、以後のスキーマ変更は
+  migration として追加する必要がある。v1.0 の申請前に、スキーマに入れて
+  おくべき変更が残っていないかを確認すること
+- ライブラリ由来の `<queries>`（`com.google.android.apps.healthdata`）は
+  without ビルドの Manifest にも残る（審査トリガーの permission ではない。
+  CLAUDE.md「リリースビルド分離」の節参照）
 
 ---
 
