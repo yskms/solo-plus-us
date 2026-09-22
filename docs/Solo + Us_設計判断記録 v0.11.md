@@ -2448,8 +2448,10 @@ Connect に送信される（`services/HealthConnectService.ts` の
 この挙動を受け入れるかどうかをユーザーに確認し、**現状のまま（既定値も
 通常の記録として扱い、HC 送信・統計の対象に含める）でよい**という回答を
 得た。区別を付けるには、Activity に「既定値由来かどうか」を示すフラグを
-追加する必要があり、DB スキーマ変更（ALTER TABLE、D-11 参照）と Export
-形式の変更を伴う比較的大きな変更になるため、今回は見送った。
+追加する必要があり、DB スキーマ変更（v1 リリース後なら D-11「一度リリース
+したら ALTER TABLE のみ」に従うが、現時点は D-51 と同様まだ未リリースの
+ため `SCHEMA_V1_STATEMENTS` を直接編集する形になる）と Export 形式の変更を
+伴う比較的大きな変更になるため、今回は見送った。
 
 **受け入れる帰結**
 
@@ -2467,9 +2469,10 @@ Connect に送信される（`services/HealthConnectService.ts` の
 **再検討する場合**
 
 - Activity に「既定値由来」フラグを追加する必要が生じた場合（他の理由で
-  スキーマ変更が必要になったタイミングなど）は、D-11「ALTER TABLE のみ」
-  の制約と `EXPORTABLE_SETTING_KEYS`/Export JSON schema への影響も合わせて
-  確認すること
+  スキーマ変更が必要になったタイミングなど）は、`EXPORTABLE_SETTING_KEYS`/
+  Export JSON schema への影響も合わせて確認すること。v1 リリース後なら
+  D-11「一度リリースしたら ALTER TABLE のみ」の制約にも従うこと（未
+  リリースの間は D-51 と同様 `SCHEMA_V1_STATEMENTS` を直接編集してよい）
 - Orgasm/Ejaculation にも将来コンテキスト依存の既定値（Partnered 専用
   など）が必要になった場合は、この節の Protection と同じパターン
   （トグルから独立させる）を踏襲すること

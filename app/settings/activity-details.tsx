@@ -147,9 +147,22 @@ export default function ActivityDetailsSettingsScreen() {
                       ? t('settings.activityDetails.defaultLabelPartnered')
                       : t('settings.activityDetails.defaultLabel')}
                   </Text>
+                  {/* Label above the buttons, not alongside them (matches `TriState` in
+                      app/activity/[id].tsx) — a single row with `space-between` risked
+                      clipping at narrow widths/large font sizes once Protection's label
+                      grew to "Default (Partnered)" (code review finding, 2026-09-22). */}
                   <View style={styles.segmentedRow} accessibilityRole="radiogroup">
                     {defaultOptions(t).map((opt) => {
                       const selected = defaultValues[defaultSettingKey] === opt.value;
+                      // Orgasm/Ejaculation are context-independent, so they use `solo` as
+                      // the app's general accent (same as the checkmark in
+                      // `SettingsOptionScreen`, also used for context-independent
+                      // settings). Protection's default only ever applies to Partnered
+                      // (D-54), so it uses `partneredStrong` instead — the color/label
+                      // rule in constants/theme.ts ("Solo/Partnered must never be
+                      // distinguished by color alone") is satisfied here by the
+                      // "(Partnered)" label right above (code review finding, 2026-09-22).
+                      const selectedColor = field === 'protection' ? colors.partneredStrong : colors.solo;
                       return (
                         <Pressable
                           key={opt.key}
@@ -159,7 +172,7 @@ export default function ActivityDetailsSettingsScreen() {
                           accessibilityState={{ selected, disabled: busyKey === defaultSettingKey }}
                           style={[
                             styles.segment,
-                            { borderColor: colors.border, backgroundColor: selected ? colors.solo : 'transparent' },
+                            { borderColor: colors.border, backgroundColor: selected ? selectedColor : 'transparent' },
                           ]}
                         >
                           <Text style={{ color: selected ? colors.background : colors.textPrimary, fontSize: 13 }}>
@@ -196,12 +209,9 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontSize: 15, fontWeight: '500' },
   defaultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   defaultLabel: { fontSize: 13 },
   segmentedRow: { flexDirection: 'row', gap: spacing.xs },
