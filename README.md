@@ -3970,3 +3970,119 @@ dismissible なカードを出す」の案も検討したが、§15 との整合
   判断し、対応していない
 - **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
   この機能固有の問題ではない）
+
+### 多言語対応（i18n）（D-53、2026-09-21、実装完了）
+
+D-48「多言語対応はロードマップ外」を撤回し、日本語＋英語の i18n 対応に
+着手した（対応言語・ライブラリ選定・言語切替の設計など、決定事項の詳細は
+[設計判断記録 D-53](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-53-多言語対応i18nに着手するd-48-のスコープ外指定を撤回上書きする)
+参照）。`i18next`/`react-i18next` を採用し、`preferences.language`
+（`system`/`ja`/`en`、既定 `system`）を Settings > Language から明示的に
+切り替えられるようにした。`lib/` 配下の日付・複数形フォーマッタは
+i18next singleton に直接依存させず、呼び出し元（画面の `useTranslation()`）
+から `TFunction` を引数で受け取る形に統一した——`SqlExecutor` を毎回渡す等、
+このコードベース既存の「依存を明示的に渡す」作法に合わせている。
+
+#### 実装内容
+
+- 翻訳リソース：`locales/ja.json`/`locales/en.json`
+- キーの整合性チェック：`npm run check-i18n`（`scripts/checkI18nKeys.js`）。
+  全ソースの `t('...')` 呼び出しを翻訳リソースの実キーと突き合わせ、未定義
+  キー・翻訳漏れ・複数形の `_one`/`_other` 片側欠けを検出する。CI には
+  組み込んでおらず、手動実行が前提
+- `@formatjs/intl-pluralrules` ポリフィルを追加。Pixel 11 実機で、Hermes
+  に `Intl.PluralRules` が実装されておらず、複数形キー（`count` +
+  `_one`/`_other`）が count=1 のときだけ日本語選択中でも英語表示になる
+  不具合を発見し、修正した（`tsc`/`jest` は Node の `Intl.PluralRules` を
+  使うため検出できず、実機確認でのみ見つかった——詳細は D-53 参照）
+
+#### Known gaps
+
+- **`components/RecoveryScreen.tsx` は常に端末の OS 言語で表示される**：
+  `preferences.language` は暗号化 DB に保存されており、DB が復号できず
+  この画面が出ている間はそもそも読めない——設計上の制約（D-53 参照）
+- **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
+  この機能固有の問題ではない）
+
+### Quick Record 詳細項目の既定値（D-54、2026-09-22、実装完了）
+
+Orgasm/Ejaculation/Protection の3項目（tri-state: 未記録/あり/なし）に、
+Settings > Activity Details から設定できる「既定値」を追加した
+（`activityDetails.orgasmDefault`/`ejaculationDefault`/`protectionDefault`）。
+値を設定すると、Quick Record（`app/record.tsx`）での新規記録時に、その値が
+自動的に入力された状態で Activity が作成される（`ActivityService.
+recordActivity` 内 `resolveActivityDetailDefaults`）。§6.4「記録を強制
+しない」の解釈をどう広げたか、Protection だけ挙動を分けた理由、Health
+Connect 送信・統計への算入をどう扱うことにしたかは
+[設計判断記録 D-54](docs/Solo%20+%20Us_設計判断記録%20v0.11.md#d-54-quick-record-詳細項目に既定値を追加する64-の解釈を拡張する)
+参照。
+
+Protection の既定値は Orgasm/Ejaculation と異なり、`context ===
+'partnered'` のときのみ適用し、表示トグル（`activityDetails.protection`）
+とは完全に独立している——D-52 により Partnered では Protection が表示
+トグルの状態に関わらず常時表示されるため、既定値も同じ扱いにした。Solo の
+記録には、Protection の既定値は（トグルの状態に関わらず）決して適用され
+ない。
+
+#### 実装内容
+
+- `types/Settings.ts`：`activityDetails.{orgasm,ejaculation,protection}
+  Default`（`boolean | null`、既定 `null` = 既定値未設定）を追加。
+  `EXPORTABLE_SETTING_KEYS` にも追加（Export/Import 対応）
+- `app/settings/activity-details.tsx`：Orgasm/Ejaculation の既定値欄は
+  表示トグルが ON のときだけ表示する。Protection の既定値欄は表示トグルと
+  無関係に常に表示し、ラベルを「既定値（Partnered）」として範囲を明示した。
+  選択色も Orgasm/Ejaculation は `colors.solo`（`SettingsOptionScreen` の
+  チェックマークと同じ、文脈非依存設定の共通アクセント）、Protection は
+  `colors.partneredStrong`（Partnered 専用の意味を色でも補強）と使い分けた
+- 既定値で自動入力された値は、手入力した値と完全に同じ扱い——5秒の
+  Undo 猶予（D-15/D-44）を過ぎれば Health Connect にも同期され、統計にも
+  通常の記録として含まれる（キャプションと D-54 に明記。区別を付けるには
+  Activity 側にスキーマ変更を伴うフラグが必要になるため、今回は見送った）
+
+#### テスト
+
+- `test/__tests__/activityService.integration.test.ts`：既定値の適用
+  （トグル ON 時のみ）・非適用（トグル OFF 時）・呼び出し元の明示値による
+  上書き・Protection の context 限定適用（Partnered ではトグルに関わらず
+  適用、Solo には決して適用しない）を追加
+- `services/__tests__/importValidation.test.ts` の既存の網羅テスト
+  （`EXPORTABLE_SETTING_KEYS` の全キーが有効値をラウンドトリップすること）
+  が、新規3キーも自動的にカバーした
+- 既存の `test/__tests__/syncWorker.integration.test.ts` が、
+  `recordActivity` が新たに読むようになった activityDetails 系5キーを
+  未シードのまま実行してクラッシュする箇所を発見・修正した
+  （`resolveLocaleDefaults()` がテスト環境で使えない
+  `expo-localization` を呼ぶ既知の落とし穴——同ファイルの既存コメント
+  参照）
+- `npx tsc --noEmit`・`npm run check-i18n`・全テストスイート
+  （29スイート・432件）がパス
+
+#### 実機確認（Pixel 11、2026-09-22）
+
+Settings > Activity Details で既定値欄の表示（Orgasm/Ejaculation はトグル
+連動、Protection は常時表示＋「(Partnered)」ラベル＋`partneredStrong` 色）
+を確認した。Quick Record では以下を確認：
+
+- Ejaculation の既定値「あり」→ Solo の新規記録に自動反映された
+- Protection の既定値「あり」（表示トグル OFF の状態）→ Partnered の
+  新規記録には反映され、Solo の新規記録には反映されなかった（未記録の
+  まま）——D-54 の本題（Solo への誤適用の修正）が実機で意図通り動作する
+  ことを確認した
+- Ejaculation の既定値「あり」のままトグルを OFF → 新規記録に反映されな
+  かった（§6.3 の不変条件により、もし適用されていればフィールド自体が
+  強制表示されるはずだが、非表示のままだったことで確認）
+
+検証に使ったテスト記録・設定変更はすべて元に戻し、実データへの影響を
+残していない。
+
+#### Known gaps
+
+- **Health Connect への実送信は未確認**：ローカル開発ビルドは既定で
+  HC 無効（`.env.local` が必要）。次に HC 有効ビルドで実機作業をする
+  機会に、Partnered の記録で Protection の既定値を入れ、5秒後に HC 側で
+  PROTECTED として記録されるかを一度確認する（D-54 参照）。送信処理
+  自体（`toProtectionUsed` → HC ジョブ）は今回変更しておらず、既存の
+  手入力の値と同じ経路を通るため、壊れている可能性は低いと判断している
+- **iOS は未確認**（CLAUDE.md 参照、iOS ローカルビルドがブロック中のため
+  この機能固有の問題ではない）
