@@ -241,7 +241,7 @@ export default function ActivityDetailScreen() {
 
   if (!activity || !detailSettings) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
         <Text style={{ color: colors.textSecondary }}>{t('common.loading')}</Text>
       </SafeAreaView>
     );
@@ -335,7 +335,7 @@ export default function ActivityDetailScreen() {
   const dateTimeText = customInstant ? formatPickedDateTime(t, customInstant, timeFormat) : formatDateTime(t, activity, timeFormat);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         accessibilityElementsHidden={addMoreVisible}

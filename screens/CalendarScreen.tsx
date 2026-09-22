@@ -255,7 +255,7 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
                 <Pressable
                   key={i}
                   onPress={() => setSelectedLocalDate(cell.localDate)}
-                  style={[styles.dayCell, isSelected && { borderWidth: 1.5, borderColor: colors.solo, borderRadius: radius.sm }]}
+                  style={[styles.dayCell, isSelected && { borderColor: colors.solo }]}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isSelected }}
                   accessibilityLabel={dayCellAccessibilityLabel(t, cell, dayActivities)}
@@ -312,7 +312,7 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  screenTitle: { fontSize: 22, fontWeight: '700', paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  screenTitle: { fontSize: 22, fontWeight: '700', paddingHorizontal: spacing.md, paddingTop: spacing.md },
   monthHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -334,6 +334,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    borderRadius: radius.sm,
   },
   dayNumber: { fontSize: 14, fontWeight: '500' },
   dotRow: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 8 },
