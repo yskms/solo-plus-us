@@ -260,15 +260,35 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     }
   }, [authenticateGuarded, disableAppLockDueToNoEnrollment, t]);
 
+  // A plain ref, not a dependency of the effect below — `attemptUnlock`
+  // is recreated whenever `t` changes identity (`disableAppLockDueToNoEnrollment`
+  // and `attemptUnlock` itself both close over `t`), and `t` changes identity
+  // on every language switch, including the automatic one `contexts/Language.tsx`
+  // performs on app resume when `preferences.language` is `'system'` and the
+  // device language changed while backgrounded. If the effect depended on
+  // `attemptUnlock` directly, that translation-driven re-render — while still
+  // `enabled && locked` — would re-trigger an automatic unlock attempt: a
+  // spurious re-prompt if the previous attempt had already finished (success
+  // or failure), or a race with the in-flight one if it hadn't (the
+  // `authenticatingRef` guard inside `attemptUnlock`/`authenticateGuarded`
+  // isn't set until after the `getEnrolledLevelAsync()` await, so a second
+  // call landing in that window runs far enough to call `setAuthenticating(false)`
+  // out from under the still-running first attempt). Reading the latest
+  // `attemptUnlock` through a ref keeps the retry call itself using
+  // up-to-date translations without making its identity part of what decides
+  // *whether* to auto-trigger.
+  const attemptUnlockRef = useRef(attemptUnlock);
+  attemptUnlockRef.current = attemptUnlock;
+
   // Prompts automatically the moment a lock is shown, rather than waiting
   // for a tap — matches the UI/UX §19 mockup's lack of a separate
   // "Unlock" button. `LockScreen`'s own retry control is the fallback for
   // when this attempt fails or the prompt is dismissed.
   useEffect(() => {
     if (enabled && locked) {
-      attemptUnlock();
+      attemptUnlockRef.current();
     }
-  }, [enabled, locked, attemptUnlock]);
+  }, [enabled, locked]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
