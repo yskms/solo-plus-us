@@ -16,10 +16,12 @@ export type ActivityDetailField = 'orgasm' | 'ejaculation' | 'protection' | 'dur
 export const ACTIVITY_DETAIL_FIELDS: readonly {
   field: ActivityDetailField;
   settingKey: Extract<keyof SettingsMap, `activityDetails.${string}`>;
+  /** Only the tri-state yes/no fields have a configurable default (§6.4 — Quick Record applies it silently, never asks). See `SettingsMap`'s doc comment on the `*Default` keys. */
+  defaultSettingKey?: Extract<keyof SettingsMap, `activityDetails.${string}Default`>;
 }[] = [
-  { field: 'orgasm', settingKey: 'activityDetails.orgasm' },
-  { field: 'ejaculation', settingKey: 'activityDetails.ejaculation' },
-  { field: 'protection', settingKey: 'activityDetails.protection' },
+  { field: 'orgasm', settingKey: 'activityDetails.orgasm', defaultSettingKey: 'activityDetails.orgasmDefault' },
+  { field: 'ejaculation', settingKey: 'activityDetails.ejaculation', defaultSettingKey: 'activityDetails.ejaculationDefault' },
+  { field: 'protection', settingKey: 'activityDetails.protection', defaultSettingKey: 'activityDetails.protectionDefault' },
   { field: 'duration', settingKey: 'activityDetails.duration' },
   // Screen 07a shows one row for both Mood rows — a single setting key
   // gates them together, including in `AddMoreDetailsSheet`. Screen 04's

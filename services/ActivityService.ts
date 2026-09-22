@@ -69,6 +69,33 @@ export async function reconcileHealthConnectBuildFlag(executor: SqlExecutor): Pr
 /** D-15/D-44: the Undo window's sync delay is a fixed 5 seconds from the record instant, expressed as `not_before` on the persistent job — not a JS timer, so it survives the app being killed. */
 const UNDO_SYNC_DELAY_SECONDS = 5;
 
+/**
+ * §6.4: Quick Record never asks about orgasm/ejaculation/protection, so
+ * these are the only two sources for a new Activity's value — an explicit
+ * `recordActivity` caller, or the configured default. Gated on the
+ * matching visibility toggle (not just the default itself being non-null)
+ * so that turning a field off and leaving an old default behind can't
+ * silently re-record it — see `SettingsMap`'s doc comment on the
+ * `activityDetails.*Default` keys.
+ */
+async function resolveActivityDetailDefaults(
+  executor: SqlExecutor,
+): Promise<Pick<RecordActivityInput, 'orgasm' | 'ejaculation' | 'protectionUsed'>> {
+  const [orgasmOn, orgasmDefault, ejaculationOn, ejaculationDefault, protectionOn, protectionDefault] = await Promise.all([
+    getSetting(executor, 'activityDetails.orgasm'),
+    getSetting(executor, 'activityDetails.orgasmDefault'),
+    getSetting(executor, 'activityDetails.ejaculation'),
+    getSetting(executor, 'activityDetails.ejaculationDefault'),
+    getSetting(executor, 'activityDetails.protection'),
+    getSetting(executor, 'activityDetails.protectionDefault'),
+  ]);
+  return {
+    orgasm: orgasmOn ? orgasmDefault : null,
+    ejaculation: ejaculationOn ? ejaculationDefault : null,
+    protectionUsed: protectionOn ? protectionDefault : null,
+  };
+}
+
 export interface RecordActivityInput {
   context: Activity['context'];
   instantUtc: Date;
@@ -87,13 +114,14 @@ export async function recordActivity(db: Transactor, input: RecordActivityInput)
 
   let created!: Activity;
   await db.transaction(async (tx) => {
+    const defaults = await resolveActivityDetailDefaults(tx);
     created = await ActivityRepository.createActivity(tx, {
       context: input.context,
       ...occurred,
       timezoneId: input.timezoneId ?? getDeviceTimeZoneId(),
-      orgasm: input.orgasm,
-      ejaculation: input.ejaculation,
-      protectionUsed: input.protectionUsed,
+      orgasm: input.orgasm !== undefined ? input.orgasm : defaults.orgasm,
+      ejaculation: input.ejaculation !== undefined ? input.ejaculation : defaults.ejaculation,
+      protectionUsed: input.protectionUsed !== undefined ? input.protectionUsed : defaults.protectionUsed,
       durationSeconds: input.durationSeconds,
       moodBefore: input.moodBefore,
       moodAfter: input.moodAfter,

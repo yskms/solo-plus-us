@@ -180,7 +180,8 @@
     "activityDetails": {
       "intro": "記録する項目を選んでください。いつでも変更できます。",
       "sectionLabel": "記録する項目",
-      "caption": "すでに記録済みの値は、オフにしても常に表示されます。Protection は Partnered の記録でも常に表示されます。"
+      "defaultLabel": "既定値",
+      "caption": "すでに記録済みの値は、オフにしても常に表示されます。Protection は Partnered の記録でも常に表示されます。既定値を設定すると、クイック記録の際にあらかじめその値が入力されます。"
     },
     "healthConnect": {
       "status": {

@@ -215,6 +215,10 @@ function isSettingValueValid(key: SettingKey, value: unknown): boolean {
     case 'activityDetails.mood':
     case 'activityDetails.note':
       return typeof value === 'boolean';
+    case 'activityDetails.orgasmDefault':
+    case 'activityDetails.ejaculationDefault':
+    case 'activityDetails.protectionDefault':
+      return typeof value === 'boolean' || value === null;
     case 'preferences.firstDayOfWeek':
       return value === 'monday' || value === 'sunday';
     case 'preferences.timeFormat':

@@ -14,7 +14,7 @@
  * のみを伝える形で明示している。
  */
 import React, { useCallback, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -27,11 +27,21 @@ import { logError } from '../../lib/log';
 type ActivityDetailSettingKey = (typeof ACTIVITY_DETAIL_FIELDS)[number]['settingKey'];
 type FieldState = Record<ActivityDetailSettingKey, boolean>;
 
+type ActivityDetailDefaultSettingKey = NonNullable<(typeof ACTIVITY_DETAIL_FIELDS)[number]['defaultSettingKey']>;
+type DefaultFieldState = Record<ActivityDetailDefaultSettingKey, boolean | null>;
+
+const DEFAULT_OPTIONS: { key: string; value: boolean | null; labelKey: string }[] = [
+  { key: 'unset', value: null, labelKey: 'activityDetail.notRecorded' },
+  { key: 'yes', value: true, labelKey: 'activityDetail.yes' },
+  { key: 'no', value: false, labelKey: 'activityDetail.no' },
+];
+
 export default function ActivityDetailsSettingsScreen() {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const db = useDatabase();
   const [values, setValues] = useState<FieldState | null>(null);
+  const [defaultValues, setDefaultValues] = useState<DefaultFieldState | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -39,6 +49,14 @@ export default function ActivityDetailsSettingsScreen() {
       ACTIVITY_DETAIL_FIELDS.map(async ({ settingKey }) => [settingKey, await getSetting(db, settingKey)] as const),
     );
     setValues(Object.fromEntries(entries) as FieldState);
+
+    const defaultEntries = await Promise.all(
+      ACTIVITY_DETAIL_FIELDS.filter(
+        (entry): entry is typeof entry & { defaultSettingKey: ActivityDetailDefaultSettingKey } =>
+          entry.defaultSettingKey !== undefined,
+      ).map(async ({ defaultSettingKey }) => [defaultSettingKey, await getSetting(db, defaultSettingKey)] as const),
+    );
+    setDefaultValues(Object.fromEntries(defaultEntries) as DefaultFieldState);
   }, [db]);
 
   useFocusEffect(
@@ -63,7 +81,23 @@ export default function ActivityDetailsSettingsScreen() {
     }
   };
 
-  if (!values) {
+  const persistDefault = async (key: ActivityDetailDefaultSettingKey, next: boolean | null) => {
+    if (!defaultValues) return;
+    const previous = defaultValues[key];
+    setDefaultValues((current) => (current ? { ...current, [key]: next } : current));
+    setBusyKey(key);
+    try {
+      await setSetting(db, key, next);
+    } catch (error) {
+      setDefaultValues((current) => (current ? { ...current, [key]: previous } : current));
+      logError('Saving activityDetails default setting failed', error);
+      Alert.alert(t('common.couldNotSave'), t('common.pleaseTryAgain'));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  if (!values || !defaultValues) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.textSecondary, padding: spacing.md }}>{t('common.loading')}</Text>
@@ -78,17 +112,46 @@ export default function ActivityDetailsSettingsScreen() {
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.activityDetails.sectionLabel')}</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {ACTIVITY_DETAIL_FIELDS.map(({ field, settingKey }, index) => (
+          {ACTIVITY_DETAIL_FIELDS.map(({ field, settingKey, defaultSettingKey }, index) => (
             <View
               key={settingKey}
-              style={[styles.row, { borderColor: colors.border }, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth }]}
+              style={[{ borderColor: colors.border }, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth }]}
             >
-              <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{activityDetailFieldLabel(t, field)}</Text>
-              <Switch
-                value={values[settingKey]}
-                onValueChange={(next) => persist(settingKey, next)}
-                disabled={busyKey === settingKey}
-              />
+              <View style={styles.row}>
+                <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>{activityDetailFieldLabel(t, field)}</Text>
+                <Switch
+                  value={values[settingKey]}
+                  onValueChange={(next) => persist(settingKey, next)}
+                  disabled={busyKey === settingKey}
+                />
+              </View>
+              {defaultSettingKey && values[settingKey] && (
+                <View style={styles.defaultRow}>
+                  <Text style={[styles.defaultLabel, { color: colors.textSecondary }]}>
+                    {t('settings.activityDetails.defaultLabel')}
+                  </Text>
+                  <View style={styles.segmentedRow}>
+                    {DEFAULT_OPTIONS.map((opt) => {
+                      const selected = defaultValues[defaultSettingKey] === opt.value;
+                      return (
+                        <Pressable
+                          key={opt.key}
+                          onPress={() => persistDefault(defaultSettingKey, opt.value)}
+                          disabled={busyKey === defaultSettingKey}
+                          style={[
+                            styles.segment,
+                            { borderColor: colors.border, backgroundColor: selected ? colors.solo : 'transparent' },
+                          ]}
+                        >
+                          <Text style={{ color: selected ? colors.background : colors.textPrimary, fontSize: 12 }}>
+                            {t(opt.labelKey)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </View>
           ))}
         </View>
@@ -113,5 +176,16 @@ const styles = StyleSheet.create({
     minHeight: minTouchTarget,
   },
   rowLabel: { fontSize: 15, fontWeight: '500' },
+  defaultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  defaultLabel: { fontSize: 13 },
+  segmentedRow: { flexDirection: 'row', gap: spacing.xs },
+  segment: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth },
   caption: { fontSize: 12, paddingHorizontal: spacing.xs, lineHeight: 17 },
 });

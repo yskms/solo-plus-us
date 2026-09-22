@@ -191,7 +191,8 @@
     "activityDetails": {
       "intro": "Choose what you want to track. You can change this anytime.",
       "sectionLabel": "TRACKING DETAILS",
-      "caption": "Values you have already recorded are always shown, even if turned off. Protection is also always shown for partnered activities."
+      "defaultLabel": "Default",
+      "caption": "Values you have already recorded are always shown, even if turned off. Protection is also always shown for partnered activities. Setting a default fills it in automatically when you use Quick Record."
     },
     "healthConnect": {
       "status": {

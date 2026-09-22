@@ -80,6 +80,43 @@ describe('recordActivity', () => {
     expect(job?.notBefore).toBe(addSecondsIso(activity.createdAt, 5));
     expect(job?.notBefore).not.toBe('2026-09-14T14:42:05Z');
   });
+
+  it('applies a configured default for a visible field when Quick Record omits it', async () => {
+    await setSetting(db, 'activityDetails.ejaculation', true);
+    await setSetting(db, 'activityDetails.ejaculationDefault', true);
+
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+
+    expect(activity.ejaculation).toBe(true);
+  });
+
+  it('does not apply a configured default when the field is turned off (a stale default left over from before)', async () => {
+    await setSetting(db, 'activityDetails.ejaculation', false);
+    await setSetting(db, 'activityDetails.ejaculationDefault', true);
+
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+
+    expect(activity.ejaculation).toBeNull();
+  });
+
+  it('lets an explicit caller-provided value override the configured default', async () => {
+    await setSetting(db, 'activityDetails.ejaculation', true);
+    await setSetting(db, 'activityDetails.ejaculationDefault', true);
+
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+      ejaculation: false,
+    });
+
+    expect(activity.ejaculation).toBe(false);
+  });
 });
 
 describe('updateActivity', () => {

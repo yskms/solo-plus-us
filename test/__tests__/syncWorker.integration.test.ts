@@ -41,6 +41,15 @@ beforeEach(async () => {
   // available in this jest environment and throws, unrelated to anything
   // this suite is testing.
   await setSetting(db, 'healthConnect.lastSyncedAt', null);
+  // Same reason: `ActivityService.recordActivity` now also resolves the
+  // activityDetails visibility/default settings (configurable Quick Record
+  // defaults) on every call, so those six keys need seeding too.
+  await setSetting(db, 'activityDetails.orgasm', true);
+  await setSetting(db, 'activityDetails.ejaculation', false);
+  await setSetting(db, 'activityDetails.protection', false);
+  await setSetting(db, 'activityDetails.orgasmDefault', null);
+  await setSetting(db, 'activityDetails.ejaculationDefault', null);
+  await setSetting(db, 'activityDetails.protectionDefault', null);
   SyncCoordinator.__resetSyncCoordinatorForTests();
 });
 

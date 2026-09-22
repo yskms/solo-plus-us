@@ -25,6 +25,21 @@ export interface SettingsMap {
   'activityDetails.mood': boolean;
   'activityDetails.note': boolean;
 
+  /**
+   * Quick Record (`app/record.tsx`) never asks about these fields (§6.4),
+   * so a new Activity is always created with `null` for them unless a
+   * default is configured here. `null` = no default configured, i.e. the
+   * original "always unrecorded" behavior. Only applied by
+   * `ActivityService.recordActivity` when the matching `activityDetails.*`
+   * visibility key above is also `true` — a default left over from a field
+   * that's since been turned off must not silently resurrect it (the
+   * §6.3 invariant treats any non-null value as "recorded", which would
+   * force the field visible again).
+   */
+  'activityDetails.orgasmDefault': boolean | null;
+  'activityDetails.ejaculationDefault': boolean | null;
+  'activityDetails.protectionDefault': boolean | null;
+
   'preferences.firstDayOfWeek': FirstDayOfWeek;
   'preferences.timeFormat': TimeFormat;
   'preferences.appearance': Appearance;
@@ -57,6 +72,9 @@ export const STATIC_DEFAULTS: Pick<
   | 'activityDetails.duration'
   | 'activityDetails.mood'
   | 'activityDetails.note'
+  | 'activityDetails.orgasmDefault'
+  | 'activityDetails.ejaculationDefault'
+  | 'activityDetails.protectionDefault'
   | 'preferences.appearance'
   | 'preferences.language'
   | 'appLock.enabled'
@@ -71,6 +89,10 @@ export const STATIC_DEFAULTS: Pick<
   'activityDetails.duration': false,
   'activityDetails.mood': false,
   'activityDetails.note': true,
+
+  'activityDetails.orgasmDefault': null,
+  'activityDetails.ejaculationDefault': null,
+  'activityDetails.protectionDefault': null,
 
   'preferences.appearance': 'system',
   'preferences.language': 'system',
@@ -96,6 +118,9 @@ export const EXPORTABLE_SETTING_KEYS: readonly SettingKey[] = [
   'activityDetails.duration',
   'activityDetails.mood',
   'activityDetails.note',
+  'activityDetails.orgasmDefault',
+  'activityDetails.ejaculationDefault',
+  'activityDetails.protectionDefault',
   'preferences.firstDayOfWeek',
   'preferences.timeFormat',
   'preferences.appearance',
