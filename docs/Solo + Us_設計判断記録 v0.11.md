@@ -2469,10 +2469,13 @@ Connect に送信される（`services/HealthConnectService.ts` の
 **再検討する場合**
 
 - Activity に「既定値由来」フラグを追加する必要が生じた場合（他の理由で
-  スキーマ変更が必要になったタイミングなど）は、`EXPORTABLE_SETTING_KEYS`/
-  Export JSON schema への影響も合わせて確認すること。v1 リリース後なら
-  D-11「一度リリースしたら ALTER TABLE のみ」の制約にも従うこと（未
-  リリースの間は D-51 と同様 `SCHEMA_V1_STATEMENTS` を直接編集してよい）
+  スキーマ変更が必要になったタイミングなど）は、`EXPORTABLE_SETTING_KEYS`
+  ではなく（そちらは `settings` ブロック専用の allowlist で、Activity
+  自体のフィールドには無関係）、`types/Export.ts` の `ExportActivityV1`
+  と `services/importValidation.ts` の Activity 側検証への影響を確認する
+  こと。v1 リリース後なら D-11「一度リリースしたら ALTER TABLE のみ」の
+  制約にも従うこと（未リリースの間は D-51 と同様 `SCHEMA_V1_STATEMENTS`
+  を直接編集してよい）
 - Orgasm/Ejaculation にも将来コンテキスト依存の既定値（Partnered 専用
   など）が必要になった場合は、この節の Protection と同じパターン
   （トグルから独立させる）を踏襲すること
