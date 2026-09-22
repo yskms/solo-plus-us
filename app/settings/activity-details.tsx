@@ -12,12 +12,23 @@
  * （§6.3 の中心的な主張から意図的に外れる例外——理由・帰結は設計判断記録
  * D-52 参照）。下記キャプションはこの1点だけ、属性の話に踏み込まず事実
  * のみを伝える形で明示している。
+ *
+ * Orgasm/Ejaculation/Protection には「既定値」欄もある（§6.4 の解釈を
+ * 拡張した D-54）——クイック記録では一切尋ねないまま、設定した値が
+ * 自動で入力される。Orgasm/Ejaculation の欄はこのトグルが ON のときだけ
+ * 出す（OFF の項目に既定値だけ残っていて記録が復活する事故を防ぐため）。
+ * Protection の既定値欄はこのトグルと無関係に常に出す——D-52 により
+ * Partnered では本トグルの ON/OFF に関わらず表示され続けるため、既定値も
+ * Partnered 専用のものとして扱う（適用は `ActivityService.
+ * resolveActivityDetailDefaults` 側で `context === 'partnered'` のみ、
+ * 詳細は D-54 参照）。
  */
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
@@ -30,11 +41,14 @@ type FieldState = Record<ActivityDetailSettingKey, boolean>;
 type ActivityDetailDefaultSettingKey = NonNullable<(typeof ACTIVITY_DETAIL_FIELDS)[number]['defaultSettingKey']>;
 type DefaultFieldState = Record<ActivityDetailDefaultSettingKey, boolean | null>;
 
-const DEFAULT_OPTIONS: { key: string; value: boolean | null; labelKey: string }[] = [
-  { key: 'unset', value: null, labelKey: 'activityDetail.notRecorded' },
-  { key: 'yes', value: true, labelKey: 'activityDetail.yes' },
-  { key: 'no', value: false, labelKey: 'activityDetail.no' },
-];
+/** Literal `t(...)` calls (not a key stored in data) so `npm run check-i18n` can find them — same reasoning as `activityDetailFieldLabel`. */
+function defaultOptions(t: TFunction): { key: string; value: boolean | null; text: string }[] {
+  return [
+    { key: 'unset', value: null, text: t('activityDetail.notRecorded') },
+    { key: 'yes', value: true, text: t('activityDetail.yes') },
+    { key: 'no', value: false, text: t('activityDetail.no') },
+  ];
+}
 
 export default function ActivityDetailsSettingsScreen() {
   const { colors } = useTheme();
@@ -125,26 +139,31 @@ export default function ActivityDetailsSettingsScreen() {
                   disabled={busyKey === settingKey}
                 />
               </View>
-              {defaultSettingKey && values[settingKey] && (
+              {/* Orgasm/Ejaculation: gated on their own toggle. Protection: always shown, regardless of the toggle above — see file doc comment / D-54. */}
+              {defaultSettingKey && (field === 'protection' || values[settingKey]) && (
                 <View style={styles.defaultRow}>
                   <Text style={[styles.defaultLabel, { color: colors.textSecondary }]}>
-                    {t('settings.activityDetails.defaultLabel')}
+                    {field === 'protection'
+                      ? t('settings.activityDetails.defaultLabelPartnered')
+                      : t('settings.activityDetails.defaultLabel')}
                   </Text>
-                  <View style={styles.segmentedRow}>
-                    {DEFAULT_OPTIONS.map((opt) => {
+                  <View style={styles.segmentedRow} accessibilityRole="radiogroup">
+                    {defaultOptions(t).map((opt) => {
                       const selected = defaultValues[defaultSettingKey] === opt.value;
                       return (
                         <Pressable
                           key={opt.key}
                           onPress={() => persistDefault(defaultSettingKey, opt.value)}
                           disabled={busyKey === defaultSettingKey}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected, disabled: busyKey === defaultSettingKey }}
                           style={[
                             styles.segment,
                             { borderColor: colors.border, backgroundColor: selected ? colors.solo : 'transparent' },
                           ]}
                         >
-                          <Text style={{ color: selected ? colors.background : colors.textPrimary, fontSize: 12 }}>
-                            {t(opt.labelKey)}
+                          <Text style={{ color: selected ? colors.background : colors.textPrimary, fontSize: 13 }}>
+                            {opt.text}
                           </Text>
                         </Pressable>
                       );
@@ -186,6 +205,12 @@ const styles = StyleSheet.create({
   },
   defaultLabel: { fontSize: 13 },
   segmentedRow: { flexDirection: 'row', gap: spacing.xs },
-  segment: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth },
+  segment: {
+    paddingHorizontal: spacing.sm,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+  },
   caption: { fontSize: 12, paddingHorizontal: spacing.xs, lineHeight: 17 },
 });

@@ -29,12 +29,20 @@ export interface SettingsMap {
    * Quick Record (`app/record.tsx`) never asks about these fields (§6.4),
    * so a new Activity is always created with `null` for them unless a
    * default is configured here. `null` = no default configured, i.e. the
-   * original "always unrecorded" behavior. Only applied by
+   * original "always unrecorded" behavior.
+   *
+   * orgasmDefault/ejaculationDefault are only applied by
    * `ActivityService.recordActivity` when the matching `activityDetails.*`
    * visibility key above is also `true` — a default left over from a field
    * that's since been turned off must not silently resurrect it (the
    * §6.3 invariant treats any non-null value as "recorded", which would
    * force the field visible again).
+   *
+   * protectionDefault is different (D-54): it's applied only when the new
+   * Activity's context is `'partnered'`, entirely independent of
+   * `activityDetails.protection` — that toggle governs Solo's visibility,
+   * while D-52 already makes Protection force-visible for Partnered
+   * regardless of it. Solo never gets an automatic Protection value.
    */
   'activityDetails.orgasmDefault': boolean | null;
   'activityDetails.ejaculationDefault': boolean | null;

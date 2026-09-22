@@ -181,7 +181,8 @@
       "intro": "記録する項目を選んでください。いつでも変更できます。",
       "sectionLabel": "記録する項目",
       "defaultLabel": "既定値",
-      "caption": "すでに記録済みの値は、オフにしても常に表示されます。Protection は Partnered の記録でも常に表示されます。既定値を設定すると、クイック記録の際にあらかじめその値が入力されます。"
+      "defaultLabelPartnered": "既定値（Partnered）",
+      "caption": "すでに記録済みの値は、オフにしても常に表示されます。Protection は Partnered の記録でも常に表示されます。既定値を設定すると、クイック記録の際にあらかじめその値が入力されます（Protection の既定値は Partnered の記録にのみ適用されます）。既定値で入力された値も、通常の記録と同じくHealth Connect同期や統計の対象になります。"
     },
     "healthConnect": {
       "status": {

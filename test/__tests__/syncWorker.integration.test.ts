@@ -43,10 +43,11 @@ beforeEach(async () => {
   await setSetting(db, 'healthConnect.lastSyncedAt', null);
   // Same reason: `ActivityService.recordActivity` now also resolves the
   // activityDetails visibility/default settings (configurable Quick Record
-  // defaults) on every call, so those six keys need seeding too.
+  // defaults) on every call — `activityDetails.protection` itself isn't
+  // among them (D-54: Protection's default is Partnered-only and reads
+  // only `protectionDefault`, not the toggle), but the other five are.
   await setSetting(db, 'activityDetails.orgasm', true);
   await setSetting(db, 'activityDetails.ejaculation', false);
-  await setSetting(db, 'activityDetails.protection', false);
   await setSetting(db, 'activityDetails.orgasmDefault', null);
   await setSetting(db, 'activityDetails.ejaculationDefault', null);
   await setSetting(db, 'activityDetails.protectionDefault', null);

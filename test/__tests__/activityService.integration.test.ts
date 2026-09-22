@@ -117,6 +117,34 @@ describe('recordActivity', () => {
 
     expect(activity.ejaculation).toBe(false);
   });
+
+  // D-54: unlike orgasm/ejaculation, Protection's default is scoped to
+  // Partnered only and is entirely decoupled from the `activityDetails.protection`
+  // toggle — mirrors D-52's "Protection is force-visible for Partnered
+  // regardless of that toggle".
+  it('applies the Protection default to a Partnered record even when the Protection toggle is off', async () => {
+    await setSetting(db, 'activityDetails.protection', false);
+    await setSetting(db, 'activityDetails.protectionDefault', true);
+
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'partnered',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+
+    expect(activity.protectionUsed).toBe(true);
+  });
+
+  it('never applies the Protection default to a Solo record, even when the Protection toggle is on', async () => {
+    await setSetting(db, 'activityDetails.protection', true);
+    await setSetting(db, 'activityDetails.protectionDefault', true);
+
+    const activity = await ActivityService.recordActivity(db, {
+      context: 'solo',
+      instantUtc: new Date('2026-09-14T14:42:00Z'),
+    });
+
+    expect(activity.protectionUsed).toBeNull();
+  });
 });
 
 describe('updateActivity', () => {

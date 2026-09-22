@@ -19,6 +19,7 @@
 - v0.14 で D-50 を追加（記録済み Activity の日時事後編集をスコープに含める。D-48 と
   同様の経緯で、以前の README 記載のスコープ判断を上書き）
 - v0.15 で D-53 を追加（多言語対応(i18n)に着手。D-48 のスコープ外指定を撤回・上書き）
+- v0.16 で D-54 を追加（Quick Record 詳細項目に「既定値」を追加。§6.4 の解釈を拡張）
 
 ---
 
@@ -2375,6 +2376,103 @@ Protection・Mood 等）のレビュー**は、D-48 が「機械翻訳では済�
 - `app/settings/data.tsx` の `exportPlaintextNotice(t)` は `t()` 1回を
   包むだけで関数化の意味が無かったため、呼び出し箇所で直接 `t()` する形に
   簡略化した
+
+---
+
+## D-54 Quick Record 詳細項目に「既定値」を追加する——§6.4 の解釈を拡張する
+
+**決定**
+
+Orgasm/Ejaculation/Protection の3項目（tri-state: 未記録/あり/なし）に、
+Settings > Activity Details から設定できる「既定値」を追加した
+（`types/Settings.ts` の `activityDetails.orgasmDefault`/
+`ejaculationDefault`/`protectionDefault`）。値が設定されていると、Quick
+Record（`app/record.tsx`）で新規記録する際、その値が自動的に入力された
+状態で Activity が作成される（`ActivityService.recordActivity` 内
+`resolveActivityDetailDefaults`）。
+
+- Orgasm/Ejaculation の既定値は、対応する表示トグル
+  （`activityDetails.orgasm`/`ejaculation`）が ON のときだけ適用する。
+  トグル OFF のまま既定値だけが残っていても適用しない——OFF にしたはずの
+  項目が §6.3 の不変条件（記録済みの値は常に表示される）により再表示
+  される事故を防ぐため
+- Protection の既定値は、これと異なり `context === 'partnered'` のとき
+  だけ適用し、表示トグル（`activityDetails.protection`）とは完全に
+  切り離した。理由は下記「Protection だけ挙動を分けた理由」参照
+- 既定値で自動入力された値は、手動で入力した値と完全に同じ扱いとする。
+  5秒の Undo 猶予（D-15/D-44）を過ぎれば Health Connect にも同期され、
+  統計にも通常の記録として含まれる（詳細は下記）
+
+**背景**
+
+要件定義書 §6.4「記録を強制しない」は次の2文からなる：
+
+1. 詳細項目は Quick Record では一切尋ねない。
+2. 記録したい日にだけ、Activity を開いて追記する。
+
+既定値機能は文の1（「尋ねない」）には抵触しない——Quick Record 画面に
+入力 UI を追加したわけではなく、裏側で静かに値を埋めるだけである。一方、
+文の2（「記録したい日にだけ」）の趣旨とは方向が逆になる——既定値を設定
+した項目は、以後の記録で本人の都度の判断なしに自動的に「記録される」
+ことになる。この解釈の広がりを D-52/D-53 と同様に記録として残す。
+
+**Protection だけ挙動を分けた理由（コードレビューで指摘、2026-09-22）**
+
+D-52 により、Protection は `context === 'partnered'` のとき、
+`activityDetails.protection` トグルの値に関わらず常に表示される（Solo
+では通常通りトグルに従う）。この既存の非対称性があるため、
+Orgasm/Ejaculation と同じ「トグル ON 時のみ適用」ルールを Protection にも
+適用すると、以下の問題が生じる：
+
+- 「Partnered では毎回 Protection の既定値をありにしたい」というニーズに
+  応えるには、Solo 側の表示も兼ねる `activityDetails.protection` トグルを
+  ON にする必要があり、Solo 側の表示・記録にも意図せず影響する
+- トグルを ON にして既定値を「あり」にすると、実装上 context を見ずに
+  適用していたため、Solo の記録にも `protectionUsed = true` が入り、Solo
+  のはずの Activity に Protection が「記録済み」として出続けてしまう
+
+これを避けるため、Protection の既定値は表示トグルから完全に切り離し、
+「Partnered でのみ適用される既定値」として実装した。Settings 画面でも
+Protection の既定値欄は表示トグルの ON/OFF に関わらず常に表示する
+（`app/settings/activity-details.tsx`。ラベルを「既定値（Partnered）」
+とし、範囲を UI 上でも明示）。
+
+**Health Connect 送信・統計への算入について（コードレビューで指摘、2026-09-22）**
+
+既定値で自動入力された値（特に Protection）は、本人が一度も個別に確認
+していなくても、5秒の Undo 猶予を過ぎれば通常の記録と同じ経路で Health
+Connect に送信される（`services/HealthConnectService.ts` の
+`toProtectionUsed`——送るのは時刻と Protection 使用の有無のみ）。統計上も、
+既定値由来かどうかを区別する手段はない。
+
+この挙動を受け入れるかどうかをユーザーに確認し、**現状のまま（既定値も
+通常の記録として扱い、HC 送信・統計の対象に含める）でよい**という回答を
+得た。区別を付けるには、Activity に「既定値由来かどうか」を示すフラグを
+追加する必要があり、DB スキーマ変更（ALTER TABLE、D-11 参照）と Export
+形式の変更を伴う比較的大きな変更になるため、今回は見送った。
+
+**受け入れる帰結**
+
+- Orgasm/Ejaculation の既定値が ON の項目については、Quick Record で
+  記録するたびに、本人が個別に確認しないまま値が「記録済み」になる。
+  これはこの機能の目的そのもの（毎回同じ値を手で選ぶ手間を省く）であり、
+  意図した挙動である
+- Protection の既定値による自動入力値は、手入力した値と統計・HC 同期上
+  区別できない。将来「既定値由来」を除外・区別したいというニーズが出た
+  場合は、スキーマ変更を伴う再設計が必要になる
+- Protection の既定値欄は、Solo 側の表示トグルの状態と無関係に Settings
+  画面へ常に表示される——他5項目（Orgasm/Ejaculation/Duration/Mood/
+  Notes）とは見た目のルールが異なる例外である
+
+**再検討する場合**
+
+- Activity に「既定値由来」フラグを追加する必要が生じた場合（他の理由で
+  スキーマ変更が必要になったタイミングなど）は、D-11「ALTER TABLE のみ」
+  の制約と `EXPORTABLE_SETTING_KEYS`/Export JSON schema への影響も合わせて
+  確認すること
+- Orgasm/Ejaculation にも将来コンテキスト依存の既定値（Partnered 専用
+  など）が必要になった場合は、この節の Protection と同じパターン
+  （トグルから独立させる）を踏襲すること
 
 ---
 

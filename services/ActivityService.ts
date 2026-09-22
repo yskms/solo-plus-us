@@ -72,27 +72,37 @@ const UNDO_SYNC_DELAY_SECONDS = 5;
 /**
  * §6.4: Quick Record never asks about orgasm/ejaculation/protection, so
  * these are the only two sources for a new Activity's value — an explicit
- * `recordActivity` caller, or the configured default. Gated on the
- * matching visibility toggle (not just the default itself being non-null)
- * so that turning a field off and leaving an old default behind can't
- * silently re-record it — see `SettingsMap`'s doc comment on the
- * `activityDetails.*Default` keys.
+ * `recordActivity` caller, or the configured default.
+ *
+ * orgasm/ejaculation are gated on their matching visibility toggle (not
+ * just the default itself being non-null) so that turning a field off and
+ * leaving an old default behind can't silently re-record it — see
+ * `SettingsMap`'s doc comment on the `activityDetails.*Default` keys.
+ *
+ * protection is different (D-54): it's scoped to `context === 'partnered'`
+ * only, entirely decoupled from the `activityDetails.protection` toggle —
+ * that toggle controls Solo's own visibility, but D-52 already makes
+ * Protection force-visible for Partnered regardless of it, so gating the
+ * default on the same toggle would make "always default Protection for
+ * Partnered" require also exposing/defaulting it for Solo. Solo never gets
+ * an automatic Protection value from this — it stays opt-in via the detail
+ * screen, same as before this feature existed.
  */
 async function resolveActivityDetailDefaults(
   executor: SqlExecutor,
+  context: Activity['context'],
 ): Promise<Pick<RecordActivityInput, 'orgasm' | 'ejaculation' | 'protectionUsed'>> {
-  const [orgasmOn, orgasmDefault, ejaculationOn, ejaculationDefault, protectionOn, protectionDefault] = await Promise.all([
+  const [orgasmOn, orgasmDefault, ejaculationOn, ejaculationDefault, protectionDefault] = await Promise.all([
     getSetting(executor, 'activityDetails.orgasm'),
     getSetting(executor, 'activityDetails.orgasmDefault'),
     getSetting(executor, 'activityDetails.ejaculation'),
     getSetting(executor, 'activityDetails.ejaculationDefault'),
-    getSetting(executor, 'activityDetails.protection'),
     getSetting(executor, 'activityDetails.protectionDefault'),
   ]);
   return {
     orgasm: orgasmOn ? orgasmDefault : null,
     ejaculation: ejaculationOn ? ejaculationDefault : null,
-    protectionUsed: protectionOn ? protectionDefault : null,
+    protectionUsed: context === 'partnered' ? protectionDefault : null,
   };
 }
 
@@ -114,7 +124,7 @@ export async function recordActivity(db: Transactor, input: RecordActivityInput)
 
   let created!: Activity;
   await db.transaction(async (tx) => {
-    const defaults = await resolveActivityDetailDefaults(tx);
+    const defaults = await resolveActivityDetailDefaults(tx, input.context);
     created = await ActivityRepository.createActivity(tx, {
       context: input.context,
       ...occurred,
