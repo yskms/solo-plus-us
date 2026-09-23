@@ -4178,3 +4178,17 @@ Pixel 3（Android 12 / API 31、`blockedPermissions` 適用後の同じ APK、
 起動時のクラッシュも無し。これで `SYSTEM_ALERT_WINDOW`/
 `READ_EXTERNAL_STORAGE`/`WRITE_EXTERNAL_STORAGE` を外した影響が無いことを
 両方の API レベル帯で確認できた。
+
+### v1.0 の Play ストア提出（2026-09-24）
+
+`production`（`without-health-connect`）の AAB（versionCode 2 / 表示 0.1.0）を
+Play Console の製品版トラックへ提出し、審査待ち。表示バージョンは 1.0.0 へ
+上げかけたが、**その変更だけのために EAS ビルド枠を消費するのは無駄**と判断し、
+0.1.0 のまま提出した（リリース直後に更新版を出す前提）。
+
+- 掲載情報・リリースノート・申告内容（コンテンツレーティング、データセーフティ、
+  健康アプリ、広告 ID、配信国など）の控えは [docs/store-listing.md](docs/store-listing.md)
+- 内部テストトラックは有効なまま残してあるので、今後の検証に使える
+- **審査を通過して公開された時点で D-11 が効き始め、`database/schema.ts` の
+  直接編集はできなくなる**（以降は migration の追加が必要。CLAUDE.md の
+  「schema.ts を変更した後の実機テスト」の節の前提もそこで変わる）
