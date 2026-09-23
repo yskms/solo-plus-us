@@ -56,32 +56,41 @@
     font-size: 0.85rem;
     margin-top: 12px;
   }
-  .lang-switch {
+  /*
+   * 両言語を1ページに併記する（切り替えタブではなく積み重ね）。タブ形式だと
+   * 「英語しか無い」と誤解されることがあったため、常に両方見える形にした
+   * （2026-09-24）。`?lang=ja` / `#ja` の旧リンクは、下の script が該当
+   * セクションへスクロールさせることで維持している。
+   */
+  .lang-jump {
     display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    overflow: hidden;
+    gap: 8px;
     margin-top: 20px;
   }
-  .lang-switch button {
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--text);
+  .lang-jump a {
+    border: 1px solid var(--border);
+    border-radius: 999px;
     padding: 8px 18px;
     font-size: 0.9rem;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .lang-switch button.active {
-    background: var(--accent);
-    color: var(--accent-contrast);
+    text-decoration: none;
   }
   section.doc {
-    display: none;
-  }
-  section.doc.active {
     display: block;
+  }
+  section.doc + section.doc {
+    margin-top: 40px;
+    padding-top: 8px;
+    border-top: 2px solid var(--border);
+  }
+  .doc-lang-label {
+    display: inline-block;
+    margin: 20px 0 4px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: 0.85rem;
+    font-weight: 700;
   }
   h2 {
     font-size: 1.05rem;
@@ -112,16 +121,21 @@
   <header>
     <h1>Solo + Us</h1>
     <p class="subtitle">Privacy Policy / プライバシーポリシー</p>
-    <div class="lang-switch" role="tablist" aria-label="Language">
-      <button id="btn-en" class="active" role="tab" aria-selected="true" aria-controls="doc-en" onclick="setLang('en')">English</button>
-      <button id="btn-ja" role="tab" aria-selected="false" aria-controls="doc-ja" onclick="setLang('ja')">日本語</button>
-    </div>
+    <nav class="lang-jump" aria-label="Language / 言語">
+      <a href="#doc-ja">日本語</a>
+      <a href="#doc-en">English</a>
+    </nav>
+    <p class="meta">
+      このページは日本語と英語を併記しています。 /
+      This page contains both Japanese and English versions.
+    </p>
     <p class="meta">Last updated / 最終更新日: 2026-09-21</p>
   </header>
 
   <div class="card">
     <!-- ===================== 日本語版 ===================== -->
-    <section id="doc-ja" class="doc" lang="ja" role="tabpanel" aria-labelledby="btn-ja">
+    <section id="doc-ja" class="doc" lang="ja" aria-label="日本語">
+      <p class="doc-lang-label">日本語</p>
       <p>
         Solo + Us（以下「本アプリ」）は、Solo / Partnered
         な性的活動を長期間記録し、自分自身の変化を振り返るための
@@ -268,7 +282,8 @@
     </section>
 
     <!-- ===================== English version ===================== -->
-    <section id="doc-en" class="doc active" lang="en" role="tabpanel" aria-labelledby="btn-en">
+    <section id="doc-en" class="doc" lang="en" aria-label="English">
+      <p class="doc-lang-label">English</p>
       <p>
         Solo + Us ("the App") is a personal wellness app for recording Solo
         and Partnered sexual activity over time, so you can reflect on your
@@ -432,31 +447,17 @@
 </div>
 
 <script>
-  function setLang(lang) {
-    document.getElementById('doc-ja').classList.toggle('active', lang === 'ja');
-    document.getElementById('doc-en').classList.toggle('active', lang === 'en');
-    document.getElementById('btn-ja').classList.toggle('active', lang === 'ja');
-    document.getElementById('btn-en').classList.toggle('active', lang === 'en');
-    document.getElementById('btn-ja').setAttribute('aria-selected', String(lang === 'ja'));
-    document.getElementById('btn-en').setAttribute('aria-selected', String(lang === 'en'));
-    document.documentElement.lang = lang;
-    try { localStorage.setItem('solo-plus-us-privacy-lang', lang); } catch (e) {}
-  }
+  // 併記形式になったため言語の切り替えは無い。旧来の `?lang=ja` / `#ja`
+  // 形式のリンク（ストアの審査画面などから直接開かれうる）だけ、該当
+  // セクションへスクロールさせて互換性を保つ。
   (function () {
-    // URL (?lang=ja or #ja) takes priority over the remembered choice, so a
-    // direct link (e.g. from a store review screen) always lands correctly
-    // regardless of what a past visitor last picked in this browser.
     var params;
     try { params = new URLSearchParams(location.search); } catch (e) { params = null; }
     var fromUrl = (params && params.get('lang')) || location.hash.replace('#', '') || null;
     if (fromUrl === 'ja' || fromUrl === 'en') {
-      setLang(fromUrl);
-      return;
+      var target = document.getElementById('doc-' + fromUrl);
+      if (target) target.scrollIntoView();
     }
-    try {
-      var saved = localStorage.getItem('solo-plus-us-privacy-lang');
-      if (saved === 'ja') setLang('ja');
-    } catch (e) {}
   })();
 </script>
 </body>
