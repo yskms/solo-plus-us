@@ -38,7 +38,7 @@ RECORD IN SECONDS
 Open the app, tap once for Solo or Partnered, and you're done. If you tapped by mistake, Undo is right there. Recorded the wrong day or time? You can change it afterwards.
 
 TRACK ONLY WHAT YOU WANT
-Details are always optional and never asked for while recording. Turn on just the ones you care about — protection, duration, mood before and after, a free-text note, and a few more — and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
+Details are always optional and never asked for while recording. Turn on just the ones you care about — protection, duration, mood before and after, and a free-text note — and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
 
 SEE YOUR PATTERNS
 Today shows this month at a glance, with a solo and partnered breakdown and your most recent entries. Calendar gives you a month view and the entries for any day. Summary shows your totals, the solo/partnered split, and your average interval between entries.
@@ -141,18 +141,22 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 ### 公開前に決めること・提出すること
 
 - **カテゴリ（要判断）**：`Health & Fitness` と `Lifestyle` のどちらか。
-  v1.0 は健康データ権限を持たない私的なライフログなので `Lifestyle` の方が
-  実態に近く、健康アプリとしての追加要件を呼び込みにくい。一方、v1.0.x で
-  Health Connect（`SexualActivityRecord` の書き込み）を有効化するなら
-  `Health & Fitness` の方が整合する。**カテゴリは後から変更できるため、
-  v1.0 は `Lifestyle` で出し、HC 有効化時に見直すのが無難**
-- **Health apps declaration**：Play Console の「アプリのコンテンツ」に該当項目が
-  あるかを実際の画面で確認すること。**「すべてのアプリに提出義務がある」という
-  情報を見かけたが、裏を取れていない**——Play Console のフォーム側の説明文を
-  正とする。v1.0 は HC 権限を持たないため、§25.1 の「審査トリガー」には
-  該当しない想定だが、性的活動の記録という内容自体を Google が健康機能と
-  判断する可能性は残る。Reproductive and Sexual Health として申告するか、
-  健康機能なしとするかは、フォームの定義に沿って判断する
+  **v1.0 の主目的は健康管理ではなく私的なライフログなので `Lifestyle` が
+  実態に近い。** Health Connect を有効化して健康データとの連携を提供する
+  時点で、`Health & Fitness` への変更を再検討する（カテゴリは後から変更
+  できる）。なお、カテゴリの選択は審査要件を避けるための手段ではない——
+  下記の Health apps declaration はカテゴリに関係なく必須
+- **Health apps declaration（提出必須）**：**Google Play で公開するすべての
+  デベロッパーが対象**で、クローズドテスト・オープンテスト・製品版のいずれの
+  トラックも含む。健康機能が無いアプリも「健康機能を提供していない」ことを
+  申告する必要がある（2026-09-24 に
+  https://support.google.com/googleplay/android-developer/answer/14738291
+  で確認。例外はシステムサービスと private app のみ）。v1.0 で
+  「Reproductive and Sexual Health」と「健康機能なし」のどちらを選ぶかは、
+  Play Console に表示される最新の定義とアプリの実態に沿って判断する
+  ——v1.0 は HC 権限を持たないため §25.1 の「審査トリガー」には該当しない
+  想定だが、性的活動の記録という内容自体を健康機能と判断される可能性は残る。
+  v1.0.x で Health Connect を有効化する際は、必ず申告内容を更新する
 - **スクリーンショットの内容**：詳細項目の設定画面（「記録の項目」）には
   個別の項目名が表示されるため、初回掲載では使わない。載せる場合は、露骨な
   項目名が画面内に入らない構図にすること（レビュー指摘、2026-09-23）
