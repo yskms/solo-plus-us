@@ -344,12 +344,18 @@ const styles = StyleSheet.create({
   // center of the cell — not shifted up by whatever the dot row below it
   // happens to take up — while guaranteeing the two can never overlap.
   dayNumberArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dayDotArea: { height: 10, marginBottom: 6, alignItems: 'center', justifyContent: 'center' },
+  // The dot area's height has to clear the 3+ count's *line box*, not just
+  // the dots: a 10px font needs ~13px of line height, so the earlier 10/8
+  // heights clipped the digits' descender-side edge (found on Pixel 3,
+  // 2026-09-23 — the dots themselves fit fine, which is why it only showed
+  // up on days with 3+ activities). `lineHeight` is set explicitly so this
+  // stays true regardless of the platform's default line spacing.
+  dayDotArea: { height: 14, marginBottom: 4, alignItems: 'center', justifyContent: 'center' },
   dayNumber: { fontSize: 14, fontWeight: '500' },
-  dotRow: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 8 },
+  dotRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, height: 14 },
   dot: { width: 7, height: 7, borderRadius: 3.5 },
   dotHollow: { borderWidth: 1.5 },
-  dotCount: { fontSize: 10, fontWeight: '600' },
+  dotCount: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
   dayPanel: { flex: 1, marginTop: spacing.md },
   dayPanelContent: { paddingHorizontal: spacing.md, paddingBottom: 32, gap: spacing.xs },
   selectedDateLabel: { fontSize: 13, fontWeight: '700', letterSpacing: 0.5, marginBottom: spacing.xs },
