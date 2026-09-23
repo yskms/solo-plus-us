@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   // center of the cell — not shifted up by whatever the dot row below it
   // happens to take up — while guaranteeing the two can never overlap.
   dayNumberArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dayDotArea: { height: 10, alignItems: 'center', justifyContent: 'center' },
+  dayDotArea: { height: 10, marginBottom: 6, alignItems: 'center', justifyContent: 'center' },
   dayNumber: { fontSize: 14, fontWeight: '500' },
   dotRow: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 8 },
   dot: { width: 7, height: 7, borderRadius: 3.5 },
