@@ -283,7 +283,12 @@ CREATE TABLE health_sync (
     provider           TEXT NOT NULL
                          CHECK (provider IN ('health_connect','healthkit')),
     external_record_id TEXT,
-    last_synced_at     TEXT NOT NULL CHECK (length(last_synced_at) = 20),
+    -- D-51: 'synced' 以外は「まだ外部へ届いていない」状態。行が無いこと
+    -- （＝一度も同期していない）とは区別する。
+    sync_state         TEXT NOT NULL DEFAULT 'synced'
+                         CHECK (sync_state IN ('synced','uncertain','declined')),
+    -- D-51 で NULL 可に変更（declined/uncertain は同期時刻を持たない）。
+    last_synced_at     TEXT CHECK (last_synced_at IS NULL OR length(last_synced_at) = 20),
 
     PRIMARY KEY (activity_id, provider),
     FOREIGN KEY (activity_id)
