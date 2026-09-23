@@ -4125,3 +4125,37 @@ Protection トグル OFF のまま Partnered へ Protection 既定値が反映�
   の直接編集はできなくなる**（CLAUDE.md の「schema.ts を変更した後の実機
   テスト」の節の前提もそこで変わる）。スキーマに入れておくべき変更が
   残っていないか、申請前に確認する
+
+### v1.0 リリースビルドの実機確認（Pixel 11、release APK、2026-09-23）
+
+`without-health-connect`（`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=0` で
+`expo prebuild --clean` → `./gradlew assembleRelease
+-PreactNativeArchitectures=arm64-v8a`）の APK を Pixel 11 に入れて確認した。
+ローカルの release ビルドは debug キーストア署名で、ストア配布用ではない。
+
+確認できたこと：
+
+- 起動・オンボーディング・Today/Calendar/Summary、日本語ロケール、クラッシュ無し
+- Settings に HEALTH セクションが出ない。`soloplusus://settings/health-connect`
+  の deep link も Settings へリダイレクトされる（リリースビルドでもガードが有効）
+- `expo-application` 経由の Version 表示（release でもネイティブから読めている）
+- 既定値（D-54）が release ビルドでもクイック記録に反映される
+
+見つかった問題と対応：
+
+- **オンボーディングの「Health Connect との連携は任意」が without ビルドでも
+  表示されていた**——その機能に到達できないビルドで案内していることになるため、
+  `app/onboarding/privacy.tsx` で `isHealthConnectBuildEnabled()` による
+  出し分けを追加した。Settings 行と違い、こちらは文言のみで deep link や
+  永続設定から復活する経路は無い
+- **未使用の権限が Manifest に入っていた**——`SYSTEM_ALERT_WINDOW`
+  （`expo prebuild` の生成する Manifest に元から含まれる。RN の開発用
+  オーバーレイ用）、`READ/WRITE_EXTERNAL_STORAGE`（maxSdkVersion 32、
+  `expo-file-system`/`expo-screen-capture` 由来）。Export はアプリの
+  キャッシュ領域、セーフティ Export はアプリ専用 Documents、Import は
+  DocumentPicker 経由なので、いずれも実際には使っていない。`app.json` の
+  `android.blockedPermissions` で3つとも除外した。**`android/` は生成物
+  （gitignore 済み）なので、Manifest を手で直しても prebuild で消える**
+  ——必ず `app.json` 側で指定すること
+- 未確認：ストレージ権限を外した状態での Android 12 以下の Export/Import
+  （Pixel 3 で確認する）

@@ -25,6 +25,7 @@ import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { markPrivacyIntroSeen } from '../../lib/onboarding';
 import { hasDeviceAuthEnrolled } from '../../lib/deviceAuthEnrollment';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { logError } from '../../lib/log';
 import { IntersectPlus } from '../../components/IntersectPlus';
 
@@ -37,11 +38,21 @@ export default function PrivacyIntroScreen() {
   // Keyed by a stable id, not the translated text itself — two points
   // translating to identical strings (plausible across locales) would
   // otherwise collide as React keys (found in review).
+  //
+  // The Health Connect point is omitted in a `without-health-connect`
+  // build (§9.11/§25.1): that build has no HC feature at all — Settings
+  // hides the HEALTH section and the screen itself redirects — so
+  // advertising it on first launch describes something the user can
+  // never reach (found in the v1.0 release-build device check,
+  // 2026-09-23). Unlike the Settings row, this is copy only: nothing
+  // here can be re-enabled through a deep link or a stale setting.
   const POINTS = [
     { id: 'storedOnDevice', text: t('onboarding.privacy.points.storedOnDevice') },
     { id: 'noAccount', text: t('onboarding.privacy.points.noAccount') },
     { id: 'noAdvertising', text: t('onboarding.privacy.points.noAdvertising') },
-    { id: 'healthOptional', text: t('onboarding.privacy.points.healthOptional') },
+    ...(isHealthConnectBuildEnabled()
+      ? [{ id: 'healthOptional', text: t('onboarding.privacy.points.healthOptional') }]
+      : []),
   ];
 
   const onContinue = async () => {
