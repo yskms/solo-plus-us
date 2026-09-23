@@ -2,8 +2,12 @@
 
 Play Console の「ストアの掲載情報」にそのまま貼れる形で書いた草案。
 文字数制限は Play の仕様（アプリ名30・簡単な説明80・詳しい説明4000）。
-**Health Connect は v1.0 のビルドに含まれないため、どちらの言語でも
-一切触れていない**（D-55）。承認後の v1.0.x で有効化する際に追記する。
+**v1.0 では Health Connect 機能を提供せず、健康データ権限も要求しないため、
+どちらの言語でも一切触れていない**（D-55）。ネイティブモジュール自体は
+without ビルドにもリンクされたまま残る（CLAUDE.md「リリースビルド分離」）
+——「ビルドに含まれない」のは権限と機能であって、モジュールではない。
+承認後の v1.0.x で有効化する際に、掲載情報・Health apps declaration・
+データセーフティを同時に更新する。
 
 ---
 
@@ -34,7 +38,7 @@ RECORD IN SECONDS
 Open the app, tap once for Solo or Partnered, and you're done. If you tapped by mistake, Undo is right there. Recorded the wrong day or time? You can change it afterwards.
 
 TRACK ONLY WHAT YOU WANT
-Details are always optional and never asked for while recording. Turn on just the ones you care about — orgasm, ejaculation, protection, duration, mood before and after, and a free-text note — and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
+Details are always optional and never asked for while recording. Turn on just the ones you care about — protection, duration, mood before and after, a free-text note, and a few more — and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
 
 SEE YOUR PATTERNS
 Today shows this month at a glance, with a solo and partnered breakdown and your most recent entries. Calendar gives you a month view and the entries for any day. Summary shows your totals, the solo/partnered split, and your average interval between entries.
@@ -81,7 +85,7 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 アプリを開いて、ソロかパートナーとを1回タップするだけです。間違えて押しても、その場で取り消せます。日時を間違えたときは、あとから変更できます。
 
 記録する項目は自分で選ぶ
-詳細項目の入力は常に任意で、記録のときに尋ねられることはありません。オーガズム、射精、避妊、所要時間、前後の気分、自由記入のメモから、気になるものだけをオンにして、記録したい日にだけ書き足せます。既定値を設定して、自動で入力させることもできます。
+詳細項目の入力は常に任意で、記録のときに尋ねられることはありません。避妊、所要時間、前後の気分、自由記入のメモなどから、気になるものだけをオンにして、記録したい日にだけ書き足せます。既定値を設定して、自動で入力させることもできます。
 
 流れが見える
 「今日」では今月の件数と、ソロ / パートナーとの内訳、直近の記録をひと目で確認できます。「カレンダー」では月表示と、その日の記録の一覧が見られます。「サマリー」では合計、内訳、記録と記録の平均間隔が分かります。
@@ -105,22 +109,56 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 
 | 項目 | 内容 |
 |---|---|
-| アプリのアイコン | 512×512 PNG（`assets/images/` のアイコン素材から書き出す） |
-| フィーチャーグラフィック | 1024×500 PNG（**未作成**） |
-| スクリーンショット（携帯電話） | 最低2枚・推奨4〜8枚。候補：今日 / カレンダー / サマリー / 記録の項目（設定） |
-| カテゴリ | ヘルスケア / フィットネス（Health & Fitness） |
+| アプリのアイコン | 512×512 PNG（`assets/images/play-store-icon-512.png`） |
+| フィーチャーグラフィック | 1024×500 PNG（`assets/images/feature-graphic-1024x500.png`） |
+| スクリーンショット（携帯電話） | 最低2枚・推奨4〜8枚。**今日 / カレンダー / サマリー / プライバシー設定**の4枚（下記の注意参照） |
+| カテゴリ | **要判断**（下記「公開前に決めること・提出すること」参照） |
 | タグ | 追加しない（性的な内容を示すタグは付けない） |
 | メールアドレス | yskms.studio@gmail.com（プライバシーポリシー §10 と揃える） |
 | プライバシーポリシー | https://yskms.github.io/solo-plus-us/privacy-policy.html |
 
 ### 書くときに守ったこと
 
-- **性的に露骨な表現を避けた**——Play のポリシー上、露骨な表現はストア掲載情報の
-  審査対象になる。機能の説明に徹し、行為そのものの描写はしていない
-- **「医療」「健康管理」として効能を主張していない**——医療系の主張は追加の審査
-  要件を招く
+- **一般ユーザー向けの表現にした**——機能説明に必要な範囲を超えて、性的に露骨な
+  用語や描写を載せない。**詳細項目の個別名（orgasm / ejaculation / オーガズム /
+  射精）は、正確ではあるが掲載文からは外した**（レビュー指摘、2026-09-23）。
+  Play はストア掲載情報のテキストも審査対象にしており、機能名として正確でも
+  性的キーワードとして拾われうる。全項目はアプリ内で確認できるため、本文で
+  列挙する必要はない
+- **医療上の診断・治療・改善効果を主張していない**——本アプリは医療機器ではなく、
+  記録内容に基づく医療上の判断や助言も行わない
 - **実装していないことを書いていない**——同期・共有・パートナーとの共同利用・
   通知・バックグラウンド動作はいずれも非対応（§25）
+- **v1.0 では Health Connect 機能を提供せず、健康データ権限も要求しない**
+  （D-55）。将来有効化する際は、掲載情報・Health apps declaration・データ
+  セーフティを同時に更新する
+- **本文・翻訳・スクリーンショット・アイコン・フィーチャーグラフィックで
+  表現を揃える**——Play はテキストだけでなく画像もメタデータとして審査する
 - **「無料」を強調しすぎない**——アプリ内購入も広告も無いので事実だが、
   将来 Export を有料化する等の変更があると齟齬が出るため、本文では
   「追加の費用もかからない」程度にとどめた
+
+### 公開前に決めること・提出すること
+
+- **カテゴリ（要判断）**：`Health & Fitness` と `Lifestyle` のどちらか。
+  v1.0 は健康データ権限を持たない私的なライフログなので `Lifestyle` の方が
+  実態に近く、健康アプリとしての追加要件を呼び込みにくい。一方、v1.0.x で
+  Health Connect（`SexualActivityRecord` の書き込み）を有効化するなら
+  `Health & Fitness` の方が整合する。**カテゴリは後から変更できるため、
+  v1.0 は `Lifestyle` で出し、HC 有効化時に見直すのが無難**
+- **Health apps declaration**：Play Console の「アプリのコンテンツ」に該当項目が
+  あるかを実際の画面で確認すること。**「すべてのアプリに提出義務がある」という
+  情報を見かけたが、裏を取れていない**——Play Console のフォーム側の説明文を
+  正とする。v1.0 は HC 権限を持たないため、§25.1 の「審査トリガー」には
+  該当しない想定だが、性的活動の記録という内容自体を Google が健康機能と
+  判断する可能性は残る。Reproductive and Sexual Health として申告するか、
+  健康機能なしとするかは、フォームの定義に沿って判断する
+- **スクリーンショットの内容**：詳細項目の設定画面（「記録の項目」）には
+  個別の項目名が表示されるため、初回掲載では使わない。載せる場合は、露骨な
+  項目名が画面内に入らない構図にすること（レビュー指摘、2026-09-23）
+- **フィーチャーグラフィックの日本語版**：現行素材は英語のタグライン
+  （`Private. Offline. Yours.`）入り。ja-JP の掲載情報を追加する際は、
+  日本語版を用意するか、文字を含まない素材に差し替えるかを決める
+  （Play は言語ごとに別素材を設定できる）
+- **データセーフティ**：収集・共有なしで申告できる想定。Export/Import は
+  利用者自身の操作によるファイル出力で、アプリからの送信ではない
