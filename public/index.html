@@ -2,34 +2,162 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="refresh" content="0; url=./privacy-policy.html">
-<link rel="canonical" href="./privacy-policy.html">
-<title>Solo + Us — Privacy Policy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solo + Us — A private log for your intimate life</title>
+<meta name="description" content="Solo + Us is a private, offline log for your intimate life. Encrypted on your device, no account, no ads.">
+<!--
+  ストア掲載情報の「ウェブサイト」欄から開かれる紹介ページ。以前はここが
+  privacy-policy.html へのリダイレクトだけだったが、ストアの当該欄はアプリの
+  紹介ページを想定しているため、内容のあるページに差し替えた（2026-09-24）。
+  文面は docs/store-listing.md の掲載文と揃えてある——申告した
+  コンテンツレーティング（「詳しい記述を伴わない性行為への言及」）より
+  踏み込んだ表現をここに書かないこと。配色は privacy-policy.html と共通。
+-->
 <style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    margin: 0;
-    background: #F8F7FA;
-    color: #1C1B1F;
+  :root {
+    --bg: #F8F7FA;
+    --surface: #FFFFFF;
+    --text: #1C1B1F;
+    --text-muted: #5B5866;
+    --border: #E4E1E8;
+    --accent: #2E7D6B;
+    --accent-soft: #F4A699;
+    --accent-contrast: #FFFFFF;
   }
   @media (prefers-color-scheme: dark) {
-    body { background: #141218; color: #E6E1E9; }
-    a { color: #D0BCFF; }
+    :root {
+      --bg: #121615;
+      --surface: #1B201F;
+      --text: #E6E1E9;
+      --text-muted: #ABA6B2;
+      --border: #2C3231;
+      --accent: #4FA890;
+      --accent-soft: #F0B2A6;
+      --accent-contrast: #121615;
+    }
   }
-  a { color: #6750A4; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, sans-serif;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 20px 80px; }
+  header { text-align: center; margin-bottom: 32px; }
+  .icon {
+    width: 96px; height: 96px;
+    border-radius: 22px;
+    border: 1px solid var(--border);
+  }
+  h1 { font-size: 1.75rem; margin: 16px 0 6px; }
+  .tagline { color: var(--text-muted); margin: 0; }
+  .tagline + .tagline { margin-top: 2px; }
+  nav.links {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    margin-top: 24px;
+  }
+  nav.links a {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 0.9rem;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 28px 20px;
+    margin-top: 20px;
+  }
+  .lang-label {
+    display: inline-block;
+    margin-bottom: 8px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+  h2 { font-size: 1.15rem; margin: 8px 0 12px; }
+  p { margin: 0 0 12px; }
+  ul { margin: 0 0 12px; padding-left: 1.3em; }
+  li { margin-bottom: 8px; }
+  li strong { font-weight: 600; }
+  a { color: var(--accent); }
+  .note {
+    border-left: 3px solid var(--accent-soft);
+    padding-left: 14px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+  footer {
+    margin-top: 32px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  footer a { color: var(--text-muted); }
 </style>
 </head>
 <body>
-  <p>Redirecting to the <a href="./privacy-policy.html">Privacy Policy</a>…</p>
-  <script>
-    // Carries ?lang=ja / #ja through so a direct root link still lands on
-    // the requested language; the meta refresh above is the fallback when
-    // JS is disabled (it always lands on the default-language page).
-    location.replace('./privacy-policy.html' + location.search + location.hash);
-  </script>
+<div class="wrap">
+  <header>
+    <img class="icon" src="./icon.png" alt="Solo + Us">
+    <h1>Solo + Us</h1>
+    <p class="tagline">A private log for your intimate life.</p>
+    <p class="tagline">性の記録を、自分だけのものに。</p>
+    <nav class="links">
+      <a href="./privacy-policy.html">Privacy Policy / プライバシーポリシー</a>
+      <a href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">Support / お問い合わせ</a>
+    </nav>
+  </header>
+
+  <section class="card" lang="en">
+    <span class="lang-label">English</span>
+    <h2>Your records stay with you</h2>
+    <p>
+      Solo + Us is a private log for your intimate life — solo and partnered
+      alike. Everything stays on your device. There is no account to create,
+      no server to sync with, and no advertising.
+    </p>
+    <ul>
+      <li><strong>Record in seconds.</strong> One tap for Solo or Partnered, with Undo right there and the date and time editable afterwards.</li>
+      <li><strong>Track only what you want.</strong> Details are optional and never asked for while recording — protection, duration, mood before and after, and a free-text note.</li>
+      <li><strong>See your patterns.</strong> A month at a glance, a calendar view, and totals with your average interval between entries.</li>
+      <li><strong>Built for privacy.</strong> Encrypted local database, App Lock with your device's fingerprint, face or passcode, a hidden preview in Recent Apps, and optional screenshot blocking.</li>
+      <li><strong>Your data is yours.</strong> Export a full JSON backup or a CSV for your own analysis, and import a backup to restore.</li>
+    </ul>
+    <p class="note">For adults aged 18 and over. Available in English and Japanese.</p>
+  </section>
+
+  <section class="card" lang="ja">
+    <span class="lang-label">日本語</span>
+    <h2>記録は、あなたの端末の中だけに</h2>
+    <p>
+      Solo + Us は、ひとりの時間もふたりの時間も記録できる、自分だけの記録
+      アプリです。データはすべて端末の中に保存されます。アカウント登録は不要で、
+      サーバーと同期することもなく、広告もありません。
+    </p>
+    <ul>
+      <li><strong>数秒で記録。</strong>ソロかパートナーとを1回タップするだけ。間違えてもその場で取り消せ、日時はあとから変更できます。</li>
+      <li><strong>記録する項目は自分で選ぶ。</strong>詳細項目は任意で、記録のときに尋ねられません。避妊、所要時間、前後の気分、自由記入のメモなどから選べます。</li>
+      <li><strong>流れが見える。</strong>今月の件数、カレンダーでの月表示、合計と記録の平均間隔を確認できます。</li>
+      <li><strong>プライバシーのための設計。</strong>暗号化されたローカルデータベース、端末の指紋 / 顔 / パスコードによるアプリロック、アプリ履歴でのプレビュー非表示、スクリーンショットのブロック（任意）。</li>
+      <li><strong>データはあなたのもの。</strong>JSON で完全なバックアップを、CSV で分析用の書き出しができ、バックアップからの復元にも対応しています。</li>
+    </ul>
+    <p class="note">18歳以上の方を対象としたアプリです。日本語と英語に対応しています。</p>
+  </section>
+
+  <footer>
+    <p>© 2026 yskms.studio</p>
+    <p><a href="https://github.com/yskms/solo-plus-us" target="_blank" rel="noopener">github.com/yskms/solo-plus-us</a></p>
+  </footer>
+</div>
 </body>
 </html>
