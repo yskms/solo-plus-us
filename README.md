@@ -4170,3 +4170,11 @@ Protection トグル OFF のまま Partnered へ Protection 既定値が反映�
   共有シートが開き、Import は DocumentPicker（SAF）で共有ストレージ上の
   バックアップを読めて「追加のみ」が完了した（Android 15。API 32 以下の
   確認は Pixel 3 で別途行う）
+
+Pixel 3（Android 12 / API 31、`blockedPermissions` 適用後の同じ APK、
+2026-09-23）での確認：**API 32 以下でもストレージ権限なしで Export/Import
+が動く**——JSON・CSV とも共有シートが開き、Import は DocumentPicker で
+`/sdcard/Download` のバックアップを読めて「追加のみ」が完了した。
+起動時のクラッシュも無し。これで `SYSTEM_ALERT_WINDOW`/
+`READ_EXTERNAL_STORAGE`/`WRITE_EXTERNAL_STORAGE` を外した影響が無いことを
+両方の API レベル帯で確認できた。
