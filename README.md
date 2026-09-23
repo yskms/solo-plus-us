@@ -4159,3 +4159,14 @@ Protection トグル OFF のまま Partnered へ Protection 既定値が反映�
   ——必ず `app.json` 側で指定すること
 - 未確認：ストレージ権限を外した状態での Android 12 以下の Export/Import
   （Pixel 3 で確認する）
+
+`blockedPermissions` を入れた2回目の release APK（同じ手順で再ビルド）での
+追加確認（Pixel 11、2026-09-23）：
+
+- 結合後の Manifest の権限が `INTERNET`/`USE_BIOMETRIC`/`USE_FINGERPRINT`/
+  `VIBRATE`（＋Android 内部用2件）だけになった
+- オンボーディングから Health Connect の項目が消えた
+- **ストレージ権限を外した状態でも Export/Import が動く**：JSON・CSV とも
+  共有シートが開き、Import は DocumentPicker（SAF）で共有ストレージ上の
+  バックアップを読めて「追加のみ」が完了した（Android 15。API 32 以下の
+  確認は Pixel 3 で別途行う）
