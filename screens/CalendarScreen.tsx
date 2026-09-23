@@ -260,15 +260,19 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
                   accessibilityState={{ selected: isSelected }}
                   accessibilityLabel={dayCellAccessibilityLabel(t, cell, dayActivities)}
                 >
-                  <Text
-                    style={[
-                      styles.dayNumber,
-                      { color: isToday ? colors.solo : colors.textPrimary, fontWeight: isToday ? '800' : '500' },
-                    ]}
-                  >
-                    {cell.dayOfMonth}
-                  </Text>
-                  <DayDots dayActivities={dayActivities} colors={colors} />
+                  <View style={styles.dayNumberArea}>
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        { color: isToday ? colors.solo : colors.textPrimary, fontWeight: isToday ? '800' : '500' },
+                      ]}
+                    >
+                      {cell.dayOfMonth}
+                    </Text>
+                  </View>
+                  <View style={styles.dayDotArea}>
+                    <DayDots dayActivities={dayActivities} colors={colors} />
+                  </View>
                 </Pressable>
               );
             })}
@@ -331,24 +335,18 @@ const styles = StyleSheet.create({
   dayCell: {
     width: '14.28%',
     aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: 'transparent',
     borderRadius: radius.sm,
   },
+  // Split into two fixed areas (rather than centering `dayNumber` and
+  // `DayDots` together as one group) so the number sits in the visual
+  // center of the cell — not shifted up by whatever the dot row below it
+  // happens to take up — while guaranteeing the two can never overlap.
+  dayNumberArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  dayDotArea: { height: 10, alignItems: 'center', justifyContent: 'center' },
   dayNumber: { fontSize: 14, fontWeight: '500' },
-  dotRow: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 6,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 3,
-    height: 8,
-  },
+  dotRow: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 8 },
   dot: { width: 7, height: 7, borderRadius: 3.5 },
   dotHollow: { borderWidth: 1.5 },
   dotCount: { fontSize: 10, fontWeight: '600' },
