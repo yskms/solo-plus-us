@@ -12,6 +12,7 @@
  */
 import { open, type DB } from '@op-engineering/op-sqlite';
 import { Directory, File, Paths } from 'expo-file-system';
+import { setExcludedFromBackup } from '../modules/backup-exclusion';
 import { generateNewDatabaseKey, getOrCreateDatabaseKey } from './key';
 import { migration001Initial } from './migrations/001_initial';
 import { runMigrations, type Migration } from './migrations';
@@ -38,17 +39,34 @@ const MIGRATIONS: readonly Migration[] = [migration001Initial];
  * The DB lives in its own subdirectory of Documents (not the app's default
  * SQLite location) so `database/connection.ts` — not op-sqlite's default —
  * is the one place that knows the exact file path. That path is what the
- * §7.2 migration backup and the (not yet implemented, see README) iOS
- * backup-exclusion step both need.
- *
- * Known gap (README): Documents is included in iCloud/iTunes backup by
- * default on iOS. Until the backup-exclusion native module exists, do not
- * distribute this app (even via TestFlight) to anyone whose backups you
- * don't control.
+ * §7.2 migration backup and the §8.6 iOS backup exclusion
+ * (`ensureDbDirectory`) both need.
  */
 /** Exported for `services/RecoveryService.ts` (§8.8) — the only other place allowed to know where the DB lives on disk. */
 export function getDbDirectory(): Directory {
   return new Directory(Paths.document, DB_DIR_NAME);
+}
+
+/**
+ * §8.6 / D-07 — creates the DB directory if needed and (iOS) marks it
+ * excluded from iCloud/Finder backup. Documents is backed up by default,
+ * and the key is `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (never backed up), so a
+ * restored backup would otherwise bring back a DB nothing can decrypt.
+ *
+ * The flag is set on the *directory* (covers the `-wal`/`-shm` siblings and
+ * the migration/recovery temp files too) and re-applied on every open
+ * rather than only at creation: it's idempotent, and it also covers
+ * installs whose directory was created before this existed. Scoped to this
+ * subdirectory only — `services/SafetyExportService.ts` relies on the rest
+ * of Documents staying backed up.
+ */
+function ensureDbDirectory(): Directory {
+  const dir = getDbDirectory();
+  if (!dir.exists) {
+    dir.create({ intermediates: true });
+  }
+  setExcludedFromBackup(dir.uri.replace(/^file:\/\//, ''));
+  return dir;
 }
 
 export function getDbFile(): File {
@@ -396,10 +414,7 @@ export function wasRestoredFromFailedMigration(): boolean {
  */
 
 async function openAndMigrate(encryptionKey: string): Promise<DB> {
-  const dir = getDbDirectory();
-  if (!dir.exists) {
-    dir.create({ intermediates: true });
-  }
+  ensureDbDirectory();
 
   restoredFromBackupOnLastOpen = false;
   let db = openConnection(encryptionKey);
@@ -484,10 +499,7 @@ async function openAndMigrate(encryptionKey: string): Promise<DB> {
  * sequence while the *real* connection stays closed throughout).
  */
 export async function openAndMigrateFreshAt(fileName: string, encryptionKey: string): Promise<DB> {
-  const dir = getDbDirectory();
-  if (!dir.exists) {
-    dir.create({ intermediates: true });
-  }
+  const dir = ensureDbDirectory();
   const db = open({ name: fileName, location: dir.uri.replace(/^file:\/\//, ''), encryptionKey });
   await applyPragmas(db);
   await runMigrations(db, MIGRATIONS, { getUserVersion: () => readUserVersion(db) });

@@ -1,0 +1,10 @@
+{
+  "name": "backup-exclusion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Marks a file or directory as excluded from iCloud/Finder backup (iOS only)",
+  "license": "UNLICENSED",
+  "author": "yskms",
+  "homepage": "https://github.com/yskms/solo-plus-us",
+  "main": "index.ts"
+}
