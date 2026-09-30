@@ -1,28 +1,75 @@
 # Solo + Us — Claude 向けメモ
 
-## ローカル iOS ビルドが現在ブロックされている（`expo run:ios` 不可）
+## ローカル iOS ビルドは M4 MacBook Air 移行後にブロック解除済み（2026-09-30 確認）
 
-**原因は `op-sqlite`/SQLCipher ではない。** `expo-modules-jsi` が要求する
-`swift-tools-version: 6.2` と、ローカルの Xcode 26.3 の Swift/C++ 連携に
-コンパイラ不具合があり、`RuntimeScheduler.h` の
-`SWIFT_RETURNS_RETAINED`/`SWIFT_RETURNS_UNRETAINED` と
-`SWIFT_SHARED_REFERENCE` の組み合わせがコンパイルエラーになる。
+旧 Mac（Xcode 26.3）では `expo-modules-jsi` の `swift-tools-version: 6.2`
+まわりのコンパイラ不具合で `expo run:ios` が失敗していた。**2026-09-28 の
+M4 MacBook Air 移行後（macOS 27.0 / Xcode 27.0）はこの不具合が再現しない**
+ことを 2026-09-30 に確認済み——今後のセッションでこの制約を前提に判断
+しないこと（経緯の詳細は git 履歴参照）。EAS build
+は引き続き明示的な許可なしに実行しない（ビルド枠が貴重）。
 
-- `main` ブランチ・`feat/ios-widget` ブランチの両方で同じエラーを確認済み
-  ——ウィジェット追加が原因ではないことも確認済み
-- ヘッダーへの修正パッチも効果なし
-- 根本解決には Xcode 26.6 以降が必要だが、**macOS Sequoia 15.8 では
-  Xcode 26.6 を実行できないため、ローカル更新を提案しない**（ユーザーの
-  グローバル CLAUDE.md 方針）
-- Xcode 26.6 以降が必要な作業は、OS アップグレードを前提とせず、まず
-  クラウドビルド等の代替手段を検討すること（同上）。ただし EAS build は
-  明示的な許可なしに実行しない（ビルド枠が貴重）
+**実機確認が必要なタスクでは：** Android・iOS ともにローカルで検証可能に
+なった。iOS はシミュレータで `xcodebuild` のビルド成功に加え、
+`simctl install`/`launch` でのシミュレータ起動・Metro 接続・JS バンドルの
+描画（オンボーディング画面表示）を Debug 構成・Release 構成の両方で
+確認済み（2026-09-30、下記「iOS 27 (UIScene) 対応」の対応後）。
+**実機（物理 iPhone）はまだ未確認**——シミュレータでの確認のみである
+ことに注意。`expo run:ios`（CLI 経由の自動フロー）もまだ未確認——
+DeviceHub.app 関連の既知の問題が出うる（グローバル CLAUDE.md 参照）
+ため、都度 `xcodebuild` + `simctl install`/`launch` の直接操作で
+代替できる（`xcrun simctl` がシミュレータに対して無反応になった場合の
+対処は、Solo + Us 固有の事象ではないためグローバル CLAUDE.md 参照）。
 
-**実機確認が必要なタスクでは：** Android は実機（USB デバッグ接続）・
-エミュレータともにローカルで検証可能。iOS は上記が解決するまでローカル
-シミュレータ/実機起動ができない——iOS 側の確認だけを理由にタスクを
-止めず、まず Android 側で検証し、iOS は上記の制約を明示したうえで
-保留にする。
+## iOS 27 (UIScene) 対応
+
+**Xcode 27 (iOS 27 SDK) 向けにビルドしたアプリは、UIScene ライフサイクルに
+対応していないと起動直後にクラッシュする**（EXC_BREAKPOINT/SIGTRAP、
+クラッシュログのスタックトレースに
+`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` が出る）。
+Expo 57 / React Native 0.86 時点では Expo・RN 本体ともに公式のシーン対応が
+未実装のため、`plugins/withIosSceneDelegate.js`（`filto-app` リポジトリの
+同名プラグインを移植）で `AppDelegate.swift`/`SceneDelegate.swift` へ
+手動でシーン対応を注入している（`app.json` の `plugins` に登録済み）。
+2026-09-30 に、このプラグイン適用後にシミュレータで（Debug・Release
+構成の両方、コールドスタート・URL 経由の起動を含め）クラッシュせず
+起動〜 JS バンドル描画まで進むことを確認済み。**物理 iPhone 実機での
+確認はまだ行っていない。**
+
+- **`ios/` は `expo prebuild` の自動生成物（gitignore 対象）。修正は必ず
+  `plugins/withIosSceneDelegate.js` 側に加えること**——`ios/` を直接編集
+  しても次の `prebuild` で消える
+- **filto-app からの移植時、Swift 6.2 の「import のアクセスレベル」機能
+  (SE-0409) により追加の修正が必要だった**：このプロジェクトの Expo
+  テンプレートが生成する `AppDelegate.swift` は `internal import Expo` と
+  明示指定しており、`expo-modules-autolinking` が生成する
+  `ExpoModulesProvider.swift`（アプリのターゲットに直接コンパイルされる）は
+  `internal import ExpoModulesCore` を明示指定している。移植元の
+  `SceneDelegate.swift` テンプレートはこれらを暗黙アクセスレベル
+  （`import Expo`/`import ExpoModulesCore`）で書いていたため、同一
+  モジュール内で「同じモジュールを異なる暗黙アクセスレベルで import」と
+  判定されコンパイルエラーになった（`ambiguous implicit access level for
+  import of 'Expo'/'ExpoModulesCore'`）。`internal import` に揃えて解決
+  済み——**このプラグインを別プロジェクトへ移植する際や、Expo/RN の
+  バージョンを上げた際は、`AppDelegate.swift`・自動生成の
+  `ExpoModulesProvider.swift` 側の import 指定と、この
+  プラグインの `SCENE_DELEGATE_SOURCE` 側の import 指定が一致しているか
+  確認すること**（`grep -rn "^import\|^internal import" ios/SoloUs/*.swift`
+  等で比較できる）
+- Expo が公式に UIScene 対応した場合は、このプラグインと
+  `SceneDelegate.swift` を撤去し、公式の仕組みに乗り換えること
+- **既知の制約：コールドスタート（未起動状態）でのディープリンクの URL が
+  JS 側の `Linking.getInitialURL()` に渡らない**（ウォームスタートは問題
+  ない）。2026-09-30 時点でアプリ内にディープリンク機能は無いため実害は
+  無いが、ウィジェット・通知・共有シート等で `soloplusus://` を使い始める
+  場合は要注意。根拠・再現手順は `plugins/withIosSceneDelegate.js` の
+  `willConnectTo` 内コメント参照
+- **App Lock・App Switcher ぼかし・`AppState` 依存の同期/言語処理は、
+  シーン方式でも影響しないとソースコード上（静的確認のみ）で確認済み**
+  （2026-09-30）——いずれも `UIApplicationDelegate` のコールバックではなく
+  `NotificationCenter` 経由で `UIApplication` レベルの通知を購読しており、
+  この種の通知はシーン方式でも引き続き発行されるため。実機での
+  バックグラウンド/フォアグラウンド遷移の目視確認はまだ行っていない
 
 ### schema.ts を変更した後の実機テストは、既存アプリを一度アンインストールすること
 
@@ -307,8 +354,8 @@ Privacy Policy の記載（`yskms.studio`）と無関係に、App Store のス�
 自体が「Masashi Yasaka」をこのアプリに紐づけて公開する。** Privacy Policy 側
 だけを匿名の表記にしても、この露出は防げない。
 
-iOS ビルドは現在ブロック中（本ファイル冒頭参照）でリリース時期は未定のため、
-今は `yskms.studio` のままにしている（ユーザー了承済み、2026-09-21）。
+iOS リリース時期はまだ未定のため、今は `yskms.studio` のままにしている
+（ユーザー了承済み、2026-09-21）。
 **iOS リリースが具体的に視野に入った時点で、以下のどちらかを選ぶ必要がある：**
 
 - Privacy Policy の管理者表記を `Masashi Yasaka` に変更し、Apple の表示と

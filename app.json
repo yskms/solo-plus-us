@@ -58,6 +58,7 @@
       "./plugins/withAndroidNoBackup.js",
       "./plugins/withoutScreenCaptureDetectionPermissions.js",
       "./plugins/withAndroidNightColors.js",
+      "./plugins/withIosSceneDelegate.js",
       "expo-localization",
       "@react-native-community/datetimepicker",
       [
