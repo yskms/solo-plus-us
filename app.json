@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yskms.soloplusus",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Solo + Us uses Face ID to unlock the app so your records stay private."
       }

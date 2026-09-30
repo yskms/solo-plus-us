@@ -50,3 +50,8 @@ coverage/
 *.sqlite
 *.sqlite3
 exports/
+
+# Build artifacts (eas build --local)
+*.ipa
+*.apk
+*.aab
