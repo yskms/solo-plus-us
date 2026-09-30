@@ -35,5 +35,12 @@
         "EXPO_PUBLIC_HEALTH_CONNECT_ENABLED": "1"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6817953901"
+      }
+    }
   }
 }
