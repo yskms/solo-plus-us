@@ -308,13 +308,18 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 - **【v2 migration の前に決定必須】復元状態での書き込み方針**：#20 参照。バナーで通知はするが、
   書き込み操作自体は止めていない。最初の v2 migration を作る前に、設計書で読み取り専用モード等の
   方針を決めること
-- **iOS のバックアップ除外**（D-07 の後半）：Android の `allowBackup=false` + `dataExtractionRules` は
-  実装済みだが、iOS の `NSURLIsExcludedFromBackupKey` は expo-file-system の API に無く、小さな
-  ネイティブモジュールが要る。未実装（DB は現状 Documents 配下に置かれ、iOS 側は iCloud/iTunes
-  バックアップに含まれる）。**この状態で TestFlight 等の外部配布はしないこと**
+- **iOS のバックアップ除外**（D-07 の後半）：**解消（2026-09-30）**。expo-file-system に API が
+  無いため、ローカル Expo モジュール `modules/backup-exclusion/`（iOS のみ、Swift）で
+  `isExcludedFromBackup` を設定する。対象は DB ディレクトリ（`Documents/solo-plus-us-db/`）
+  単位で、`database/connection.ts` の `ensureDbDirectory()` が DB を開くたびに付け直す
+  （`-wal`/`-shm`・migration/recovery の一時ファイルも同じディレクトリなので一括で対象になる）。
+  Documents 全体には広げていないため、セーフティ Export（Documents 直下）の前提は変わらない。
+  シミュレータで新規インストール後、DB ディレクトリにだけ
+  `com.apple.metadata:com_apple_backup_excludeItem` の xattr が付き、Documents 本体には
+  付かないことを確認済み
 - **iOS の DB 配置**：Documents ではなく Library/Application Support の方が用途に適しているという
-  指摘は妥当だが、expo-file-system に対応する高レベル API が無く、プラットフォーム間で安全に
-  パスを組み立てる手段が未確認のため、バックアップ除外の実装と合わせて Phase 3 で対応する
+  指摘は妥当だが、バックアップ除外は上記で解決済みで、配置の変更は既存インストール（Android は
+  リリース済み）のファイル移行を伴うため見送っている
 - **日時編集 UI**：Phase 3 で実装済み（下記「Phase 3 実装状況」参照）
 - **Settings 画面一式**：Activity Details カスタマイズ・Health Connect は未実装のまま
   （Phase 3/4 の残り）。App Lock・Data（Export/Import UI）は Phase 3 で実装済み（下記参照）。
@@ -1135,6 +1140,8 @@ StorageAccessFramework 含む）・expo-sharing・expo-document-picker に依存
   という前提に依存する。§8.6 の iOS 側実装（`NSURLIsExcludedFromBackupKey`）が実装され、
   かつその除外範囲が Documents 全体に広がった場合、この安全性の前提が崩れる——実装時に
   `services/SafetyExportService.ts` を再確認する必要がある
+  （**2026-09-30 実装済み——除外範囲は DB ディレクトリのみで、Documents 全体には広げていない
+  ため、この前提は維持されている**）
 - **Delete Data（§10.6）は未実装**：UI/UX §17 の DATA セクションの3行目。基本設計 §18 の
   Phase 3 に明記された項目ではないため今回のスコープに含めていない
   （**解消: 2026-09-21、`phase3/delete-data` ブランチで実装——「Delete Data（§10.6）」

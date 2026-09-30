@@ -15,7 +15,11 @@ M4 MacBook Air 移行後（macOS 27.0 / Xcode 27.0）はこの不具合が再現
 描画（オンボーディング画面表示）を Debug 構成・Release 構成の両方で
 確認済み（2026-09-30、下記「iOS 27 (UIScene) 対応」の対応後）。
 **実機（物理 iPhone）はまだ未確認**——シミュレータでの確認のみである
-ことに注意。`expo run:ios`（CLI 経由の自動フロー）もまだ未確認——
+ことに注意。**実機確認はリリース申請前の仕上げとして TestFlight 経由で行う
+方針**（ユーザー決定、2026-09-30。iOS の EAS ローカルビルド・申請は他
+プロジェクトで経験済み）——それまではシミュレータで確認できることは
+シミュレータで確認し、「実機未確認」を TestFlight 配布のブロッカーとして
+扱わないこと。`expo run:ios`（CLI 経由の自動フロー）もまだ未確認——
 DeviceHub.app 関連の既知の問題が出うる（グローバル CLAUDE.md 参照）
 ため、都度 `xcodebuild` + `simctl install`/`launch` の直接操作で
 代替できる（`xcrun simctl` がシミュレータに対して無反応になった場合の
@@ -331,40 +335,15 @@ dev-client のライブ bundle ではこれが優先され、shell export した
 すること。`app.config.js` と JS 側の判定で挙動が食い違って見えたら、まず
 これを疑うこと。
 
-### Privacy Policy（`public/privacy-policy.html`）の管理者表記は、iOS 公開時に要再検討
+### App Store での実名表示は許容済み（既決事項——リスクとして再提起しない）
 
-`public/privacy-policy.html` §10（EN: “Data Controller & Contact”）は、
-現状 **開発者名を `yskms.studio`、連絡先を `yskms.studio@gmail.com`**
-としている（GitHub Pages で公開済み：
-https://yskms.github.io/solo-plus-us/privacy-policy.html ）。これは
-Google Play 上の表示名（`play.google.com/store/apps/developer?id=yskms.studio`）
-に合わせた選択で、**「メールアドレスを本名にする必要がある」という話では
-ない**——問題になるのは開発者の**表示名**の方。
-
-Apple の Individual（個人）タイプの開発者アカウントは、屋号ではなく登録した
-法的氏名を App Store のストアページに強制的に公開表示する仕様で、これは
-Solo + Us 固有の設定ではなく **Apple のプラットフォーム仕様**。実際に既存の
-2アプリ（Filto、UTC NOW）で確認済み——同じアプリが Google Play では
-「yskms.studio」、Apple の Individual アカウント
-（apps.apple.com/us/developer/masashi-yasaka/id1748151382）では
-「Masashi Yasaka」として表示されている（2026-09-21 確認）。
-
-**したがって、Solo + Us を将来この同じ Apple ID の下で iOS リリースすると、
-Privacy Policy の記載（`yskms.studio`）と無関係に、App Store のストアページ
-自体が「Masashi Yasaka」をこのアプリに紐づけて公開する。** Privacy Policy 側
-だけを匿名の表記にしても、この露出は防げない。
-
-iOS リリース時期はまだ未定のため、今は `yskms.studio` のままにしている
-（ユーザー了承済み、2026-09-21）。
-**iOS リリースが具体的に視野に入った時点で、以下のどちらかを選ぶ必要がある：**
-
-- Privacy Policy の管理者表記を `Masashi Yasaka` に変更し、Apple の表示と
-  一致させる
-- このアプリだけ別の Apple Organization アカウント（D-U-N-S 番号が必要）で
-  公開し、屋号のまま隠す
-
-放置すると「ストアは実名、ポリシーは屋号」という不一致が残ったまま公開
-されることになるため、iOS 公開作業に着手する際は必ずこの節を確認すること。
+Apple の Individual（個人）アカウントでは、App Store のストアページに法的氏名
+（Masashi Yasaka）が表示される（Filto・UTC NOW で既に同じ状態）。
+**ユーザーはこれを繰り返し許容済み**（2026-09-30 に改めて明言）——iOS リリースは
+既存の Individual アカウントでそのまま行う。Organization アカウントへの切り替えや
+表記の匿名化を提案しないこと。`public/privacy-policy.html` §10 の管理者表記は
+Google Play の表示名に合わせた `yskms.studio` のままでよい（ストアの実名表示との
+差異も問題にしない）。
 
 ### 多言語対応（i18n）——`lib/` は `t` を引数で受け取る、`t()` のキーに厳密な型は付けていない
 
