@@ -9,16 +9,18 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../constants/theme';
 import { contextLabel } from '../lib/labels';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
+import { useTabBarHeight } from '../contexts/TabBarHeight';
 
 export function UndoSnackbar() {
   const { colors, scheme } = useTheme();
   const { t } = useTranslation();
   const { state, undo } = useRecordFeedback();
+  const { height: tabBarHeight } = useTabBarHeight();
 
   if (!state) return null;
 
   return (
-    <View style={styles.wrapper} pointerEvents="box-none">
+    <View style={[styles.wrapper, { bottom: 24 + tabBarHeight }]} pointerEvents="box-none">
       <View
         style={[
           styles.bar,
@@ -37,7 +39,7 @@ export function UndoSnackbar() {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { position: 'absolute', left: 0, right: 0, bottom: 24, alignItems: 'center' },
+  wrapper: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',

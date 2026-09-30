@@ -12,6 +12,7 @@ import '../lib/i18n';
 import { DatabaseProvider, useNeedsOnboarding } from '../contexts/DatabaseContext';
 import { DataRevisionProvider } from '../contexts/DataRevision';
 import { RecordFeedbackProvider } from '../contexts/RecordFeedback';
+import { TabBarHeightProvider } from '../contexts/TabBarHeight';
 import { AppLockProvider } from '../contexts/AppLock';
 import { ScreenshotBlockProvider } from '../contexts/ScreenshotBlock';
 import { AppearanceProvider } from '../contexts/Appearance';
@@ -85,6 +86,12 @@ function AppShell() {
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.textPrimary,
           headerTitleStyle: { color: colors.textPrimary },
+          // `minimal` renders just the arrow (no previous-screen label)
+          // everywhere in this Stack — a deliberate UX choice, not the
+          // `(tabs)` fix. The `(tabs)` fix is its `title` below, which the
+          // long-press history menu and VoiceOver read regardless of this
+          // setting.
+          headerBackButtonDisplayMode: 'minimal',
           // Each screen's own container background. This alone does NOT
           // fix the trailing-edge strip during a push/pop transition — that
           // gap sits behind both screens, in the native Window background,
@@ -95,7 +102,13 @@ function AppShell() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* `title` here isn't shown on screen (`headerShown: false`), but it's
+            still what iOS uses as this screen's identity elsewhere it can't
+            be hidden with `headerBackButtonDisplayMode` — the back button's
+            long-press history menu and VoiceOver both read it. Without an
+            explicit value, React Navigation falls back to the route name
+            ("(tabs)") in both places. */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Solo + Us' }} />
         <Stack.Screen name="onboarding/privacy" options={{ headerShown: false, gestureEnabled: false }} />
         {/* Not `presentation: 'modal'` — see contexts/AppLock.tsx's file doc
             comment. A modal-family presentation (`modal`/`formSheet`/etc.) is
@@ -163,11 +176,13 @@ export default function RootLayout() {
         <AppearanceProvider>
           <LanguageProvider>
             <RecordFeedbackProvider>
-              <ScreenshotBlockProvider>
-                <AppLockProvider>
-                  <AppShell />
-                </AppLockProvider>
-              </ScreenshotBlockProvider>
+              <TabBarHeightProvider>
+                <ScreenshotBlockProvider>
+                  <AppLockProvider>
+                    <AppShell />
+                  </AppLockProvider>
+                </ScreenshotBlockProvider>
+              </TabBarHeightProvider>
             </RecordFeedbackProvider>
           </LanguageProvider>
         </AppearanceProvider>

@@ -34,6 +34,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import type { ComponentProps } from 'react';
 import { useTheme, minTouchTarget } from '../../constants/theme';
+import { useTabBarHeight } from '../../contexts/TabBarHeight';
 import TodayScreen from './index';
 import CalendarScreen from '../../screens/CalendarScreen';
 import InsightsScreen from '../../screens/InsightsScreen';
@@ -44,6 +45,7 @@ export default function TabLayout() {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { setHeight: setTabBarHeight } = useTabBarHeight();
 
   const TABS: { id: string; title: string; icon: IoniconName; iconOutline: IoniconName }[] = [
     { id: 'today', title: t('navigation.tabs.today'), icon: 'today', iconOutline: 'today-outline' },
@@ -113,6 +115,7 @@ export default function TabLayout() {
           { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: insets.bottom },
         ]}
         accessibilityRole="tablist"
+        onLayout={(event) => setTabBarHeight(event.nativeEvent.layout.height)}
       >
         {TABS.map((tab, index) => {
           const focused = activeIndex === index;
