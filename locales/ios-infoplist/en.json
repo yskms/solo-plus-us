@@ -1,0 +1,5 @@
+{
+  "ios": {
+    "NSFaceIDUsageDescription": "Solo + Us uses Face ID to unlock the app so your records stay private."
+  }
+}

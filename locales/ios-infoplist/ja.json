@@ -1,0 +1,5 @@
+{
+  "ios": {
+    "NSFaceIDUsageDescription": "Solo + Us は、記録を他の人に見られないようにするため、アプリのロック解除に Face ID を使用します。"
+  }
+}

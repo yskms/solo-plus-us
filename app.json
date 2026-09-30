@@ -8,6 +8,10 @@
     "scheme": "soloplusus",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#F8F7FA",
+    "locales": {
+      "en": "./locales/ios-infoplist/en.json",
+      "ja": "./locales/ios-infoplist/ja.json"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yskms.soloplusus",
@@ -59,7 +63,17 @@
       "./plugins/withoutScreenCaptureDetectionPermissions.js",
       "./plugins/withAndroidNightColors.js",
       "./plugins/withIosSceneDelegate.js",
-      "expo-localization",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": [
+              "en",
+              "ja"
+            ]
+          }
+        }
+      ],
       "@react-native-community/datetimepicker",
       [
         "expo-build-properties",

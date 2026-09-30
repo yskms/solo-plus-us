@@ -181,11 +181,13 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       // `disableDeviceFallback` deliberately left at its default (false):
       // §19 "生体認証を無効にしている端末でも、端末パスコード等で解除できる
       // こと" requires the OS's own passcode fallback to stay available.
-      return await LocalAuthentication.authenticateAsync({ promptMessage });
+      // `cancelLabel` must be passed explicitly: expo-local-authentication's
+      // JS layer substitutes a hardcoded English 'Cancel' when it's omitted.
+      return await LocalAuthentication.authenticateAsync({ promptMessage, cancelLabel: t('common.cancel') });
     } finally {
       authenticatingRef.current = false;
     }
-  }, []);
+  }, [t]);
 
   const authenticate = useCallback(
     async (promptMessage: string): Promise<boolean> => {
