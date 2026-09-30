@@ -24,7 +24,7 @@
  * 詳細は D-54 参照）。
  */
 import React, { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +33,7 @@ import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { getSetting, setSetting } from '../../services/SettingsRepository';
 import { ACTIVITY_DETAIL_FIELDS, activityDetailFieldLabel } from '../../lib/activityDetailsFields';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { logError } from '../../lib/log';
 
 type ActivityDetailSettingKey = (typeof ACTIVITY_DETAIL_FIELDS)[number]['settingKey'];
@@ -188,7 +189,11 @@ export default function ActivityDetailsSettingsScreen() {
           ))}
         </View>
 
-        <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.activityDetails.caption')}</Text>
+        <Text style={[styles.caption, { color: colors.textTertiary }]}>
+          {t('settings.activityDetails.caption')}
+          {/* Same gate as the HEALTH row in app/settings/index.tsx — iOS and the without-health-connect build have no sync to mention. */}
+          {Platform.OS === 'android' && isHealthConnectBuildEnabled() ? ` ${t('settings.activityDetails.captionHealthConnect')}` : ''}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );

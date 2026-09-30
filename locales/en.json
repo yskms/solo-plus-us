@@ -193,7 +193,8 @@
       "sectionLabel": "TRACKING DETAILS",
       "defaultLabel": "Default",
       "defaultLabelPartnered": "Default (Partnered)",
-      "caption": "Values you have already recorded are always shown, even if turned off. Protection is also always shown for partnered activities. Setting a default fills it in automatically when you use Quick Record (Protection's default only applies to partnered activities). A value filled in from a default is treated the same as one you entered yourself, including Health Connect sync and statistics."
+      "caption": "Values you have already recorded are always shown, even if turned off. Protection is also always shown for partnered activities. Setting a default fills it in automatically when you use Quick Record (Protection's default only applies to partnered activities). A value filled in from a default is treated the same as one you entered yourself, including in statistics.",
+      "captionHealthConnect": "This also applies to Health Connect sync."
     },
     "healthConnect": {
       "status": {

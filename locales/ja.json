@@ -122,7 +122,7 @@
       "activitiesRestored_other": "{{count}}件の記録を復元しました。",
       "offerResyncExplanation1": "この端末では Health Connect との同期がオンになっていますが、Solo + Us は復元したデータを自動的には再送信しません。",
       "offerResyncExplanation2": "続けると、復元されたすべての記録が Health Connect へ再送信され、現在そこにある内容が置き換えられます。",
-      "offerResyncExplanation3": "一部の記録は手動での再試行が必要になる場合があります—進捗はいつでも Settings › Health Connect で確認できます。",
+      "offerResyncExplanation3": "一部の記録は手動での再試行が必要になる場合があります—進捗はいつでも 設定 › Health Connect で確認できます。",
       "syncToHealthConnect": "Health Connect に同期",
       "notNow": "今はしない",
       "checkingBackupFile": "バックアップファイルを確認中…",
@@ -134,7 +134,7 @@
       "appendImportAdded_other": "{{count}}件の新しい記録を追加しました。",
       "appendImportSkipped_other": "{{count}}件はすでに存在していたためスキップされました。",
       "replaceImportResult_other": "{{count}}件の記録を復元しました。{{notice}}",
-      "healthConnectSyncQueued": "Health Connect への同期をキューに追加しました。進捗はいつでも Settings › Health Connect で確認できます。",
+      "healthConnectSyncQueued": "Health Connect への同期をキューに追加しました。進捗はいつでも 設定 › Health Connect で確認できます。",
       "couldNotExport": "エクスポートできませんでした",
       "couldNotOpenFilePicker": "ファイル選択を開けませんでした",
       "couldNotReadFile": "ファイルを読み込めませんでした",
@@ -166,23 +166,24 @@
       "confirmTitle": "すべてのデータを削除しますか？",
       "confirmCaption": "この端末上のすべての記録が即座に削除されます。",
       "androidCaption": "すでに Health Connect へ送信済みの記録は、時間をかけてそちらからも削除されます。完了する前に Solo + Us を閉じると削除は一時停止し、次にアプリを開いたときに再開します。完了する前に Solo + Us をアンインストールすると、それらの記録は Health Connect に残ります。",
-      "cannotBeUndoneCaption": "この操作は取り消せません。控えを残したい場合は、先に Settings › Export & Import でデータをエクスポートしてください。",
+      "cannotBeUndoneCaption": "この操作は取り消せません。控えを残したい場合は、先に 設定 › エクスポートとインポート でデータをエクスポートしてください。",
       "deleteAllData": "すべてのデータを削除",
       "deleting": "削除中…",
       "allDataDeletedTitle": "すべてのデータを削除しました",
       "allDataDeletedMessage": "すべての記録が完全に削除されました。",
       "deletedFromDeviceTitle": "この端末から削除しました",
       "cannotSyncMessage_other": "この端末上のすべての記録を削除しました。このバージョンのアプリは、未送信の Health Connect への削除{{count}}件を同期できません—Health Connect に対応した更新がこの端末に届いた時点で自動的に送信されます。",
-      "stillSendingMessage_other": "この端末上のすべての記録を削除しました。{{count}}件の削除がまだ Health Connect へ送信中です—進捗はいつでも Settings › Health Connect で確認できます。",
-      "waitingMessage_other": "この端末上のすべての記録を削除しました。Health Connect には{{count}}件の削除が保留中です—Settings › Health Connect で再接続すると再開します。",
+      "stillSendingMessage_other": "この端末上のすべての記録を削除しました。{{count}}件の削除がまだ Health Connect へ送信中です—進捗はいつでも 設定 › Health Connect で確認できます。",
+      "waitingMessage_other": "この端末上のすべての記録を削除しました。Health Connect には{{count}}件の削除が保留中です—設定 › Health Connect で再接続すると再開します。",
       "couldNotDelete": "削除できませんでした"
     },
     "activityDetails": {
       "intro": "記録する項目を選んでください。いつでも変更できます。",
       "sectionLabel": "記録する項目",
       "defaultLabel": "既定値",
-      "defaultLabelPartnered": "既定値（Partnered）",
-      "caption": "すでに記録済みの値は、オフにしても常に表示されます。Protection は Partnered の記録でも常に表示されます。既定値を設定すると、クイック記録の際にあらかじめその値が入力されます（Protection の既定値は Partnered の記録にのみ適用されます）。既定値で入力された値も、通常の記録と同じくHealth Connect同期や統計の対象になります。"
+      "defaultLabelPartnered": "既定値（パートナーと）",
+      "caption": "すでに記録済みの値は、オフにしても常に表示されます。避妊はパートナーとの記録では常に表示されます。既定値を設定すると、クイック記録の際にあらかじめその値が入力されます（避妊の既定値はパートナーとの記録にのみ適用されます）。既定値で入力された値も、通常の記録と同じく統計の対象になります。",
+      "captionHealthConnect": "Health Connect との同期も同様です。"
     },
     "healthConnect": {
       "status": {
@@ -245,7 +246,7 @@
       "disconnecting": "切断中…同期が進行中の場合、少し時間がかかることがあります。",
       "aboutSectionLabel": "同期について",
       "aboutWhatIsSynced": "Health Connect には、記録した日時と、避妊具を使用したかどうかのみが保存されます。",
-      "aboutWhatStaysLocal": "Solo/Partnered、オーガズム、気分、メモは Solo + Us にのみ保存されます。",
+      "aboutWhatStaysLocal": "ソロ／パートナーとの区別、オーガズム、気分、メモは Solo + Us にのみ保存されます。",
       "lastSynced": "最終同期",
       "never": "未同期",
       "resyncSectionLabel": "再同期",
@@ -267,8 +268,8 @@
       "androidLegacySideEffect": "このバージョンの Android では、その副作用としてスクリーンショットと画面収録もブロックされます。",
       "couldNotEnableWithReason": "有効にできませんでした：{{reason}}",
       "whatThisDoes": "この機能について",
-      "androidExplanation": "Android 13 以降では、最近使ったアプリのプレビューが空白の画面に置き換わり、Block Screenshots をオンにしない限りスクリーンショットと画面収録は許可されます。Android 12 以前では、最近使ったアプリのプレビューを隠すにはスクリーンショットと画面収録のブロックも必要になるため、この端末では Block Screenshots をオフにできません。",
-      "iosExplanation": "iOS では、アプリ切り替え画面がぼかして表示されます。Block Screenshots をオンにしない限り、スクリーンショットと画面収録は許可されます。"
+      "androidExplanation": "Android 13 以降では、最近使ったアプリのプレビューが空白の画面に置き換わり、「スクリーンショットをブロック」をオンにしない限りスクリーンショットと画面収録は許可されます。Android 12 以前では、最近使ったアプリのプレビューを隠すにはスクリーンショットと画面収録のブロックも必要になるため、この端末では「スクリーンショットをブロック」をオフにできません。",
+      "iosExplanation": "iOS では、アプリ切り替え画面がぼかして表示されます。「スクリーンショットをブロック」をオンにしない限り、スクリーンショットと画面収録は許可されます。"
     }
   },
   "navigation": {
@@ -465,7 +466,7 @@
       "continue": "続ける",
       "somethingWentWrong": "問題が発生しました",
       "protectEntriesTitle": "記録を保護しますか？",
-      "protectEntriesMessage": "Settings でアプリロックをオンにすると、アプリを開く前に端末認証が必要になります。",
+      "protectEntriesMessage": "設定でアプリロックをオンにすると、アプリを開く前に端末認証が必要になります。",
       "notNow": "後で",
       "goToSettings": "設定へ移動"
     }
