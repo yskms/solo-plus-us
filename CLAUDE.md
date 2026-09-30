@@ -417,3 +417,29 @@ D-48 のスコープ外指定を撤回）。翻訳リソースは `locales/en.js
   意図的に未翻訳——壊れた backup JSON のスキーマ違反を説明する開発者向けの
   技術的詳細で、通常の UI 文言よりログ出力に近いと判断した（設計判断記録 D-53）。
   周囲の「このファイルはバックアップに見えません」等の文言は翻訳済み。
+
+### 戻るボタンが前画面のルート名（例: `(tabs)`）を表示してしまう問題
+
+iOS の戻るボタンは、前の画面の `Stack.Screen` に `title` が未設定だと
+ルート名をそのまま表示・読み上げる——通常表示・長押しの履歴メニュー・
+VoiceOver のいずれも同じフォールバック先になる。`app/_layout.tsx` の
+`<Stack.Screen name="(tabs)">` に `title: 'Solo + Us'` を明示して解消済み
+（2026-09-30、シミュレーターの長押しメニューで実際に `"Solo + Us"` と
+表示されることを確認済み）。
+
+同ファイルの `headerBackButtonDisplayMode: 'minimal'`（Stack 全体で戻る
+ボタンの文字を常に非表示にする設定）とは役割が別——`minimal` は見た目の
+調整で、長押しメニュー・VoiceOver の表示元には効かない。新しく
+`Stack.Screen` を追加する際、`title` を省略すると同じ問題が再発するので
+注意（役割の違いは `app/_layout.tsx` 内のコメント参照）。
+
+### 記録トースト（UndoSnackbar）とボトムタブの重なり
+
+`components/UndoSnackbar.tsx` はルート直下（`(tabs)` の外）に描画され、
+以前は下端固定位置（`bottom: 24`）だったためボトムタブ（自前実装、
+`app/(tabs)/_layout.tsx`）と重なっていた。`contexts/TabBarHeight.tsx` で
+タブバーの実測高さを共有し、その分だけ底上げして解消済み（2026-09-30、
+シミュレーターで記録保存して確認済み）。`(tabs)` 以外の画面（`record`・
+`activity/[id]`）ではタブバー分の高さが残ったままトーストが高めに出る
+既知の制約はレビューで許容済み——詳細と理由は
+`contexts/TabBarHeight.tsx` の doc comment 参照。
