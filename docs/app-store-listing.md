@@ -153,7 +153,7 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 | サポート URL | https://yskms.github.io/solo-plus-us/ |
 | マーケティング URL | （空欄でよい） |
 | プライバシーポリシー URL | https://yskms.github.io/solo-plus-us/privacy-policy.html |
-| 著作権 | `2026 Masashi Yasaka`（App Store の販売元表示と揃える。実名表示は許容済み——CLAUDE.md 参照） |
+| 著作権 | `2026 yskms`（他の自分の iOS アプリと表記を揃える。販売元の実名表示とは別欄で、一致させる必要はない） |
 | プライマリカテゴリ | ライフスタイル（Play 版と同じ判断） |
 | セカンダリカテゴリ | 設定しない |
 | 価格 | 無料（アプリ内課金なし） |
