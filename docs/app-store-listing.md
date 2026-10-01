@@ -120,7 +120,7 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 データはすべて端末の中に保存されます。アカウント登録は不要で、サーバーとの同期もなく、広告もありません。記録は端末内の暗号化されたデータベースに保存されます。
 
 数秒で記録できる
-アプリを開いて、「ソロ」か「パートナーと」を選ぶだけ。数秒で記録できます。間違えて押しても、その場で取り消せます。日時を間違えたときは、あとから変更できます。
+アプリを開いて、「ソロ」か「パートナーと」を選ぶだけ。間違えて押しても、その場で取り消せます。日時を間違えたときは、あとから変更できます。
 
 記録する項目は自分で選ぶ
 詳細項目の入力は常に任意で、記録のときに尋ねられることはありません。避妊、所要時間、前後の気分、自由記入のメモなどから、気になるものだけをオンにして、記録したい日にだけ書き足せます。既定値を設定して、自動で入力させることもできます。
@@ -146,10 +146,11 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 サブタイトルにある「性」「記録」は入れない（英語と同じ理由）。
 
 ```
-日記,ログ,プライベート,ウェルネス,ヘルスケア,セルフケア,パートナー,カップル,恋人,夫婦,暗号化,オフライン,ロック,気分,カレンダー
+日記,ログ,プライベート,ウェルネス,セルフケア,パートナー,カップル,恋人,夫婦,暗号化,オフライン,ロック,気分,カレンダー
 ```
 
-（70文字）
+（64文字。「ヘルスケア」は医療・健康管理アプリと誤解されうるため入れない。
+枠を無理に埋める必要はない）
 
 ---
 
@@ -208,7 +209,7 @@ App Store Connect の年齢制限の質問票に答えて決まる。内容は P
 ```
 Solo + Us is a private, offline log of the user's own intimate activity (solo or partnered). It has no account, no server and no network features; all data stays on the device in an encrypted SQLite database (SQLCipher).
 
-No sign-in is required. App Lock is off by default, so every screen is reachable right after the first-launch privacy introduction. The app never displays sexual images or explicit descriptions — it records only a category (Solo/Partnered), a date and time, and optional details the user chooses.
+No sign-in is required. App Lock is off by default, so every screen is reachable right after the first-launch privacy introduction. The app never displays sexual images or explicit descriptions — it records a category (Solo/Partnered), a date and time, and optional details the user chooses.
 ```
 
 ### 輸出コンプライアンス（暗号化）

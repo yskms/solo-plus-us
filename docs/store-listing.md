@@ -9,6 +9,12 @@ without ビルドにもリンクされたまま残る（CLAUDE.md「リリース
 承認後の v1.0.x で有効化する際に、掲載情報・Health apps declaration・
 データセーフティを同時に更新する。
 
+**詳しい説明の文面は App Store 版（[app-store-listing.md](app-store-listing.md)）を
+正本とし、共通する箇所はそちらに追従させる**（2026-10-01、App Store 版のレビューで
+直した言い回し——「端末でだけ開かれる」の言い切り、「ソロかパートナーとを」、
+「追加の費用もかからない」など——を反映。Play Console の掲載情報への反映は、
+次に掲載情報を更新するときに行う）。
+
 ---
 
 ## en-US（デフォルト言語）
@@ -32,10 +38,10 @@ A private, offline log for your intimate life. Encrypted, no account, no ads.
 ```
 Solo + Us is a private log for your intimate life — solo and partnered alike.
 
-Everything stays on your device. There is no account to create, no server to sync with, and no advertising. Your records are stored in an encrypted database that is unlocked only on your device.
+Everything stays on your device. There is no account to create, no server to sync with, and no advertising. Your records are stored locally in an encrypted database.
 
 RECORD IN SECONDS
-Open the app, tap once for Solo or Partnered, and you're done. If you tapped by mistake, Undo is right there. Recorded the wrong day or time? You can change it afterwards.
+Open the app and tap once for Solo or Partnered. If you tap by mistake, you can undo it immediately. Recorded the wrong day or time? You can change it afterwards.
 
 TRACK ONLY WHAT YOU WANT
 Details are always optional and never asked for while recording. Turn on just the ones you care about — protection, duration, mood before and after, and a free-text note — and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
@@ -51,7 +57,7 @@ BUILT FOR PRIVACY
 - No account, no ads, no tracking
 
 YOUR DATA IS YOURS
-Export a full JSON backup at any time, or a CSV for your own analysis. Import a backup to restore your records, either adding only new entries or replacing everything. Nothing is locked in, and nothing costs extra.
+Export a full JSON backup at any time, or a CSV for your own analysis. Import a backup to restore your records, either adding only new entries or replacing everything. Your data stays portable and under your control.
 
 Available in English and Japanese.
 ```
@@ -79,15 +85,15 @@ Solo + Us
 ```
 Solo + Us は、ひとりの時間もふたりの時間も記録できる、自分だけの記録アプリです。
 
-データはすべて端末の中に保存されます。アカウント登録は不要で、サーバーと同期することもなく、広告もありません。記録は暗号化されたデータベースに保存され、あなたの端末でだけ開かれます。
+データはすべて端末の中に保存されます。アカウント登録は不要で、サーバーとの同期もなく、広告もありません。記録は端末内の暗号化されたデータベースに保存されます。
 
 数秒で記録できる
-アプリを開いて、ソロかパートナーとを1回タップするだけです。間違えて押しても、その場で取り消せます。日時を間違えたときは、あとから変更できます。
+アプリを開いて、「ソロ」か「パートナーと」を選ぶだけ。間違えて押しても、その場で取り消せます。日時を間違えたときは、あとから変更できます。
 
 記録する項目は自分で選ぶ
 詳細項目の入力は常に任意で、記録のときに尋ねられることはありません。避妊、所要時間、前後の気分、自由記入のメモなどから、気になるものだけをオンにして、記録したい日にだけ書き足せます。既定値を設定して、自動で入力させることもできます。
 
-流れが見える
+記録を振り返る
 「今日」では今月の件数と、ソロ / パートナーとの内訳、直近の記録をひと目で確認できます。「カレンダー」では月表示と、その日の記録の一覧が見られます。「サマリー」では合計、内訳、記録と記録の平均間隔が分かります。
 
 プライバシーのための設計
@@ -98,7 +104,7 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 ・アカウント登録なし、広告なし、トラッキングなし
 
 データはあなたのもの
-いつでも JSON で完全なバックアップを書き出せます。分析用に CSV で書き出すこともできます。バックアップからの復元にも対応しており、新しい記録だけを追加するか、すべて置き換えるかを選べます。データを囲い込むことはせず、追加の費用もかかりません。
+いつでも JSON で完全なバックアップを書き出せます。分析用に CSV で書き出すこともできます。バックアップからの復元にも対応しており、新しい記録だけを追加するか、すべて置き換えるかを選べます。データはいつでも持ち出せ、あなたの手元で管理できます。
 
 日本語と英語に対応しています。
 ```
