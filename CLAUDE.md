@@ -14,12 +14,14 @@ M4 MacBook Air 移行後（macOS 27.0 / Xcode 27.0）はこの不具合が再現
 `simctl install`/`launch` でのシミュレータ起動・Metro 接続・JS バンドルの
 描画（オンボーディング画面表示）を Debug 構成・Release 構成の両方で
 確認済み（2026-09-30、下記「iOS 27 (UIScene) 対応」の対応後）。
-**実機（物理 iPhone）はまだ未確認**——シミュレータでの確認のみである
-ことに注意。**実機確認はリリース申請前の仕上げとして TestFlight 経由で行う
-方針**（ユーザー決定、2026-09-30。iOS の EAS ローカルビルド・申請は他
-プロジェクトで経験済み）——それまではシミュレータで確認できることは
-シミュレータで確認し、「実機未確認」を TestFlight 配布のブロッカーとして
-扱わないこと。`expo run:ios`（CLI 経由の自動フロー）もまだ未確認——
+**物理 iPhone（iPhone 8 / iOS 16.7）では TestFlight 経由で確認済み**
+（2026-10-01、ビルド 0.1.0 (2)）：Touch ID での解除・バックグラウンド復帰時の
+ロック・App Switcher のぼかし・記録などの基本操作・Google Drive からの
+インポート。**iOS の実機確認は TestFlight 経由で行う**（iPhone 8 は Xcode で
+直接ペアリングできない——グローバル CLAUDE.md 参照）。ビルドは
+`eas build --local -p ios --profile production`、提出は `eas submit -p ios
+--path <ipa>`（`eas.json` の `submit.production.ios.ascAppId` 設定済みのため
+対話なしで通る）。`expo run:ios`（CLI 経由の自動フロー）もまだ未確認——
 DeviceHub.app 関連の既知の問題が出うる（グローバル CLAUDE.md 参照）
 ため、都度 `xcodebuild` + `simctl install`/`launch` の直接操作で
 代替できる（`xcrun simctl` がシミュレータに対して無反応になった場合の
@@ -37,8 +39,8 @@ Expo 57 / React Native 0.86 時点では Expo・RN 本体ともに公式のシ�
 手動でシーン対応を注入している（`app.json` の `plugins` に登録済み）。
 2026-09-30 に、このプラグイン適用後にシミュレータで（Debug・Release
 構成の両方、コールドスタート・URL 経由の起動を含め）クラッシュせず
-起動〜 JS バンドル描画まで進むことを確認済み。**物理 iPhone 実機での
-確認はまだ行っていない。**
+起動〜 JS バンドル描画まで進むことを確認済み。2026-10-01 に物理 iPhone
+（iPhone 8、TestFlight）でもクラッシュせず動作することを確認済み。
 
 - **`ios/` は `expo prebuild` の自動生成物（gitignore 対象）。修正は必ず
   `plugins/withIosSceneDelegate.js` 側に加えること**——`ios/` を直接編集
@@ -72,8 +74,9 @@ Expo 57 / React Native 0.86 時点では Expo・RN 本体ともに公式のシ�
   シーン方式でも影響しないとソースコード上（静的確認のみ）で確認済み**
   （2026-09-30）——いずれも `UIApplicationDelegate` のコールバックではなく
   `NotificationCenter` 経由で `UIApplication` レベルの通知を購読しており、
-  この種の通知はシーン方式でも引き続き発行されるため。実機での
-  バックグラウンド/フォアグラウンド遷移の目視確認はまだ行っていない
+  この種の通知はシーン方式でも引き続き発行されるため。2026-10-01 に
+  iPhone 8 実機（TestFlight）でバックグラウンド復帰時のロックと App Switcher
+  のぼかしを目視確認済み
 
 ### schema.ts を変更した後の実機テストは、既存アプリを一度アンインストールすること
 
