@@ -80,7 +80,7 @@ make_slide "$raw_dir/en/04-settings.png" "$asset_dir/en/04-settings.png" \
   "$bg_brand" "$font_en_bold" "$font_en_reg"
 
 make_slide "$raw_dir/ja/01-today.png" "$asset_dir/ja/01-today.png" \
-  '自分だけの記録を。' 'ソロもパートナーとも、1タップで記録。' \
+  '自分だけの記録を。' 'ソロもパートナーとの時間も、1タップで記録。' \
   "$bg_brand" "$font_ja_bold" "$font_ja_reg"
 make_slide "$raw_dir/ja/02-calendar.png" "$asset_dir/ja/02-calendar.png" \
   '月ごとに振り返る。' 'いつ記録したかがひと目で分かります。' \
