@@ -4199,3 +4199,22 @@ Play Console の製品版トラックへ提出し、審査待ち。表示バー�
 - **審査を通過して公開された時点で D-11 が効き始め、`database/schema.ts` の
   直接編集はできなくなる**（以降は migration の追加が必要。CLAUDE.md の
   「schema.ts を変更した後の実機テスト」の節の前提もそこで変わる）
+
+### v1.0 の App Store 提出（2026-10-01）
+
+iOS 版 **1.0.0 (4)** を App Store の審査へ提出した（リリース方法は「承認後に自動
+リリース」）。Play 版（0.1.0、審査待ち）とは別に、iOS 版は最初から 1.0.0 で出している
+——次の Android 更新で表示バージョンを 1.0.0 にそろえる。
+
+- 掲載情報・スクリーンショット・年齢制限（質問票では 16+、上書きで 18+）・配信国
+  （13か国を除外）・輸出コンプライアンスの判断と控えは
+  [docs/app-store-listing.md](docs/app-store-listing.md)
+- 提出前に TestFlight（0.1.0 (2)）で iPhone 8 実機確認済み（CLAUDE.md 参照）
+- 提出までに直したもの：iOS の DB バックアップ除外（D-07、`modules/backup-exclusion/`）、
+  iOS のシステム UI（日時 picker・認証ダイアログ）が英語になる問題、日本語訳の英語残り、
+  最近の記録の日付の折り返し／大きな文字サイズでの省略
+- ビルドは `eas build --local -p ios --profile production`、提出は
+  `eas submit -p ios --profile production --path <ipa> --non-interactive`
+  （`eas.json` の `submit.production.ios.ascAppId` 設定済み）。fastlane の
+  `xcodebuild -showBuildSettings` が他の重い処理と重なるとタイムアウトで失敗するため、
+  `FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT=120` を付けて単独で実行する
