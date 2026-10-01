@@ -21,7 +21,9 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         date: formatMonthDay(t, activity.occurredLocalDate),
       })}
     >
-      <Text style={[styles.date, { color: colors.textSecondary }]}>{formatMonthDay(t, activity.occurredLocalDate)}</Text>
+      <Text style={[styles.date, { color: colors.textSecondary }]} numberOfLines={1}>
+        {formatMonthDay(t, activity.occurredLocalDate)}
+      </Text>
       <View style={{ flex: 1 }}>
         <ActivityBadge context={activity.context} />
       </View>
@@ -32,6 +34,9 @@ export function ActivityRow({ activity }: { activity: Activity }) {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
-  date: { fontSize: 14, width: 52 },
+  // Fixed (not content-sized) so the badges line up across rows. Sized for the
+  // widest Japanese date ("12月31日") on iOS, whose font is wider than Android's —
+  // 52 was enough on Android but wrapped "9月29日" onto two lines on iOS.
+  date: { fontSize: 14, width: 68 },
   chevron: { fontSize: 18 },
 });
