@@ -4199,7 +4199,8 @@ Play Console の製品版トラックへ提出し、審査待ち。表示バー�
 - **2026-10-06 に「インストールされたアイコンが掲載情報と異なる」で却下**。提出した
   AAB（versionCode 2）は、アイコンを「＋」に差し替える前のビルドで、アプリ内が
   Expo 既定の青い三角のままだった。2026-10-07 に現在のアイコンで AAB を作り直した
-  （versionCode 3 / 表示 1.0.0）。経緯は [docs/store-listing.md](docs/store-listing.md)
+  （versionCode 3 / 表示 1.0.0）。内部テストで実機確認後、製品版へプロモートして
+  2026-10-07 に審査へ再送信した。経緯は [docs/store-listing.md](docs/store-listing.md)
 - **審査を通過して公開された時点で D-11 が効き始め、`database/schema.ts` の
   直接編集はできなくなる**（以降は migration の追加が必要。CLAUDE.md の
   「schema.ts を変更した後の実機テスト」の節の前提もそこで変わる）
