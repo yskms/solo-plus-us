@@ -8,6 +8,7 @@ import {
   deriveLocalDateTime,
   formatUtcIso,
   getDeviceTimeZoneId,
+  instantForPastLocalDateAtNow,
   isLocalDateTimeConsistent,
   isValidLocalDate,
   isValidLocalTime,
@@ -320,5 +321,47 @@ describe('resolveOccurredAtEdit (D-50 Activity Detail post-hoc edit, review find
     const patch = resolveOccurredAtEdit(original, 'Asia/Tokyo', farFutureDigits);
     expect(patch.occurredAtUtc).toBeDefined();
     expect(parseStrictUtcIso(patch.occurredAtUtc!).getTime()).toBeLessThanOrEqual(Date.now());
+  });
+});
+
+describe('instantForPastLocalDateAtNow', () => {
+  // Built from local-getter components, same as the function itself, so these
+  // hold in whatever zone the test runner happens to use.
+  const now = new Date(2026, 9, 10, 14, 42, 37); // 2026-10-10 14:42:37 local
+
+  it('combines a past day with the current wall-clock time (seconds dropped)', () => {
+    const result = instantForPastLocalDateAtNow('2026-10-08', now);
+    expect(result).not.toBeNull();
+    expect(result!.getFullYear()).toBe(2026);
+    expect(result!.getMonth()).toBe(9);
+    expect(result!.getDate()).toBe(8);
+    expect(result!.getHours()).toBe(14);
+    expect(result!.getMinutes()).toBe(42);
+    expect(result!.getSeconds()).toBe(0);
+  });
+
+  it('crosses month and year boundaries', () => {
+    const result = instantForPastLocalDateAtNow('2025-12-31', now);
+    expect(result!.getFullYear()).toBe(2025);
+    expect(result!.getMonth()).toBe(11);
+    expect(result!.getDate()).toBe(31);
+  });
+
+  it('returns null for today, so the plain "Just now" flow is used', () => {
+    expect(instantForPastLocalDateAtNow('2026-10-10', now)).toBeNull();
+  });
+
+  it('returns null for a future day', () => {
+    expect(instantForPastLocalDateAtNow('2026-10-11', now)).toBeNull();
+    expect(instantForPastLocalDateAtNow('2027-01-01', now)).toBeNull();
+  });
+
+  it.each(['', 'not-a-date', '2026-02-30', '2026-13-01', '2026-9-8'])('returns null for an invalid date: %s', (value) => {
+    expect(instantForPastLocalDateAtNow(value, now)).toBeNull();
+  });
+
+  it('never returns an instant later than now', () => {
+    const result = instantForPastLocalDateAtNow('2026-10-09', now);
+    expect(result!.getTime()).toBeLessThan(now.getTime());
   });
 });

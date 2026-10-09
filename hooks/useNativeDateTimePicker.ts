@@ -27,9 +27,19 @@ import { logError } from '../lib/log';
  * `getMax` must agree, since `open`/`confirmIos` below compare them
  * directly. Once `customInstant` is set, it's reused as the base for any
  * further re-opening, same as before this was a hook.
+ *
+ * `initialInstant` (optional) starts `customInstant` already set, as if the
+ * user had just picked it — `app/record.tsx` uses it for the Calendar tab's
+ * "add to this day". Only the first render's value is used (it seeds
+ * `useState`); `reset` still returns to `null`.
  */
-export function useNativeDateTimePicker(getBase: () => Date, getMax: () => Date, isLocked: () => boolean) {
-  const [customInstant, setCustomInstant] = useState<Date | null>(null);
+export function useNativeDateTimePicker(
+  getBase: () => Date,
+  getMax: () => Date,
+  isLocked: () => boolean,
+  initialInstant: Date | null = null,
+) {
+  const [customInstant, setCustomInstant] = useState<Date | null>(initialInstant);
   const [iosPickerVisible, setIosPickerVisible] = useState(false);
   const [pendingInstant, setPendingInstant] = useState<Date | null>(null);
   const [pickerBase, setPickerBase] = useState<Date | null>(null);

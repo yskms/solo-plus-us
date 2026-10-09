@@ -323,6 +323,8 @@
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "loadError": "Couldn't load your calendar. Leaving and reopening this tab will try again.",
+    "addForDay": "Add an activity to this day",
+    "addForDayA11y": "Add an activity on {{date}}",
     "dayCellA11y": {
       "noActivities": "{{date}}, no activities",
       "withActivities": "{{date}}, {{parts}}",

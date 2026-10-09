@@ -23,7 +23,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
@@ -32,7 +32,7 @@ import { useAppLockActions } from '../contexts/AppLock';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
 import { useNativeDateTimePicker } from '../hooks/useNativeDateTimePicker';
 import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
-import { clampToNow } from '../lib/datetime';
+import { clampToNow, instantForPastLocalDateAtNow } from '../lib/datetime';
 import { formatPickedDateTime } from '../lib/timeFormat';
 import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
@@ -50,8 +50,13 @@ export default function RecordScreen() {
   const [saving, setSaving] = useState(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const getNow = () => new Date();
+  // The Calendar tab's "add to this day" passes `date` (YYYY-MM-DD); it starts
+  // the picked time as that day + the current time of day. `null` (no/invalid
+  // param, today, or a future day) leaves the normal "Just now" flow.
+  const { date } = useLocalSearchParams<{ date?: string }>();
+  const [initialInstant] = useState(() => (typeof date === 'string' ? instantForPastLocalDateAtNow(date) : null));
   const { customInstant, iosPickerVisible, pendingInstant, setPendingInstant, open, confirmIos, cancelIos, reset } =
-    useNativeDateTimePicker(getNow, getNow, isLocked);
+    useNativeDateTimePicker(getNow, getNow, isLocked, initialInstant);
 
   useEffect(() => {
     getSetting(db, 'preferences.timeFormat')

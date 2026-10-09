@@ -308,6 +308,8 @@
     "previousMonth": "前の月",
     "nextMonth": "次の月",
     "loadError": "カレンダーを読み込めませんでした。このタブを開き直すと再試行されます。",
+    "addForDay": "この日に記録を追加",
+    "addForDayA11y": "{{date}}に記録を追加",
     "dayCellA11y": {
       "noActivities": "{{date}}、記録なし",
       "withActivities": "{{date}}、{{parts}}",

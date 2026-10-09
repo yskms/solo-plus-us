@@ -1,7 +1,9 @@
 /**
  * UI/UX §13 Screen 05 — Calendar. Month grid with a per-day activity
  * indicator; tapping a day shows that day's activities below, from which
- * each one opens Activity Detail (§10).
+ * each one opens Activity Detail (§10). Below that list, an "add to this
+ * day" link opens Add Activity (`app/record.tsx`) preset to that day plus the
+ * current time of day, for back-filling a day that was missed.
  *
  * Per §13 "Multiple activities": 1-2 activities on a day show one dot per
  * activity; 3+ collapse into a single count ("● 3") rather than listing
@@ -16,6 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useTheme, spacing, radius, minTouchTarget } from '../constants/theme';
@@ -307,6 +310,21 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
                 </Pressable>
               ))
             )}
+            {/* Quiet on purpose — the Today tab's record button is the primary
+                way in; this is for back-filling a day. Not offered for a future
+                day: recording in the future is never allowed (`clampToNow`). */}
+            {selectedLocalDate <= today && (
+              <Pressable
+                onPress={() => router.push({ pathname: '/record', params: { date: selectedLocalDate } })}
+                hitSlop={{ top: 5, bottom: 5 }}
+                style={({ pressed }) => [styles.addRow, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={t('calendar.addForDayA11y', { date: formatMonthDay(t, selectedLocalDate) })}
+              >
+                <Ionicons name="add" size={16} color={colors.solo} />
+                <Text style={[styles.addText, { color: colors.solo }]}>{t('calendar.addForDay')}</Text>
+              </Pressable>
+            )}
           </>
         )}
       </ScrollView>
@@ -367,4 +385,16 @@ const styles = StyleSheet.create({
     minHeight: minTouchTarget,
   },
   activityTime: { fontSize: 13 },
+  addRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.pill,
+  },
+  addText: { fontSize: 13, fontWeight: '600' },
 });

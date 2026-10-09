@@ -249,6 +249,29 @@ export function clampToNow(date: Date): Date {
 }
 
 /**
+ * The Calendar tab's "add to this day": the given calendar day's date with
+ * `now`'s wall-clock time, as a real instant in the device's current zone —
+ * the same zone `app/record.tsx`'s picked time is always interpreted in
+ * (so, like `formatPickedDateTime`, this deliberately reads/builds via the
+ * runtime's local getters, unlike the stored-data derivation above).
+ *
+ * Returns `null` unless `localDate` is a valid day strictly *before* today,
+ * so the caller falls back to the plain "Just now" flow:
+ * - today: "Just now" already means exactly this, and a preset instant would
+ *   freeze the time at screen-open instead of at save;
+ * - a future day: recording in the future is never allowed (`clampToNow`),
+ *   which would otherwise silently turn it into today's "now";
+ * - not a valid date at all (e.g. a hand-typed deep link).
+ */
+export function instantForPastLocalDateAtNow(localDate: string, now: Date = new Date()): Date | null {
+  if (!isValidLocalDate(localDate)) return null;
+  const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  if (localDate >= today) return null; // same-length YYYY-MM-DD, so string order is chronological
+  const [y, mo, d] = localDate.split('-').map(Number);
+  return new Date(y, mo - 1, d, now.getHours(), now.getMinutes());
+}
+
+/**
  * §4.2: `occurred_at_utc` specifically must always have `:00` seconds —
  * unlike `created_at`/`updated_at`, which keep real second precision.
  * `parseStrictUtcIso` alone only checks the format is well-formed; this is
