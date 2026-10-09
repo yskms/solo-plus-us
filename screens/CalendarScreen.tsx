@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
   },
   activityTime: { fontSize: 13 },
   addRow: {
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
