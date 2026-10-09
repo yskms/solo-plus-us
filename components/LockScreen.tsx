@@ -15,7 +15,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { LocalAuthenticationError } from 'expo-local-authentication';
-import { useTheme, spacing } from '../constants/theme';
+import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { IntersectPlus } from './IntersectPlus';
 import { describeAuthError } from '../lib/localAuthMessages';
 
@@ -43,11 +43,11 @@ export function LockScreen({
         <Pressable
           onPress={onRetry}
           disabled={authenticating}
-          style={styles.unlockRow}
+          style={[styles.unlockButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
           accessibilityRole="button"
           accessibilityLabel={t('lockScreen.unlockA11y')}
         >
-          <Text style={[styles.unlockText, { color: colors.textSecondary }]}>{t('lockScreen.unlockWithDevice')}</Text>
+          <Text style={[styles.unlockText, { color: colors.textPrimary }]}>{t('lockScreen.unlockWithDevice')}</Text>
         </Pressable>
 
         {errorMessage && <Text style={[styles.errorText, { color: colors.destructive }]}>{errorMessage}</Text>}
@@ -61,7 +61,19 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingHorizontal: spacing.lg },
   wordmark: { fontSize: 22, fontWeight: '700' },
   lockIcon: { fontSize: 40, marginTop: spacing.lg },
-  unlockRow: { marginTop: spacing.lg, padding: spacing.sm },
-  unlockText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  // Looks like a button on purpose: the system prompt auto-opens on mount, and
+  // once the user dismisses it (the sheet's X), this is the only way back in.
+  // As bare text it gave no hint that it was tappable.
+  unlockButton: {
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + spacing.xs,
+    minHeight: minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unlockText: { fontSize: 15, fontWeight: '600', textAlign: 'center', lineHeight: 21 },
   errorText: { fontSize: 13, textAlign: 'center', maxWidth: 260 },
 });
