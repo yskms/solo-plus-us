@@ -4224,5 +4224,6 @@ iOS 版 **1.0.0 (4)** を App Store の審査へ提出した（リリース方�
   `xcodebuild -showBuildSettings` が他の重い処理と重なるとタイムアウトで失敗するため、
   `FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT=120` を付けて単独で実行する
 - **2026-10-10 に Guideline 1.1（description の語句）で却下**。どの語句かは Apple が
-  示しておらず、2026-10-18 時点で返信待ち。経緯・疑わしい箇所・待機の方針は
+  示しておらず、返信待ち（Resolution Center に2回質問、2026-10-23 に Contact Us も
+  送信済み。期限は 10/27）。経緯・疑わしい箇所・待機の方針は
   [docs/app-store-listing.md](docs/app-store-listing.md)「App Review の記録」
