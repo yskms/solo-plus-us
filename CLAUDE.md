@@ -436,3 +436,21 @@ VoiceOver のいずれも同じフォールバック先になる。`app/_layout.
 `activity/[id]`）ではタブバー分の高さが残ったままトーストが高めに出る
 既知の制約はレビューで許容済み——詳細と理由は
 `contexts/TabBarHeight.tsx` の doc comment 参照。
+
+### Android リリースビルド（`eas build --local`）の注意
+
+- **`versionCode` は手で上げない。** `eas.json` の `production` は
+  `autoIncrement: true` で、ビルド時に `app.json` の `android.versionCode` を
+  +1 する（ログに `Bumping expo.android.versionCode from N to N+1`）。手で
+  上げてからビルドすると二重に上がる（1.0.1 で 4 → 5 になった実例）。ビルド後に
+  `app.json` の差分をコミットして AAB と揃える。iOS の `buildNumber` は別管理。
+- **`eas` は PATH に無い。** `npx --yes eas-cli@25.3.0 build --local …`（npx
+  キャッシュにある版）で実行する。`--output` で出力先を指定する。
+- **AAB の中身の確認（bundletool が無いとき）：** `aapt2` は AAB を直接読めない。
+  AAB を unzip し、`base/` の `AndroidManifest.xml`（`manifest/` から出す）・
+  `resources.pb`・`res/` だけを zip し直して `aapt2 convert --output-format
+  binary` → `aapt2 dump badging` で versionCode・versionName・権限を見る
+  （`~/Library/Android/sdk/build-tools/*/aapt2`）。健康データ権限
+  （`android.permission.health.*`）が無いことを毎回確認する。
+- ビルドログの `expo doctor` の「Patch version mismatches」は警告で、ビルドは
+  止まらず成功する（既存の状態）。
