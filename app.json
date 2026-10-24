@@ -63,6 +63,7 @@
       "./plugins/withAndroidNoBackup.js",
       "./plugins/withoutScreenCaptureDetectionPermissions.js",
       "./plugins/withAndroidNightColors.js",
+      "./plugins/withAndroidR8.js",
       "./plugins/withIosSceneDelegate.js",
       [
         "expo-localization",
