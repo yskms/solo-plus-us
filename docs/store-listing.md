@@ -142,6 +142,27 @@ First release.
 
 ---
 
+## リリースノート（v1.0.1 / versionCode 5）
+
+2026-10-24 に製品版へ提出した文面（段階的公開は 100%）。内容は、カレンダーからの
+記録追加と、ロック画面の端末認証ボタンの見た目の2点。
+
+```
+<en-US>
+- Add an activity to a selected day right from the Calendar tab
+- The "Unlock with device authentication" button on the lock screen now looks like a button
+</en-US>
+<ja-JP>
+・カレンダーから、選んだ日に記録を追加できるようになりました
+・ロック画面の「端末認証でロック解除」を、ボタンとして分かりやすい見た目にしました
+</ja-JP>
+```
+
+リリース名は `5 (1.0.1)`。versionCode 4 は欠番（手で 4 に上げてからビルドしたところ、
+`autoIncrement` がさらに 5 へ上げた。Play の versionCode は連番でなくてよい）。
+
+---
+
 ## Play Console 申告の記録（2026-09-24、v0.1.0 提出時）
 
 更新版を出すときに、同じ回答で通るか／変わったかを判断するための控え。
