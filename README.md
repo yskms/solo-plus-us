@@ -4242,5 +4242,47 @@ Play 版 **5 (1.0.1)** を製品版へ提出した（段階的公開 100%）。�
 - 提出前の Play Console のプレビューに「難読化解除ファイルがない」という警告が出たのは、
   R8 を使っていないため。この AAB の DEX は5ファイル合計で約 45 MB あり、10 MB を
   超える。**2027年2月から Play が DEX の難読化・最適化・縮小の各率 25% 以上を要求する
-  対象になりうる**（R8 用の plugin はまだ無く、未対応）。リリースに影響する警告ではないが、
-  次の Android 更新までに対応を検討する
+  対象になりうる**。リリースに影響する警告ではなく、1.0.1 は R8 なしのまま出した。
+  対応は次節（`feat/android-r8`）
+
+### Android R8（難読化・最適化・縮小）の有効化（2026-10-24、`feat/android-r8`）
+
+次の Android リリースで R8 を有効にするため、`plugins/withAndroidR8.js` と
+`plugins/android-r8-rules.pro` を追加し、`app.json` の plugins に登録した（Expo 57 / RN 0.86.3 の
+別アプリ retracks・singfolio で実装済みの plugin を移植。名前を変えただけで中身は singfolio 版）。
+注意点・外してはいけない設定は CLAUDE.md「Android R8」。
+
+**実測**（arm64 のみ・debug 署名の release。R8 8.12.22、`r8.json` から。全 ABI の AAB は未作成）
+
+| | 1.0.1（R8 なし） | R8 あり |
+|---|---|---|
+| DEX（非圧縮） | 約 45.6MB（5 ファイル） | 9.86MB（1 ファイル） |
+| 難読化率 | — | 81.33% |
+| 最適化率 | — | 80.79% |
+| 縮小率 | — | 81.37% |
+| AGP | 8.12.0 | 8.12.3（AAB の `androidGradlePluginVersion` で確認） |
+
+- 率は `r8.json` の `noXPercentage` を 100−X とした値（retracks で Play Console の表示と一致を確認済みの読み方）。
+  **このアプリでの Play Console の表示は未確認**（内部テストに上げていない）
+- DEX が 10MB を**わずかに下回る**ため、R8 を有効にすると 2027 年 2 月の要件の対象外になる。
+  ただし余裕は約 0.14MB で、依存を足すと 10MB を超えうる（そのときも率は各 80% 台なので要件は満たす）
+
+**エミュレータでの確認**（`Filto_API_36`、API 36・arm64、新規インストール。`FATAL EXCEPTION`・
+`has been rejected`・`NullPointerException`・`UnsatisfiedLinkError` など、すべて 0 件）
+- 起動〜オンボーディング〜 Today（暗号化 DB の open = op-sqlite の JNI 登録が R8 後も動く）
+- 記録の追加・詳細・カレンダー・Insights・Settings（Version 1.0.1 = expo-application）
+- App Lock の有効化・バックグラウンド復帰時のロック・端末 PIN での解除・無効化（expo-local-authentication）、
+  Block Screenshots / Hide App Preview の画面（expo-screen-capture）
+- JSON 書き出し（共有シートまで）、Document Picker からの JSON 読み込み（検証→「Add only new records」）、
+  全データ削除。読み込み後の「1 new activity added.」で複数形（count=1）も正しい
+- 確認のためエミュレータに PIN を一時設定し、終了後に解除した（共有 AVD を元に戻した）
+
+**未確認（次の作業）**
+- **Play の内部テストトラックでの確認**（購入が無いアプリなので、起動と主要操作でよい）と、Play Console の
+  「DEX コードの最適化」の率。**内部テストに上げた versionCode は再利用できない**
+- **`with-health-connect` ビルド（`production-with-health-connect`）の R8 入りの実行時確認**。今回は
+  `without-health-connect`（`production` と同じ。HC を Settings に出さない）だけ確認した。HC ネイティブ
+  モジュールは両ビルドにリンクされ R8 も同じように掛かるが、HC 呼び出し（権限・書き込み・削除）を
+  通したのは未実施。HC を有効にしたリリースの前に必ず確認する
+- iPhone 向けは対象外（R8 は Android のみ）
+- Pixel 11 実機での確認、全 ABI・release 署名の AAB 作成（versionCode は `autoIncrement` に任せる）

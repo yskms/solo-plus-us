@@ -454,3 +454,29 @@ VoiceOver のいずれも同じフォールバック先になる。`app/_layout.
   （`android.permission.health.*`）が無いことを毎回確認する。
 - ビルドログの `expo doctor` の「Patch version mismatches」は警告で、ビルドは
   止まらず成功する（既存の状態）。
+
+### Android R8（難読化・最適化・縮小）——`plugins/withAndroidR8.js` は外さない・簡略化しない
+
+2027年2月から、Google Play は DEX が 10MB 超のアプリに難読化・最適化・縮小の各率 25% 以上を
+求める。Expo/RN のテンプレートは R8 を使わず、このアプリの DEX は約 46MB（1.0.1）。plugin で
+R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範囲は README「Android R8 の有効化」。
+各設定が必要な理由は plugin 冒頭のコメントにある。簡略化したくなるが外さないもの：
+
+- **`proguard-android-optimize.txt` への置き換えと `plugins/android-r8-rules.pro`（Expo の注釈
+  インターフェースの keep）はセット。** 最適化を有効にして keep を外すと、Expo の Record 変換が
+  R8 に壊され、**リリースビルドだけ**で起動直後にネイティブ関数が `NullPointerException` になる
+  （debug・`tsc`・`jest` では出ない）。`-dontoptimize` へ戻して済ませない（最適化率が出ない）。
+  keep を `Field`・`Required` の2つに絞らない
+- **AGP は plugin が 8.12.3（8.12 系の最新パッチ）に指定している。** Play が `r8.json` から率を読むのは
+  「AGP 8.10 以降の最新パッチ」のときだけで、RN 固定の 8.12.0 のままだと最適化率・縮小率が `-` になる。
+  RN・Expo の更新で AGP が変わったときや 8.12.4 以降が出たときは `AGP_VERSION` を見直す
+- **`shrinkResources` は無効のまま。** 要件は DEX の率だけ。JS から `require()` した画像はリリースで
+  名前引きされ、リソース縮小に消される恐れがある（今は画像の `require()` が無いが、足したとき用の予防）
+- `org.gradle.jvmargs` の 4GB 指定を戻さない（minify で AAB に約 100MB の対応表 `proguard.map`
+  が入り、2GB だと AAB のバンドルが `Java heap space` で落ちうる）
+- **R8 の不具合はリリースの実行時にしか出ない。** Expo・RN・ライブラリ・plugin を更新したら、R8 入りの
+  release APK（arm64・debug 署名でよい。`cd android && nice -n 10 ./gradlew assembleRelease
+  -PreactNativeArchitectures=arm64-v8a`）をエミュレータへ新規インストールし、オンボーディング→記録→
+  App Lock→書き出し・読み込みまで動かして、logcat の `FATAL EXCEPTION`・`has been rejected` を探す。
+  `with-health-connect` ビルドは HC 経由の動作も確認する（2026-10-24 時点では未確認）
+- DEX は 10MB に近い（9.86MB）。依存を足して 10MB を超えると、率（各 25% 以上）が要件の対象になる
