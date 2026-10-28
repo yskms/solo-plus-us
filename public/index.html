@@ -5,6 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Solo + Us — A private log for your intimate life</title>
 <meta name="description" content="Solo + Us is a private, offline log for your intimate life. Encrypted on your device, no account, no ads.">
+<link rel="canonical" href="https://yskms.github.io/solo-plus-us/">
+<link rel="icon" type="image/png" href="./icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Solo + Us">
+<meta property="og:url" content="https://yskms.github.io/solo-plus-us/">
+<meta property="og:title" content="Solo + Us — A private log for your intimate life">
+<meta property="og:description" content="Solo + Us is a private, offline log for your intimate life. Encrypted on your device, no account, no ads.">
+<meta property="og:image" content="https://yskms.github.io/solo-plus-us/icon.png">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ja_JP">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Solo + Us — A private log for your intimate life">
+<meta name="twitter:description" content="Solo + Us is a private, offline log for your intimate life. Encrypted on your device, no account, no ads.">
+<meta name="twitter:image" content="https://yskms.github.io/solo-plus-us/icon.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MobileApplication",
+  "name": "Solo + Us",
+  "description": "Solo + Us is a private, offline log for your intimate life. Encrypted on your device, no account, no ads.",
+  "applicationCategory": "LifestyleApplication",
+  "operatingSystem": "Android",
+  "url": "https://yskms.github.io/solo-plus-us/",
+  "image": "https://yskms.github.io/solo-plus-us/icon.png",
+  "inLanguage": ["en", "ja"],
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "yskms" }
+}
+</script>
 <!--
   ストア掲載情報の「ウェブサイト」欄から開かれる紹介ページ。以前はここが
   privacy-policy.html へのリダイレクトだけだったが、ストアの当該欄はアプリの
@@ -12,6 +41,13 @@
   文面は docs/store-listing.md の掲載文と揃えてある——申告した
   コンテンツレーティング（「詳しい記述を伴わない性行為への言及」）より
   踏み込んだ表現をここに書かないこと。配色は privacy-policy.html と共通。
+
+  iOS は App Review で却下中（Guideline 1.1、docs/app-store-listing.md）で、Apple は
+  マーケティングの語句を指摘している。決着するまで、この頁の title・description・
+  本文は新しく書き足さず、言い換えもしない。og・JSON-LD の description は、上の
+  description をそのまま写したもの（掲載文を直したら、ここも一緒に直すこと）。
+  App Store のリンクと日本語の別ページ（/ja/）は、決着して文面が定まってから足す
+  （operatingSystem も、iOS が公開されたら "iOS, Android" にする）。
 -->
 <style>
   :root {
@@ -55,6 +91,8 @@
   h1 { font-size: 1.75rem; margin: 16px 0 6px; }
   .tagline { color: var(--text-muted); margin: 0; }
   .tagline + .tagline { margin-top: 2px; }
+  nav.badges { margin-top: 24px; }
+  nav.badges img { display: block; margin: 0 auto; height: 60px; }
   nav.links {
     display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
     margin-top: 24px;
@@ -112,6 +150,9 @@
     <h1>Solo + Us</h1>
     <p class="tagline">A private log for your intimate life.</p>
     <p class="tagline">性の記録を、自分だけのものに。</p>
+    <nav class="badges" aria-label="Get the app">
+      <a href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="60" alt="Get it on Google Play"></a>
+    </nav>
     <nav class="links">
       <a href="./privacy-policy.html">Privacy Policy / プライバシーポリシー</a>
       <a href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">Support / お問い合わせ</a>
