@@ -163,6 +163,26 @@ First release.
 
 ---
 
+## リリースノート（v1.0.2 / versionCode 6）
+
+R8（難読化・最適化・縮小）を有効にしたビルド。利用者に見える機能の変更は無い（DEX は
+約 46MB → 約 9.9MB。AAB のファイルサイズは 96.1MB → 91.9MB。端末ごとのダウンロードサイズは
+Play Console のプレビューで確認する。詳細は README「Android R8 の有効化」）。
+文面は内部処理の最適化だけを書く（価格・宣伝を示す語は入れない）。
+
+```
+<en-US>
+- Made the app smaller and optimized its internal processing
+</en-US>
+<ja-JP>
+・アプリのサイズを小さくし、内部処理を最適化しました
+</ja-JP>
+```
+
+リリース名は `6 (1.0.2)`。
+
+---
+
 ## Play Console 申告の記録（2026-09-24、v0.1.0 提出時）
 
 更新版を出すときに、同じ回答で通るか／変わったかを判断するための控え。

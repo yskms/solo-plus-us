@@ -55,3 +55,6 @@ exports/
 *.ipa
 *.apk
 *.aab
+
+# ローカル専用の保管物（R8 の proguard.map など。コミットしない）
+docs/_local/

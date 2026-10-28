@@ -4285,4 +4285,24 @@ Play 版 **5 (1.0.1)** を製品版へ提出した（段階的公開 100%）。�
   モジュールは両ビルドにリンクされ R8 も同じように掛かるが、HC 呼び出し（権限・書き込み・削除）を
   通したのは未実施。HC を有効にしたリリースの前に必ず確認する
 - iPhone 向けは対象外（R8 は Android のみ）
-- Pixel 11 実機での確認、全 ABI・release 署名の AAB 作成（versionCode は `autoIncrement` に任せる）
+- Pixel 11 実機での確認（全 ABI・release 署名の AAB は作成済み。下の「Play 向け AAB」）
+
+**Play 向け AAB（2026-10-28、versionCode 6 / versionName 1.0.2、未提出）**
+
+Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas build --local -p android --profile production`
+でビルドした（`main` へは未マージ。versionName は利用者の判断で 1.0.2 に上げた）。
+
+- `app.json`: `version` 1.0.1→1.0.2、`android.versionCode` 5→6（`autoIncrement` が加算）
+- AAB の確認: versionCode 6・versionName 1.0.2、4 つの ABI（arm64-v8a・armeabi-v7a・x86・x86_64）、
+  AGP 8.12.3・R8 8.12.22、DEX 1 ファイル 9,855,832 バイトで **チェックサムがエミュレータで動作確認した
+  ビルドと同一**（`36946eda…`。つまり確認した DEX がそのまま入っている）。率は難読化 81.33%・最適化
+  80.79%・縮小 81.37%。権限は `INTERNET`・`USE_BIOMETRIC`・`USE_FINGERPRINT`・`VIBRATE` のみで
+  `android.permission.health.*` は無い。署名のSHA-256は `AF:5D:C2:49:…:C0:10:36`
+  （Play Console の「アプリの署名」のアップロード鍵と見比べる。違う鍵なら Play が受け付けない）
+- AAB のサイズは 96.1MB（1.0.1）→ 91.9MB
+- `proguard.map` は `docs/_local/mapping/1.0.2-vc6/mapping.txt.gz`（gitignore 済み）へ保管。Play Console にも
+  AAB から自動で渡る
+- リリースノートは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.2 / versionCode 6）」
+- 次: Play の内部テストへ上げて起動・主要操作と Console の「DEX コードの最適化」の率を確認してから製品版へ。
+  **内部テストに上げた versionCode は再利用できない**
+- 注意: `expo.version` は iOS と共通。次の iOS ビルドは 1.0.2 になる（iOS は 1.0.0 (4) のまま却下の返信待ち）
