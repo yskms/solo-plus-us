@@ -4243,9 +4243,9 @@ Play 版 **5 (1.0.1)** を製品版へ提出した（段階的公開 100%）。�
   R8 を使っていないため。この AAB の DEX は5ファイル合計で約 45 MB あり、10 MB を
   超える。**2027年2月から Play が DEX の難読化・最適化・縮小の各率 25% 以上を要求する
   対象になりうる**。リリースに影響する警告ではなく、1.0.1 は R8 なしのまま出した。
-  対応は次節（`feat/android-r8`）
+  対応は次節
 
-### Android R8（難読化・最適化・縮小）の有効化（2026-10-24、`feat/android-r8`）
+### Android R8（難読化・最適化・縮小）の有効化（2026-10-24 実装、2026-10-28 に `main` へマージ）
 
 次の Android リリースで R8 を有効にするため、`plugins/withAndroidR8.js` と
 `plugins/android-r8-rules.pro` を追加し、`app.json` の plugins に登録した（Expo 57 / RN 0.86.3 の
@@ -4292,10 +4292,12 @@ Play 版 **5 (1.0.1)** を製品版へ提出した（段階的公開 100%）。�
 - iPhone 向けは対象外（R8 は Android のみ）
 - Pixel 11 実機での確認（全 ABI・release 署名の AAB は作成済み。下の「Play 向け AAB」）
 
-**Play 向け AAB（2026-10-28、versionCode 6 / versionName 1.0.2、未提出）**
+**Play 向け AAB（2026-10-28、versionCode 6 / versionName 1.0.2、審査へ提出済み）**
 
 Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas build --local -p android --profile production`
-でビルドした（`main` へは未マージ。versionName は利用者の判断で 1.0.2 に上げた）。
+でビルドした（versionName は利用者の判断で 1.0.2 に上げた）。同日、Console のバンドル詳細（率 81/81/81%・
+評価「高」・DEX 9.86MB・権限 7 個＝uses-permission 6＋自前の `<permission>` 1）を見て審査へ提出した
+（利用者の報告）。`feat/android-r8` は同日 `main` へ `--ff-only` でマージ・push 済みで、AAB は削除した
 
 - `app.json`: `version` 1.0.1→1.0.2、`android.versionCode` 5→6（`autoIncrement` が加算）
 - AAB の確認: versionCode 6・versionName 1.0.2、4 つの ABI（arm64-v8a・armeabi-v7a・x86・x86_64）、
@@ -4308,6 +4310,5 @@ Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas buil
 - `proguard.map` は `docs/_local/mapping/1.0.2-vc6/mapping.txt.gz`（gitignore 済み）へ保管。Play Console にも
   AAB から自動で渡る
 - リリースノートは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.2 / versionCode 6）」
-- 次: Play の内部テストへ上げて起動・主要操作と Console の「DEX コードの最適化」の率を確認してから製品版へ。
-  **内部テストに上げた versionCode は再利用できない**
+- 審査が通ったら、Console の「DEX コードの最適化」の率が上記のとおりか、Android vitals に警告が出ていないかを見る
 - 注意: `expo.version` は iOS と共通。次の iOS ビルドは 1.0.2 になる（iOS は 1.0.0 (4) のまま却下の返信待ち）
