@@ -359,6 +359,24 @@ Apple の Individual（個人）アカウントでは、App Store のストア�
 Google Play の表示名に合わせた `yskms.studio` のままでよい（ストアの実名表示との
 差異も問題にしない）。
 
+### 紹介ページ（`public/index.html`）——審査が決着するまで文面を足さない。HTML コメントに審査の事情を書かない
+
+このページは Play のストア掲載情報の「ウェブサイト」欄であり、App Store Connect の
+「サポート URL」でもある。HTML コメントはそのまま配信されて誰でもソースで読めるので、
+**審査の状況・Apple の指摘・判断の経緯をコメントに書かない**（2026-10-29 に、書いてあった
+のを公開後に見つけて移した。経緯と判断は `docs/app-store-listing.md` の
+「紹介ページとサポート URL」の節）。
+
+- iOS が App Review で却下中（Guideline 1.1）の間は、title・description・本文を新しく
+  書き足さず、言い換えない。申告したコンテンツレーティング（「詳しい記述を伴わない
+  性行為への言及」）より踏み込んだ表現も書かない。文面は `docs/store-listing.md` の
+  掲載文と揃える
+- App Store のリンクと日本語の別ページ（`/ja/`）は、決着して文面が定まってから足す。
+  JSON-LD の `operatingSystem` も、iOS が公開されたら `"iOS, Android"` にする
+- og・JSON-LD の description は meta description と同じ文にしておく（片方だけ直さない）
+- Google Play のバッジは載せたままでよい（ユーザーが許容済み。理由と、外す条件は
+  `docs/app-store-listing.md`）
+
 ### 多言語対応（i18n）——`lib/` は `t` を引数で受け取る、`t()` のキーに厳密な型は付けていない
 
 日本語 + 英語対応（`i18next`/`react-i18next`）を実装済み（設計判断記録 D-53、

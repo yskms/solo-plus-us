@@ -303,3 +303,21 @@ documentation for encryption」）に基づく判断**——Apple 側の扱い�
   明記）とも食い違う。意味は変えず、表現だけ穏やかにする
 - 「App Store 版を正本にして Play 版が追従する」関係（store-listing.md 冒頭）のため、
   掲載文を直したら Play Console の掲載情報にも反映する
+
+### 紹介ページとサポート URL（2026-10-29 の判断）
+
+`public/index.html`（`https://yskms.github.io/solo-plus-us/`）は、Play のストア掲載情報の
+「ウェブサイト」欄であり、App Store Connect の「サポート URL」でもある。
+
+- **文面を触らない**：Apple がマーケティングの語句を指摘しているので、決着するまで
+  title・description・本文を書き足さず、言い換えない。og・JSON-LD の description は、
+  meta description をそのまま写したもの
+- **App Store のリンクと `/ja/` は足さない**：決着して文面が定まってから足す。JSON-LD の
+  `operatingSystem` は `Android` のままで、iOS が公開されたら `"iOS, Android"` にする
+- **Google Play のバッジは、審査中でも載せたままにする**（ユーザーが判断。2026-10-29）。
+  RE:TR4CKS の紹介ページ（iOS のサポート・マーケティング URL）も、App Store・Google Play の
+  両バッジを載せたまま iOS 1.1.1・1.2.0 が公開されているため。**Apple が他プラットフォームの
+  表示（Guideline 2.3.10）を指摘したら、このバッジを外す**
+- **これらの事情を HTML コメントに書かない**：コメントは配信されて誰でも読める。上の判断は
+  いったん HTML コメントに書いて公開した（`b2f0c59` の公開から、この修正の公開まで）が、
+  サポート URL のページに出す必要は無いので、CLAUDE.md の「紹介ページ」の節と、この節へ移した
