@@ -359,7 +359,7 @@ Apple の Individual（個人）アカウントでは、App Store のストア�
 Google Play の表示名に合わせた `yskms.studio` のままでよい（ストアの実名表示との
 差異も問題にしない）。
 
-### 紹介ページ（`public/index.html`）——審査が決着するまで文面を足さない。HTML コメントに審査の事情を書かない
+### 紹介ページ（`public/index.html`）: ルートは Android 用。iOS 用の別 URL に切り替えるまで文面を変えない。HTML コメントに審査の事情を書かない
 
 このページは Play のストア掲載情報の「ウェブサイト」欄であり、App Store Connect の
 「サポート URL」でもある。HTML コメントはそのまま配信されて誰でもソースで読めるので、
@@ -367,12 +367,18 @@ Google Play の表示名に合わせた `yskms.studio` のままでよい（ス�
 のを公開後に見つけて移した。経緯と判断は `docs/app-store-listing.md` の
 「紹介ページとサポート URL」の節）。
 
-- iOS が App Review で却下中（Guideline 1.1）の間は、title・description・本文を新しく
-  書き足さず、言い換えない。申告したコンテンツレーティング（「詳しい記述を伴わない
-  性行為への言及」）より踏み込んだ表現も書かない。文面は `docs/store-listing.md` の
-  掲載文と揃える
-- App Store のリンクと日本語の別ページ（`/ja/`）は、決着して文面が定まってから足す。
-  JSON-LD の `operatingSystem` も、iOS が公開されたら `"iOS, Android"` にする
+- **2026-10-31 の決定：このアプリは Android が主。ルート（`/solo-plus-us/`）は Android 用に
+  し、文面は性行為・自慰行為を名指しで書く**（`docs/store-listing.md` の Play の掲載文と
+  揃える）。iOS 用は別 URL（予定 `/ios/`）。**順序：① `/ios/` を今のルートと同じ文面で
+  公開 → ② App Store Connect のサポート URL を `/ios/` に切り替え → ③ ルートの文面を変える。
+  ①②が済むまで、ルートの title・description・本文を変えない**（ルートは、却下中の iOS 版の
+  サポート URL を兼ねているため）。理由と手順は `docs/app-store-listing.md` の
+  「紹介ページの URL を分ける」
+- 申告したコンテンツレーティング（「詳しい記述を伴わない性行為への言及」）より踏み込んだ
+  表現（描写・画像）は書かない
+- Android 用の日本語ページ（`/ja/`）は、③のあとに作ってよい。App Store のリンクは `/ios/` に、
+  iOS が公開されてから足す。JSON-LD の `operatingSystem` も、iOS が公開されたら
+  `"iOS, Android"` にする
 - og・JSON-LD の description は meta description と同じ文にしておく（片方だけ直さない）
 - Google Play のバッジは載せたままでよい（ユーザーが許容済み。理由と、外す条件は
   `docs/app-store-listing.md`）

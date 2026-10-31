@@ -9,11 +9,12 @@ without ビルドにもリンクされたまま残る（CLAUDE.md「リリース
 承認後の v1.0.x で有効化する際に、掲載情報・Health apps declaration・
 データセーフティを同時に更新する。
 
-**詳しい説明の文面は App Store 版（[app-store-listing.md](app-store-listing.md)）を
-正本とし、共通する箇所はそちらに追従させる**（2026-10-01、App Store 版のレビューで
-直した言い回し——「端末でだけ開かれる」の言い切り、「ソロかパートナーとを」、
-「追加の費用もかからない」など——を反映。Play Console の掲載情報への反映は、
-次に掲載情報を更新するときに行う）。
+**Play 版の文面は、App Store 版（[app-store-listing.md](app-store-listing.md)）から
+独立している**（2026-10-31 に決定。それまでは App Store 版を正本として Play 版が
+追従していたが、このアプリは Android が主で、iOS の審査の結果を待たずに Play の
+掲載文を決めるため、この関係をやめた）。App Store 版の文面を直しても Play 版には
+反映しない。逆も同じ。Play の文面をどう決めたかは、下の「書くときに守ったこと」と
+「2026-10-31 の文面変更」、yskms-marketing の `docs/solo-plus-us-promotion.md`。
 
 ---
 
@@ -27,16 +28,21 @@ Solo + Us
 
 ### 簡単な説明（80文字以内）
 
+**2026-10-31 に文面を変更した。Play Console への反映は未**（反映したら日付をここに書く）。
+
 ```
-A private, offline log for your intimate life. Encrypted, no account needed.
+Private sex and self-pleasure log. Offline, encrypted, no account needed.
 ```
 
-（76文字。当初は末尾が「no account, no ads.」だったが、Play Console の簡単な説明で「価格やプロモーションを示すキーワードを使用しないでください」の警告が出たため、2026-10-08 に "no ads" を外した。差し替えた変更が公開された後、警告は消えた（2026-10-18 確認）。簡単な説明で変えたのは "no ads" の削除だけなので、原因は "no ads" とみてよい）
+（73文字。変更前は「A private, offline log for your intimate life. Encrypted, no account needed.」で76文字。その前の経緯：当初は末尾が「no account, no ads.」だったが、Play Console の簡単な説明で「価格やプロモーションを示すキーワードを使用しないでください」の警告が出たため、2026-10-08 に "no ads" を外した。差し替えた変更が公開された後、警告は消えた（2026-10-18 確認）。簡単な説明で変えたのは "no ads" の削除だけなので、原因は "no ads" とみてよい）
 
 ### 詳しい説明（4000文字以内）
 
+**2026-10-31 に、冒頭の1文と詳細項目の列挙（orgasm を追加）を変更した。Play Console への反映は未。**
+変更前の冒頭は「Solo + Us is a private log for your intimate life — solo and partnered alike.」。
+
 ```
-Solo + Us is a private log for your intimate life — solo and partnered alike.
+Solo + Us is a private log for sex and self-pleasure, whether you are on your own or with a partner.
 
 Everything stays on your device. There is no account to create, no server to sync with, and no advertising. Your records are stored locally in an encrypted database.
 
@@ -44,7 +50,7 @@ RECORD IN SECONDS
 Open the app and tap once for Solo or Partnered. If you tap by mistake, you can undo it immediately. Recorded the wrong day or time? You can change it afterwards.
 
 TRACK ONLY WHAT YOU WANT
-Details are always optional and never asked for while recording. Turn on just the ones you care about — protection, duration, mood before and after, and a free-text note — and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
+Details are always optional and never asked for while recording. Turn on just the ones you care about (protection, orgasm, duration, mood before and after, and a free-text note) and add them later, on the days you want to. You can also set a default value so a detail is filled in for you.
 
 SEE YOUR PATTERNS
 Today shows this month at a glance, with a solo and partnered breakdown and your most recent entries. Calendar gives you a month view and the entries for any day. Summary shows your totals, the solo/partnered split, and your average interval between entries.
@@ -74,16 +80,21 @@ Solo + Us
 
 ### 簡単な説明（80文字以内）
 
+**2026-10-31 に文面を変更した。Play Console への反映は未**（反映したら日付をここに書く）。
+
 ```
-性の記録を、自分だけのものに。端末内で暗号化。アカウント登録も広告もなし。
+性行為・自慰行為の記録アプリ。端末内で暗号化、アカウント登録は不要。
 ```
 
-（37文字。「広告もなし」を含むが、2026-10-08 時点で Play Console の警告は出ていない——en の簡単な説明だけが指摘された）
+（34文字。変更前は「性の記録を、自分だけのものに。端末内で暗号化。アカウント登録も広告もなし。」で37文字。変更前は「広告もなし」を含んだが、2026-10-08 時点で Play Console の警告は出ていない。en の簡単な説明だけが指摘された。今回は、費用・広告の有無を売りにする語を簡単な説明に入れない方針に揃えて外した）
 
 ### 詳しい説明（4000文字以内）
 
+**2026-10-31 に、冒頭の1文と詳細項目の列挙（オーガズムを追加）を変更した。Play Console への反映は未。**
+変更前の冒頭は「Solo + Us は、ひとりの時間もふたりの時間も記録できる、自分だけの記録アプリです。」。
+
 ```
-Solo + Us は、ひとりの時間もふたりの時間も記録できる、自分だけの記録アプリです。
+Solo + Us は、性行為と自慰行為を記録するアプリです。パートナーとの時間も、ひとりの時間も、自分だけの記録として残せます。
 
 データはすべて端末の中に保存されます。アカウント登録は不要で、サーバーとの同期もなく、広告もありません。記録は端末内の暗号化されたデータベースに保存されます。
 
@@ -91,7 +102,7 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 アプリを開いて、「ソロ」か「パートナーと」を選ぶだけ。間違えて押しても、その場で取り消せます。日時を間違えたときは、あとから変更できます。
 
 記録する項目は自分で選ぶ
-詳細項目の入力は常に任意で、記録のときに尋ねられることはありません。避妊、所要時間、前後の気分、自由記入のメモなどから、気になるものだけをオンにして、記録したい日にだけ書き足せます。既定値を設定して、自動で入力させることもできます。
+詳細項目の入力は常に任意で、記録のときに尋ねられることはありません。避妊、オーガズム、所要時間、前後の気分、自由記入のメモなどから、気になるものだけをオンにして、記録したい日にだけ書き足せます。既定値を設定して、自動で入力させることもできます。
 
 記録を振り返る
 「今日」では今月の件数と、ソロ / パートナーとの内訳、直近の記録をひと目で確認できます。「カレンダー」では月表示と、その日の記録の一覧が見られます。「サマリー」では合計、内訳、記録と記録の平均間隔が分かります。
@@ -108,6 +119,28 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 
 日本語と英語に対応しています。
 ```
+
+---
+
+## 2026-10-31 の文面変更（Play Console への反映待ち）
+
+上の en-US・ja-JP の簡単な説明と詳しい説明が、反映する文面。アプリの更新（新しい AAB）は要らない。
+反映するときの手順と、反映後に見ること：
+
+1. **反映の前に、Console の数字を記録する**（基準値は yskms-marketing の
+   `docs/solo-plus-us-promotion.md`。2026-10-31 時点は、過去90日でデバイスインプレッション
+   3150、デバイス獲得 1、コンバージョン率 10%）。反映した日を、この節と上の各見出しに書く
+2. 「ストアの掲載情報」の en-US と ja-JP で、簡単な説明と詳しい説明を貼り替え、「公開の
+   概要」から審査に送る
+3. **健康アプリ申告とコンテンツレーティングの回答を見直す。** 記録の対象は変わらない
+   ので変更不要の見込みだが、掲載文が直接的になった分、申告（「性と生殖に関する健康」＋
+   「その他」、「詳しい記述を伴わない性行為への言及」）との不整合を指摘されないかを確認する。
+   2026-10-01 に、掲載文と申告のずれで否承認された前例がある
+4. 反映後に見ること：審査の結果、「公開の概要」の指摘、簡単な説明の警告（英語。公開された
+   後に出る・消える。前例は上の「書くときに守ったこと」）。指摘が出たら、どの語かを特定
+   して戻す。結果はこの節に書く
+
+反映の結果：（未反映）
 
 ---
 
@@ -244,12 +277,23 @@ Play Console のプレビューで確認する。詳細は README「Android R8 �
 
 ### 書くときに守ったこと
 
-- **一般ユーザー向けの表現にした**——機能説明に必要な範囲を超えて、性的に露骨な
-  用語や描写を載せない。**詳細項目の個別名（orgasm / ejaculation / オーガズム /
-  射精）は、正確ではあるが掲載文からは外した**（レビュー指摘、2026-09-23）。
-  Play はストア掲載情報のテキストも審査対象にしており、機能名として正確でも
-  性的キーワードとして拾われうる。全項目はアプリ内で確認できるため、本文で
-  列挙する必要はない
+- **2026-10-31 に方針を変えた。性行為・自慰行為は名指しで書く。** 変更前は、機能説明に
+  必要な範囲を超えて露骨な用語を載せない方針で、「intimate life」「性の記録」とぼかし、
+  詳細項目の個別名（orgasm / ejaculation / オーガズム / 射精）も外していた（レビュー指摘、
+  2026-09-23）。変えた理由は、ぼかした文面では何のアプリか伝わらないことと、公開
+  （2026-10-08 頃）から約3週間の Console の実績（デバイスインプレッション 3150、
+  獲得 1）、同種のアプリの実態の調査（yskms-marketing の `docs/solo-plus-us-promotion.md`）。
+  方針の要点：
+  - 「sex」「性行為」「セックス」は、同種のアプリが名前と簡単な説明に使っている
+    （100K+ が複数）。「orgasm / オーガズム」も、機能名として詳しい説明に書く例が複数ある
+  - 英語の「masturbation」は、定着したアプリは使っておらず（前例があるのは「Self
+    Pleasure」）、「射精 / ejaculation」は調べた18本のどこにも無い。**この2つは今回も
+    書かない。入れるなら別の更新にする**（1回の更新で変えるのは1つまで）
+  - 日本語は「性行為」「自慰行為」を使う（「セックス」「オナニー」より硬く、露骨さが
+    やわらぐ）。英語は「sex」「self-pleasure」を使う
+  - ポリシー原文（Sexual Content and Profanity）は、掲載情報の「explicit text, or
+    adult/sexual keywords」を禁じている。**前例があることは、警告が出ないことの保証では
+    ない。** 反映後の審査結果を記録し、指摘が出たら戻す
 - **医療上の診断・治療・改善効果を主張していない**——本アプリは医療機器ではなく、
   記録内容に基づく医療上の判断や助言も行わない
 - **実装していないことを書いていない**——同期・共有・パートナーとの共同利用・
