@@ -358,6 +358,6 @@ canonical・og:url は `/ios/`）→ ② ユーザーが App Store Connect の�
   は、ルートが iOS のサポート URL を兼ねていたための制約だった。未作成）
 - App Store のリンクは `/ios/` に、iOS が公開されてから足す。ルートには足さない
 - sitemap と、ハブ（`yskms.github.io`）からのリンクは、新しいページを足す前に必ず見直す
-  （yskms-marketing の `docs/site-plan.md`）。ハブのカードの説明は、英語「Private wellness」・
-  日本語「プライベートなウェルネス記録」のままで、リンク先（ルート）の文面とずれている
-  （2026-10-31 時点。直すかは未決）
+  （yskms-marketing の `docs/site-plan.md`）。ハブのカードの説明は、2026-10-31 に、ルートの文面に
+  合わせて直した（`yskms.github.io` の `0d364fd`。英語「Private sex and self-pleasure log」、
+  日本語「性行為・自慰行為の記録」）
