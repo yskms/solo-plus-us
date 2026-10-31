@@ -349,6 +349,11 @@ Play 版 v1.0（versionCode 2）は、アプリ内アイコンを Expo 既定の
 ランチャーアイコンを掲載情報の画像と見比べる。詳細は
 `docs/store-listing.md` の「Play Console 申告の記録」。
 
+**Play のストアの名前は、端末上のアプリ名「Solo + Us」（`app.json` の `name`）と意図的に違う**
+（en「Solo + Us: Sex Tracker」、ja「Solo + Us: 性行為・自慰行為の記録」。2026-10-31 に決定。
+先頭は一致している）。上の 2026-10-06 の却下は、原因がアプリ内アイコンで、名前ではなかった。
+名前をそろえようとして `app.json` の `name` を変えたり、ストアの名前を戻したりしない。
+
 ### App Store での実名表示は許容済み（既決事項——リスクとして再提起しない）
 
 Apple の Individual（個人）アカウントでは、App Store のストアページに法的氏名
