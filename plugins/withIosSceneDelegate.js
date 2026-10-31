@@ -7,13 +7,15 @@ const path = require('path');
 // Apple: WWDC25で「iOS 26の次のリリース以降、最新SDKでビルドしたUIKitアプリは
 // UISceneライフサイクル必須」と予告済みの仕様変更）。
 //
-// Expo 57 / React Native 0.86時点ではExpo・RN本体ともに公式のシーン対応が
-// 未実装。そのためios/ が `expo prebuild` の自動生成物であることを踏まえ、
-// config plugin として恒久的にAppDelegate/SceneDelegateへ手動でシーン対応を注入している。
-// filto-app リポジトリの同名プラグインを移植したもの（2026-09-30）。
+// 作成時（2026-09-30）は、Expo・RN本体に公式のシーン対応が無かった。そのため、
+// ios/ が `expo prebuild` の自動生成物であることを踏まえ、config plugin として
+// AppDelegate/SceneDelegateへ手動でシーン対応を注入している。
+// filto-app リポジトリの同名プラグインを移植したもの。
 //
-// Expoが公式にUIScene対応した場合は、このプラグインとSceneDelegate.swiftを撤去し、
-// 公式の仕組みに乗り換えること。詳細: CLAUDE.md「iOS 27 (UIScene) 対応」
+// その後、公式の手段が入った（expo 57.0.23以上と、expo-build-properties の
+// `ios.enableSceneSupport: true`）。このプロジェクトは、まだ乗り換えていない。
+// 乗り換えるときは、併用できないので、このプラグインと app.json の登録を先に外す。
+// 詳細: CLAUDE.md「iOS 27 (UIScene) 対応」
 //
 // 【メモ】AppDelegateのwindow生成・factory.startReactNative呼び出しは、元のまま
 // (didFinishLaunchingWithOptions内)残している。テンプレートの作りを変えない方針による。
