@@ -162,8 +162,8 @@ Solo + Us は、ひとりの時間もふたりの時間も記録できる、自�
 
 | 項目 | 内容 |
 |---|---|
-| サポート URL | https://yskms.github.io/solo-plus-us/ |
-| マーケティング URL | （空欄でよい） |
+| サポート URL | https://yskms.github.io/solo-plus-us/ios/ （2026-10-31 に、ルートから切り替えた。日本語のローカライズも同じ） |
+| マーケティング URL | https://yskms.github.io/solo-plus-us/ios/ （2026-10-31 にユーザーが入力。日本語のローカライズも同じ） |
 | プライバシーポリシー URL | https://yskms.github.io/solo-plus-us/privacy-policy.html |
 | 著作権 | `2026 yskms`（他の自分の iOS アプリと表記を揃える。販売元の実名表示とは別欄で、一致させる必要はない） |
 | プライマリカテゴリ | ライフスタイル（Play 版と同じ判断） |
@@ -311,8 +311,12 @@ documentation for encryption」）に基づく判断**——Apple 側の扱い�
 
 ### 紹介ページとサポート URL（2026-10-29 の判断）
 
-`public/index.html`（`https://yskms.github.io/solo-plus-us/`）は、Play のストア掲載情報の
-「ウェブサイト」欄であり、App Store Connect の「サポート URL」でもある。
+※ 2026-10-31 に URL を分けた（次の節）。以下の「文面を触らない」などの制約は、今は
+**`public/ios/index.html`（`/solo-plus-us/ios/`）にかかる**。ルート（`public/index.html`）は
+Android 用で、制約の対象ではない。
+
+2026-10-29 の時点では、`public/index.html`（`https://yskms.github.io/solo-plus-us/`）が、
+Play のストア掲載情報の「ウェブサイト」欄であり、App Store Connect の「サポート URL」でもあった。
 
 - **文面を触らない**：Apple がマーケティングの語句を指摘しているので、決着するまで
   title・description・本文を書き足さず、言い換えない。og・JSON-LD の description は、
@@ -330,19 +334,30 @@ documentation for encryption」）に基づく判断**——Apple 側の扱い�
 ### 紹介ページの URL を分ける（2026-10-31 の決定）
 
 このアプリは Android が主なので、ルート（`/solo-plus-us/`）を Android 用にし、iOS 用に別の
-URL（予定：`/solo-plus-us/ios/`）を作る。ルートは Play の「ウェブサイト」欄、iOS 用は
-App Store Connect の「サポート URL」に使う。プライバシーポリシー
+URL（`/solo-plus-us/ios/`）を作った。ルートは Play の「ウェブサイト」欄、iOS 用は
+App Store Connect の「サポート URL」と「マーケティング URL」に使う。プライバシーポリシー
 （`/solo-plus-us/privacy-policy.html`）は共有のまま動かさない。
 
-- **順序を守る。** ルートは今、却下中の iOS 版のサポート URL を兼ねている。ルートの文面を
-  先に変えると、iOS のサポート URL の中身が変わってしまう。
+**実施の記録（2026-10-31）。** ① `/ios/` を公開（`1bdb7a0`。Deploy Pages 成功、200、
+canonical・og:url は `/ios/`）→ ② ユーザーが App Store Connect の、却下中のバージョンの
+サポート URL とマーケティング URL（日本語のローカライズも）を `/ios/` に変更 →
+③ ルートを Android 用の文面に変更（`05ef332`。Deploy Pages 成功、200。title は
+「Solo + Us: Sex Tracker - Private sex and self-pleasure log」）。`/ios/` の title・description は
+従来の文面（「A private log for your intimate life」）のまま。sitemap（ハブの
+`yskms.github.io/sitemap.xml`）には `/solo-plus-us/` だけが載っていて、`/ios/` は載せていない
+（サポート用のページなので、載せなくてよい）。
+
+- **順序を守った（済）。** ルートは、却下中の iOS 版のサポート URL を兼ねていた。ルートの文面を
+  先に変えると、iOS のサポート URL の中身が変わってしまうため。
   ① `/ios/` を、今のルートと同じ文面で作って公開する（canonical は `/ios/` 自身にする）
   → ② App Store Connect の、却下中のバージョンのサポート URL を `/ios/` に変える
   → ③ ルートの文面を Android 用に変える（性行為・自慰行為を名指しで書く。
   `docs/store-listing.md` の Play の掲載文と揃える）。①②が済むまで、ルートの title・
   description・本文は変えない
-- Android 用の日本語ページ（`/ja/`）は、③のあとに作ってよい（以前の「iOS が決着するまで作らない」
-  は、ルートが iOS のサポート URL を兼ねていたための制約だった）
+- Android 用の日本語ページ（`/ja/`）は、作ってよい（以前の「iOS が決着するまで作らない」
+  は、ルートが iOS のサポート URL を兼ねていたための制約だった。未作成）
 - App Store のリンクは `/ios/` に、iOS が公開されてから足す。ルートには足さない
 - sitemap と、ハブ（`yskms.github.io`）からのリンクは、新しいページを足す前に必ず見直す
-  （yskms-marketing の `docs/site-plan.md`）
+  （yskms-marketing の `docs/site-plan.md`）。ハブのカードの説明は、英語「Private wellness」・
+  日本語「プライベートなウェルネス記録」のままで、リンク先（ルート）の文面とずれている
+  （2026-10-31 時点。直すかは未決）

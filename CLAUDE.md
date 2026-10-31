@@ -364,28 +364,26 @@ Apple の Individual（個人）アカウントでは、App Store のストア�
 Google Play の表示名に合わせた `yskms.studio` のままでよい（ストアの実名表示との
 差異も問題にしない）。
 
-### 紹介ページ（`public/index.html`）: ルートは Android 用。iOS 用の別 URL に切り替えるまで文面を変えない。HTML コメントに審査の事情を書かない
+### 紹介ページ: ルート（`public/index.html`）は Android 用、`/ios/`（`public/ios/index.html`）は iOS 用。`/ios/` の文面は Apple の決着まで変えない。HTML コメントに審査の事情を書かない
 
-このページは Play のストア掲載情報の「ウェブサイト」欄であり、App Store Connect の
-「サポート URL」でもある。HTML コメントはそのまま配信されて誰でもソースで読めるので、
-**審査の状況・Apple の指摘・判断の経緯をコメントに書かない**（2026-10-29 に、書いてあった
-のを公開後に見つけて移した。経緯と判断は `docs/app-store-listing.md` の
-「紹介ページとサポート URL」の節）。
+ルート（`/solo-plus-us/`）は Play のストア掲載情報の「ウェブサイト」欄。`/solo-plus-us/ios/` は
+App Store Connect の「サポート URL」と「マーケティング URL」（日本語のローカライズも）。
+HTML コメントはそのまま配信されて誰でもソースで読めるので、**審査の状況・Apple の指摘・
+判断の経緯をコメントに書かない**（2026-10-29 に、書いてあったのを公開後に見つけて移した。
+経緯と判断は `docs/app-store-listing.md` の「紹介ページとサポート URL」の節）。
 
-- **2026-10-31 の決定：このアプリは Android が主。ルート（`/solo-plus-us/`）は Android 用に
-  し、文面は性行為・自慰行為を名指しで書く**（`docs/store-listing.md` の Play の掲載文と
-  揃える）。iOS 用は別 URL（予定 `/ios/`）。**順序：① `/ios/` を今のルートと同じ文面で
-  公開 → ② App Store Connect のサポート URL を `/ios/` に切り替え → ③ ルートの文面を変える。
-  ①②が済むまで、ルートの title・description・本文を変えない**（ルートは、却下中の iOS 版の
-  サポート URL を兼ねているため）。理由と手順は `docs/app-store-listing.md` の
-  「紹介ページの URL を分ける」
+- **2026-10-31 に URL を分けた**（このアプリは Android が主）。ルートは性行為・自慰行為を
+  名指しで書く（`docs/store-listing.md` の Play の掲載文と揃える）。**`/ios/` は、Apple が
+  指摘中の文面（名指しをしない「intimate life」の言い方）のまま。Apple の決着まで、
+  title・description・本文を書き足さず、言い換えない。ルートの名指しの文面を `/ios/` へ
+  写さない。** 手順と理由は `docs/app-store-listing.md` の「紹介ページの URL を分ける」
 - 申告したコンテンツレーティング（「詳しい記述を伴わない性行為への言及」）より踏み込んだ
   表現（描写・画像）は書かない
-- Android 用の日本語ページ（`/ja/`）は、③のあとに作ってよい。App Store のリンクは `/ios/` に、
-  iOS が公開されてから足す。JSON-LD の `operatingSystem` も、iOS が公開されたら
-  `"iOS, Android"` にする
-- og・JSON-LD の description は meta description と同じ文にしておく（片方だけ直さない）
-- Google Play のバッジは載せたままでよい（ユーザーが許容済み。理由と、外す条件は
+- Android 用の日本語ページ（`/ja/`）は作ってよい。App Store のリンクと、JSON-LD の
+  `operatingSystem` の `"iOS, Android"` は、iOS が公開されてから `/ios/` に足す（ルートには足さない）
+- og・JSON-LD の description は meta description と同じ文にしておく（両ページとも、片方だけ
+  直さない）
+- Google Play のバッジは `/ios/` にも載せたままでよい（ユーザーが許容済み。理由と、外す条件は
   `docs/app-store-listing.md`）
 
 ### 多言語対応（i18n）——`lib/` は `t` を引数で受け取る、`t()` のキーに厳密な型は付けていない
