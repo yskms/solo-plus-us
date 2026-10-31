@@ -15,16 +15,16 @@ const path = require('path');
 // Expoが公式にUIScene対応した場合は、このプラグインとSceneDelegate.swiftを撤去し、
 // 公式の仕組みに乗り換えること。詳細: CLAUDE.md「iOS 27 (UIScene) 対応」
 //
-// 【重要】AppDelegateのwindow生成・factory.startReactNative呼び出しは意図的に
-// 元のまま(didFinishLaunchingWithOptions内)残している。expo-dev-launcher
-// （Dev Client、Debugビルドのみ）はdidFinishLaunchingWithOptions時点で
-// UIApplication.shared.delegate?.window（またはkeyWindow）が存在することを
-// 前提にしており、無いとfatalErrorする
-// （node_modules/expo-dev-launcher/ios/ReactDelegateHandler/ExpoDevLauncherAppDelegateSubscriber.swift）。
-// windowをSceneDelegate側で新規生成する設計にすると、didFinishLaunching時点では
-// まだシーンが接続されておらずwindowが存在しないため、Dev Client(Debugビルド)が
-// 起動直後に必ずクラッシュする。SceneDelegateは新しいwindowを作らず、
-// AppDelegateが作った既存のwindowにwindowSceneを割り当てるだけにすること。
+// 【メモ】AppDelegateのwindow生成・factory.startReactNative呼び出しは、元のまま
+// (didFinishLaunchingWithOptions内)残している。テンプレートの作りを変えない方針による。
+// filto-appから、「expo-dev-launcherがwindowの存在を前提にしていて、SceneDelegate側で
+// 作るとDev Client(Debugビルド)が落ちる」という趣旨のメモを引き継いだが、未検証。
+// 2026-10-31にexpo-dev-launcher 55.0.42・56.0.29・57.0.0・57.0.21のソースを読んだ範囲では、
+// windowの存在確認とfatalErrorは見つからなかった（静的に読んだだけで、落ちる場面の
+// 再現はしていない）。公式のExpoAppSceneDelegate（enableSceneSupport）はwindowを
+// シーン側で作り、検証用プロジェクトではDev Clientが起動した。
+// このプラグインのSceneDelegateは、新しいwindowを作らず、AppDelegateが作った
+// 既存のwindowにwindowSceneを割り当てるだけにしている。
 
 const SCENE_DELEGATE_CLASS_NAME = 'SceneDelegate';
 const SCENE_DELEGATE_FILENAME = `${SCENE_DELEGATE_CLASS_NAME}.swift`;
@@ -42,7 +42,7 @@ const SCENE_DELEGATE_SOURCE = `// このファイルは plugins/withIosSceneDele
 //
 // iOS 27 SDK (Xcode 27) のUISceneライフサイクル必須化への対応。
 // windowの生成自体はAppDelegate.didFinishLaunchingWithOptionsに残したまま
-// （expo-dev-launcher対策。詳細はwithIosSceneDelegate.js冒頭コメント参照）、
+// （テンプレートの作りを変えない方針。詳細はwithIosSceneDelegate.js冒頭コメント参照）、
 // そのwindowにwindowSceneを割り当てる役割だけをここで担う。
 //
 // URLスキーム/Universal Linksは、シーン採用後はAppDelegateの
