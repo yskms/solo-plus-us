@@ -33,10 +33,11 @@ DeviceHub.app 関連の既知の問題が出うる（グローバル CLAUDE.md �
 対応していないと起動直後にクラッシュする**（EXC_BREAKPOINT/SIGTRAP、
 クラッシュログのスタックトレースに
 `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` が出る）。
-Expo 57 / React Native 0.86 時点では Expo・RN 本体ともに公式のシーン対応が
-未実装のため、`plugins/withIosSceneDelegate.js`（`filto-app` リポジトリの
-同名プラグインを移植）で `AppDelegate.swift`/`SceneDelegate.swift` へ
-手動でシーン対応を注入している（`app.json` の `plugins` に登録済み）。
+2026-09-30 の作成時点では、Expo・RN 本体に公式のシーン対応が無かったため、
+`plugins/withIosSceneDelegate.js`（`filto-app` リポジトリの同名プラグインを
+移植）で `AppDelegate.swift`/`SceneDelegate.swift` へ手動でシーン対応を
+注入している（`app.json` の `plugins` に登録済み）。その後、公式の手段が
+入った（下記）。
 2026-09-30 に、このプラグイン適用後にシミュレータで（Debug・Release
 構成の両方、コールドスタート・URL 経由の起動を含め）クラッシュせず
 起動〜 JS バンドル描画まで進むことを確認済み。2026-10-01 に物理 iPhone
@@ -62,14 +63,31 @@ Expo 57 / React Native 0.86 時点では Expo・RN 本体ともに公式のシ�
   プラグインの `SCENE_DELEGATE_SOURCE` 側の import 指定が一致しているか
   確認すること**（`grep -rn "^import\|^internal import" ios/SoloUs/*.swift`
   等で比較できる）
-- Expo が公式に UIScene 対応した場合は、このプラグインと
-  `SceneDelegate.swift` を撤去し、公式の仕組みに乗り換えること
+- **公式の対応手段は既にある（2026-10-31 に判明）が、このプロジェクトはまだ乗り換えて
+  いない。** `app.json` の `expo-build-properties`（既に登録済み）の `ios` に
+  `enableSceneSupport: true` を足す方法で、`expo` 57.0.23 以上・`expo-build-properties`
+  57.0.20 以上が条件（公式ガイド: github.com/expo/fyi の `ios-scene-lifecycle.md`）。
+  このプロジェクトは `expo` 57.0.23・`expo-build-properties` 57.0.21 で条件を満たす
+  （2026-10-31 時点。ただし検証したのは `expo` 57.0.31 で、57.0.23〜57.0.30 は未確認）。
+  検証用の新規プロジェクト（`expo` 57.0.31・`expo-build-properties` 57.0.22）の
+  iOS 27 シミュレータでは、Release の起動・URL（コールドスタート含む）・バックグラウンド
+  復帰と、`expo-dev-client` 入りの Debug の起動・Metro 接続まで確認済み（2026-10-31。
+  設定を外すと症状どおり落ちることも確認）。**このプロジェクト自体**でのビルド・起動・
+  TestFlight 実機確認は未実施。乗り換えは `ios/` の起動処理を変える変更なので、
+  **ユーザーの指示があるまで実施しない**。乗り換えるときは、併用できない
+  （公式は `UIApplicationSceneManifest` が既にあるとエラーにする）ので、先に
+  `plugins/withIosSceneDelegate.js` と `app.json` の登録を外す。SDK 58 に上げたら、
+  どちらも不要（`enableSceneSupport` は警告が出るだけ）
 - **既知の制約：コールドスタート（未起動状態）でのディープリンクの URL が
   JS 側の `Linking.getInitialURL()` に渡らない**（ウォームスタートは問題
   ない）。2026-09-30 時点でアプリ内にディープリンク機能は無いため実害は
   無いが、ウィジェット・通知・共有シート等で `soloplusus://` を使い始める
   場合は要注意。根拠・再現手順は `plugins/withIosSceneDelegate.js` の
-  `willConnectTo` 内コメント参照
+  `willConnectTo` 内コメント参照。公式の `enableSceneSupport` 構成（`expo` 57.0.31、
+  検証用プロジェクト）では、コールドスタートの URL が `getInitialURL()` に届くことを
+  確認済み（2026-10-31）。乗り換えれば、この制約は解消する見込み。ただし、このプロジェクトの
+  `expo` 57.0.23 では未確認なので、乗り換えたら、アプリを終了して `xcrun simctl openurl` で
+  開き、`getInitialURL()` に届くかを確かめる
 - **App Lock・App Switcher ぼかし・`AppState` 依存の同期/言語処理は、
   シーン方式でも影響しないとソースコード上（静的確認のみ）で確認済み**
   （2026-09-30）——いずれも `UIApplicationDelegate` のコールバックではなく
