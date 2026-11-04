@@ -393,7 +393,6 @@
     "title": "記録を追加",
     "close": "閉じる",
     "prompt": "どのように記録しますか？",
-    "justNow": "たった今",
     "useNowInstead": "現在時刻を使う",
     "useNowInsteadA11y": "現在時刻を使う",
     "couldNotRecord": "記録できませんでした"

@@ -413,7 +413,6 @@
     "title": "Add Activity",
     "close": "Close",
     "prompt": "How would you like to log?",
-    "justNow": "Just now",
     "useNowInstead": "Use now instead",
     "useNowInsteadA11y": "Use current time instead",
     "couldNotRecord": "Could not record"

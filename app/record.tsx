@@ -11,12 +11,14 @@
  * default flow: the wheels (`components/DateTimeWheel.tsx`) are always on
  * screen, and turning them is what sets `customInstant` (until then they
  * follow the clock, and Solo/Partnered record the moment they're tapped).
- * No timezone
- * picker in v1 (§4.4 known limitation) — the picked wall-clock time is
- * always interpreted in the device's current IANA zone, via
- * `ActivityService.recordActivity`'s existing `timezoneId` default
- * (`getDeviceTimeZoneId()`), which also resolves the DST-correct offset
- * for that moment (`resolveOffsetMinutesForZone`).
+ * There is deliberately no "Just now" / picked-time text above them: the
+ * wheels already show the value, and a line that appears on the first
+ * change would push them down mid-gesture. No timezone picker in v1 (§4.4
+ * known limitation) — the picked wall-clock time is always interpreted in
+ * the device's current IANA zone, via `ActivityService.recordActivity`'s
+ * existing `timezoneId` default (`getDeviceTimeZoneId()`), which also
+ * resolves the DST-correct offset for that moment
+ * (`resolveOffsetMinutesForZone`).
  *
  * The wheels are plain in-tree views, not a native dialog/sheet, so
  * `contexts/AppLock.tsx`'s overlay covers them with the rest of the screen
@@ -33,7 +35,6 @@ import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
 import { DateTimeWheel } from '../components/DateTimeWheel';
 import { clampToNow, instantForPastLocalDateAtNow, sameMinute } from '../lib/datetime';
-import { formatPickedDateTime } from '../lib/timeFormat';
 import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
 import * as ActivityService from '../services/ActivityService';
@@ -144,9 +145,6 @@ export default function RecordScreen() {
       </Pressable>
 
       <View style={styles.whenBlock}>
-        <Text style={[styles.now, { color: colors.textTertiary }]}>
-          {customInstant ? formatPickedDateTime(t, customInstant, timeFormat) : t('record.justNow')}
-        </Text>
         <View
           onTouchStart={() => {
             wheelBusyUntilRef.current = Number.POSITIVE_INFINITY;
@@ -198,8 +196,7 @@ const styles = StyleSheet.create({
   dot: { width: 20, height: 20, borderRadius: 10 },
   optionTitle: { fontSize: 17, fontWeight: '600' },
   optionCaption: { fontSize: 13, marginTop: 2 },
-  whenBlock: { alignItems: 'stretch', marginTop: spacing.sm },
-  now: { fontSize: 13, textAlign: 'center', marginBottom: spacing.xs },
+  whenBlock: { alignItems: 'stretch', marginTop: spacing.md },
   resetRow: { minHeight: minTouchTarget, justifyContent: 'center', alignItems: 'center' },
   resetLink: { fontSize: 12, textDecorationLine: 'underline' },
 });
