@@ -163,23 +163,27 @@ export default function RecordScreen() {
             onChange={setCustomInstant}
           />
         </View>
-        {customInstant && (
-          <Pressable
-            onPress={resetToNow}
-            style={styles.resetRow}
-            accessibilityRole="button"
-            accessibilityLabel={t('record.useNowInsteadA11y')}
-          >
-            <Text style={[styles.resetLink, { color: colors.textTertiary }]}>{t('record.useNowInstead')}</Text>
-          </Pressable>
-        )}
+        {/* Always laid out, only shown once there's something to reset: the
+            content is centered on the screen, so a row that came and went
+            would shift the wheels under the finger. */}
+        <Pressable
+          onPress={resetToNow}
+          disabled={!customInstant}
+          style={[styles.resetRow, !customInstant && styles.resetRowHidden]}
+          accessibilityRole="button"
+          accessibilityLabel={t('record.useNowInsteadA11y')}
+          accessibilityElementsHidden={!customInstant}
+          importantForAccessibility={customInstant ? 'auto' : 'no-hide-descendants'}
+        >
+          <Text style={[styles.resetLink, { color: colors.textTertiary }]}>{t('record.useNowInstead')}</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: spacing.lg, gap: spacing.md },
+  container: { flex: 1, padding: spacing.lg, gap: spacing.md, justifyContent: 'center' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 20, fontWeight: '700' },
   close: { fontSize: 20, minWidth: minTouchTarget, textAlign: 'right' },
@@ -198,5 +202,6 @@ const styles = StyleSheet.create({
   optionCaption: { fontSize: 13, marginTop: 2 },
   whenBlock: { alignItems: 'stretch', marginTop: spacing.md },
   resetRow: { minHeight: minTouchTarget, justifyContent: 'center', alignItems: 'center' },
+  resetRowHidden: { opacity: 0 },
   resetLink: { fontSize: 12, textDecorationLine: 'underline' },
 });
