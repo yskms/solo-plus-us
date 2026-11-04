@@ -88,7 +88,17 @@ comment）。ネイティブ picker はタイムゾーンを意識できず、�
 再発させる。変更する際は必ず `resolveOccurredAtEdit`／`nowAsZonedDigits` の doc
 comment を先に読むこと。
 
-### Health Connect 同期の排他制御（`SyncWorker`/`SyncCoordinator`/`SyncWorkerLoop`）
+### Add Activity の日時は自作のホイール（`components/DateTimeWheel.tsx`）、記録済みの編集（`[id].tsx`）はネイティブ picker のまま
+
+`app/record.tsx` の日時は、年・月・日・時・分の5列ホイールを画面内に直接置く（2026-11-04）。Android には日時を一度に選べるネイティブ部品が無く、date → time の連鎖ダイアログで画面が切り替わって煩わしかったため。**ネイティブ picker・ダイアログ・シートへ戻さない。** ライブラリも足さない（プレーン JS のまま。画面内の View なので App Lock のオーバーレイにも覆われる）。
+
+- 「日時を変更」を押すまでホイールは閉じておく（既定の「Solo/Partnered を1タップ」にタップを足さない、§11.4）。ホイールを回すまで `customInstant` は `null`（「Just now」）のまま
+- 「現在時刻を使う」リンクは**ホイールの下**に置く。上に置くと、最初に回した瞬間にリンクが現れてホイールが押し下げられる
+- `WheelColumn` は、Android でゆっくり離すと `snapToInterval` が効かず行の途中で止まるため、離した後に自分で `scrollTo` し直している。この補正を外さない
+- 日付の列は「昨日・今日」ではなく年・月・日の数字（カレンダーから過去日で開いたとき、相対表記だと分かりにくいため）
+- `app/activity/[id].tsx` は `hooks/useNativeDateTimePicker.ts` のまま。ホイールは数字しか読まないので「digit carrier」にも載せられ、将来統一できるが、記録ゾーンの扱い（上の節）を確認してから
+
+仕様: README「日時編集 UI」冒頭の注記
 
 `SyncWorker` は「プロセス内単一ワーカー」（§6.2/D-36）が前提だが、これはコード自身では守られず、呼び出し側が守る責務。
 

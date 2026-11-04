@@ -416,6 +416,8 @@
     "justNow": "Just now",
     "changeDateTime": "Change date & time",
     "changeDateTimeA11y": "Change date and time",
+    "hideDateTime": "Hide picker",
+    "hideDateTimeA11y": "Hide the date and time picker",
     "useNowInstead": "Use now instead",
     "useNowInsteadA11y": "Use current time instead",
     "couldNotRecord": "Could not record"
@@ -446,6 +448,14 @@
   },
   "dateTimePickerSheet": {
     "dismiss": "Dismiss date picker"
+  },
+  "dateTimeWheel": {
+    "year": "Year",
+    "month": "Month",
+    "day": "Day",
+    "hour": "Hour",
+    "minute": "Min",
+    "hour12": "{{hour}} {{period}}"
   },
   "migrationRestoredBanner": {
     "message": "A recent update to Solo + Us couldn't be applied. Your existing records are safe, but the app is running an older version of its data format until this is fixed."

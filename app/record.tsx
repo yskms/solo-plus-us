@@ -8,18 +8,19 @@
  *
  * 基本設計 §11.4/§4.4: changing the recorded time is an optional detour
  * from "Just now", not a required step, so it must not add a tap to the
- * default flow. No timezone picker in v1 (§4.4 known limitation) — the
- * picked wall-clock time is always interpreted in the device's current
- * IANA zone, via `ActivityService.recordActivity`'s existing
- * `timezoneId` default (`getDeviceTimeZoneId()`), which also resolves the
- * DST-correct offset for that moment (`resolveOffsetMinutesForZone`).
+ * default flow: the wheels (`components/DateTimeWheel.tsx`) stay closed
+ * until "Change date & time" is tapped, and turning them is what sets
+ * `customInstant` (merely opening them leaves "Just now"). No timezone
+ * picker in v1 (§4.4 known limitation) — the picked wall-clock time is
+ * always interpreted in the device's current IANA zone, via
+ * `ActivityService.recordActivity`'s existing `timezoneId` default
+ * (`getDeviceTimeZoneId()`), which also resolves the DST-correct offset
+ * for that moment (`resolveOffsetMinutesForZone`).
  *
- * The iOS picker sheet and Android's chained dialogs are handled by
- * `hooks/useNativeDateTimePicker.ts`, shared with `app/activity/
- * [id].tsx`'s post-hoc edit (D-50) — see that hook's doc comment and
- * `contexts/AppLock.tsx` for why the iOS sheet is a plain
- * absolutely-positioned `View`, not RN's `<Modal>`, and why the Android
- * dialogs are dismissed the moment `AppState` leaves `active`.
+ * The wheels are plain in-tree views, not a native dialog/sheet, so
+ * `contexts/AppLock.tsx`'s overlay covers them with the rest of the screen
+ * (see that file's doc comment). `app/activity/[id].tsx`'s post-hoc edit
+ * (D-50) still uses the native picker (`hooks/useNativeDateTimePicker.ts`).
  */
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -28,10 +29,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
-import { useAppLockActions } from '../contexts/AppLock';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
-import { useNativeDateTimePicker } from '../hooks/useNativeDateTimePicker';
-import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
+import { DateTimeWheel } from '../components/DateTimeWheel';
 import { clampToNow, instantForPastLocalDateAtNow } from '../lib/datetime';
 import { formatPickedDateTime } from '../lib/timeFormat';
 import { contextLabel, contextCaption } from '../lib/labels';
@@ -46,7 +45,6 @@ export default function RecordScreen() {
   const { t } = useTranslation();
   const db = useDatabase();
   const { announceRecorded } = useRecordFeedback();
-  const { isLocked } = useAppLockActions();
   const [saving, setSaving] = useState(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const getNow = () => new Date();
@@ -55,14 +53,27 @@ export default function RecordScreen() {
   // param, today, or a future day) leaves the normal "Just now" flow.
   const { date } = useLocalSearchParams<{ date?: string }>();
   const [initialInstant] = useState(() => (typeof date === 'string' ? instantForPastLocalDateAtNow(date) : null));
-  const { customInstant, iosPickerVisible, pendingInstant, setPendingInstant, open, confirmIos, cancelIos, reset } =
-    useNativeDateTimePicker(getNow, getNow, isLocked, initialInstant);
+  const [customInstant, setCustomInstant] = useState<Date | null>(initialInstant);
+  const [wheelOpen, setWheelOpen] = useState(false);
+  // What the wheels show while `customInstant` is still null ("Just now"): the
+  // moment they were opened / reset, not the live clock.
+  const [wheelBase, setWheelBase] = useState(getNow);
 
   useEffect(() => {
     getSetting(db, 'preferences.timeFormat')
       .then(setTimeFormat)
       .catch((error) => logError('Loading preferences.timeFormat failed', error));
   }, [db]);
+
+  const toggleWheel = () => {
+    if (!wheelOpen) setWheelBase(getNow());
+    setWheelOpen((open) => !open);
+  };
+
+  const resetToNow = () => {
+    setCustomInstant(null);
+    setWheelBase(getNow());
+  };
 
   const record = async (context: ActivityContext) => {
     if (saving) return; // guards against a double-tap firing two records
@@ -126,17 +137,30 @@ export default function RecordScreen() {
           {customInstant ? formatPickedDateTime(t, customInstant, timeFormat) : t('record.justNow')}
         </Text>
         <Pressable
-          onPress={open}
+          onPress={toggleWheel}
           disabled={saving}
           style={({ pressed }) => [styles.changeRow, { opacity: pressed ? 0.7 : 1 }]}
           accessibilityRole="button"
-          accessibilityLabel={t('record.changeDateTimeA11y')}
+          accessibilityState={{ expanded: wheelOpen }}
+          accessibilityLabel={wheelOpen ? t('record.hideDateTimeA11y') : t('record.changeDateTimeA11y')}
         >
-          <Text style={[styles.changeLink, { color: colors.solo }]}>{t('record.changeDateTime')}</Text>
+          <Text style={[styles.changeLink, { color: colors.solo }]}>
+            {wheelOpen ? t('record.hideDateTime') : t('record.changeDateTime')}
+          </Text>
         </Pressable>
+        {/* The reset link sits below the wheels: it appears on the first change,
+            and above them it would push them down mid-gesture. */}
+        {wheelOpen && (
+          <DateTimeWheel
+            value={customInstant ?? wheelBase}
+            max={getNow()}
+            timeFormat={timeFormat}
+            onChange={setCustomInstant}
+          />
+        )}
         {customInstant && (
           <Pressable
-            onPress={reset}
+            onPress={resetToNow}
             style={styles.resetRow}
             accessibilityRole="button"
             accessibilityLabel={t('record.useNowInsteadA11y')}
@@ -145,15 +169,6 @@ export default function RecordScreen() {
           </Pressable>
         )}
       </View>
-
-      <DateTimePickerSheet
-        visible={iosPickerVisible}
-        value={pendingInstant ?? getNow()}
-        maximumDate={getNow()}
-        onChange={setPendingInstant}
-        onCancel={cancelIos}
-        onDone={confirmIos}
-      />
     </SafeAreaView>
   );
 }
@@ -176,7 +191,7 @@ const styles = StyleSheet.create({
   dot: { width: 20, height: 20, borderRadius: 10 },
   optionTitle: { fontSize: 17, fontWeight: '600' },
   optionCaption: { fontSize: 13, marginTop: 2 },
-  whenBlock: { alignItems: 'center', marginTop: spacing.sm, gap: 2 },
+  whenBlock: { alignItems: 'stretch', marginTop: spacing.sm, gap: 2 },
   now: { fontSize: 13, textAlign: 'center' },
   changeRow: { minHeight: minTouchTarget, justifyContent: 'center', alignItems: 'center' },
   changeLink: { fontSize: 13, fontWeight: '600' },

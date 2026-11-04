@@ -12,19 +12,18 @@ import { clampTo, sameMinute } from './datetime';
  * is what actually prevents that.
  *
  * `max` is NOT necessarily *real* "now" — `current`/`max` just need to be
- * expressed in the same terms as each other (both real instants, as in
- * `app/record.tsx`'s call, or both digit carriers in the record's own
- * zone, as in `app/activity/[id].tsx`'s — see `nowAsZonedDigits`'s doc
- * comment in `lib/datetime.ts` for why the latter matters). `current`,
+ * expressed in the same terms as each other (both digit carriers in the
+ * record's own zone, as in `app/activity/[id].tsx`'s call — see
+ * `nowAsZonedDigits`'s doc comment in `lib/datetime.ts` for why that
+ * matters; real instants would work equally). `current`,
  * `pickedDate`/`pickedTime`, and `combined` below are always in that same
  * shared representation as `max`, so comparing their `.getTime()`s
  * against each other is internally consistent even when none of them are
  * a real instant.
  *
- * Shared by `app/record.tsx` (Add Activity) and `app/activity/[id].tsx`
- * (Activity Detail's post-hoc edit) — both need the exact same
- * date→time chaining, App Lock re-check, and future-instant clamp, so
- * this is one function rather than two near-identical copies.
+ * Used by `app/activity/[id].tsx` (Activity Detail's post-hoc edit) via
+ * `hooks/useNativeDateTimePicker.ts`; `app/record.tsx` used it too before
+ * moving to `components/DateTimeWheel.tsx`.
  */
 export function openAndroidPicker(current: Date, max: Date, isLocked: () => boolean, onPicked: (date: Date) => void) {
   DateTimePickerAndroid.open({

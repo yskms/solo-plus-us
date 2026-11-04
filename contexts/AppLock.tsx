@@ -32,11 +32,14 @@
  * this overlay to fail to cover, so nothing here needs to wait for
  * anything else to finish closing.
  *
- * Same reasoning shaped `app/record.tsx`'s date/time picker (§11.4), and
- * later `app/activity/[id].tsx`'s (D-50, the post-hoc edit). Both screens
- * share one implementation of this — `hooks/useNativeDateTimePicker.ts` +
+ * Same reasoning shaped the date/time pickers. `app/record.tsx`'s (§11.4)
+ * is now `components/DateTimeWheel.tsx`: plain in-tree views, so this
+ * overlay covers it like the rest of the screen and nothing has to be
+ * dismissed when the app locks. `app/activity/[id].tsx`'s (D-50, the
+ * post-hoc edit) is still the native picker, and `record.tsx` used to
+ * share that implementation — `hooks/useNativeDateTimePicker.ts` +
  * `components/DateTimePickerSheet.tsx` — specifically so this invariant
- * only has to be upheld in one place rather than kept in sync across two
+ * only had to be upheld in one place rather than kept in sync across two
  * independently-edited copies (an earlier version duplicated it per
  * screen; a review flagged the drift risk that created). The iOS sheet is
  * a plain absolutely-positioned `View`, not RN's `<Modal>`, so it stays

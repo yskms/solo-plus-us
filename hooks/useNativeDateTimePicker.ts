@@ -6,40 +6,32 @@ import { openAndroidPicker } from '../lib/androidDateTimePicker';
 import { logError } from '../lib/log';
 
 /**
- * The date/time-picker state machine shared by `app/record.tsx` (Add
- * Activity) and `app/activity/[id].tsx` (Activity Detail's post-hoc edit,
- * D-50) — extracted because `contexts/AppLock.tsx`'s doc comment treats
- * their App Lock handling as one shared invariant both screens must keep
+ * The native date/time-picker state machine for `app/activity/[id].tsx`
+ * (Activity Detail's post-hoc edit, D-50). It was extracted when
+ * `app/record.tsx` (Add Activity) used it too, because `contexts/
+ * AppLock.tsx`'s doc comment treats the App Lock handling as one invariant
  * ("its iOS sheet is a plain absolutely-positioned `View`... Android's
- * dialog... is dismissed the moment `AppState` leaves `active`"). Keeping
- * that logic in two independently-edited copies risked exactly the drift
- * that comment warns about — a future fix to one screen quietly not
- * reaching the other.
+ * dialog... is dismissed the moment `AppState` leaves `active`") that two
+ * independently-edited copies could let drift. `record.tsx` has since moved
+ * to in-screen wheels (`components/DateTimeWheel.tsx`).
  *
  * `getBase` and `getMax` both return values in whatever shared
- * representation the caller uses for `customInstant` — either a real
- * instant (`app/record.tsx`: both are always "now") or a digit carrier
- * (`app/activity/[id].tsx`: `getBase` reads the already-recorded local
+ * representation the caller uses for `customInstant` — a digit carrier in
+ * `app/activity/[id].tsx`: `getBase` reads the already-recorded local
  * date/time; `getMax` is `nowAsZonedDigits(activity.timezoneId)` — "now",
  * expressed as digits in the record's own zone. See that function's doc
  * comment in `lib/datetime.ts` for why comparing against *real* "now"
- * would be wrong there). Whichever representation is used, `getBase` and
- * `getMax` must agree, since `open`/`confirmIos` below compare them
- * directly. Once `customInstant` is set, it's reused as the base for any
- * further re-opening, same as before this was a hook.
- *
- * `initialInstant` (optional) starts `customInstant` already set, as if the
- * user had just picked it — `app/record.tsx` uses it for the Calendar tab's
- * "add to this day". Only the first render's value is used (it seeds
- * `useState`); `reset` still returns to `null`.
+ * would be wrong there. `getBase` and `getMax` must agree, since
+ * `open`/`confirmIos` below compare them directly. Once `customInstant` is
+ * set, it's reused as the base for any further re-opening, same as before
+ * this was a hook.
  */
 export function useNativeDateTimePicker(
   getBase: () => Date,
   getMax: () => Date,
   isLocked: () => boolean,
-  initialInstant: Date | null = null,
 ) {
-  const [customInstant, setCustomInstant] = useState<Date | null>(initialInstant);
+  const [customInstant, setCustomInstant] = useState<Date | null>(null);
   const [iosPickerVisible, setIosPickerVisible] = useState(false);
   const [pendingInstant, setPendingInstant] = useState<Date | null>(null);
   const [pickerBase, setPickerBase] = useState<Date | null>(null);

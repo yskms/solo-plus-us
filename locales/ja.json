@@ -396,6 +396,8 @@
     "justNow": "たった今",
     "changeDateTime": "日時を変更",
     "changeDateTimeA11y": "日時を変更する",
+    "hideDateTime": "選択を閉じる",
+    "hideDateTimeA11y": "日時の選択を閉じる",
     "useNowInstead": "現在時刻を使う",
     "useNowInsteadA11y": "現在時刻を使う",
     "couldNotRecord": "記録できませんでした"
@@ -426,6 +428,14 @@
   },
   "dateTimePickerSheet": {
     "dismiss": "日時ピッカーを閉じる"
+  },
+  "dateTimeWheel": {
+    "year": "年",
+    "month": "月",
+    "day": "日",
+    "hour": "時",
+    "minute": "分",
+    "hour12": "{{period}}{{hour}}"
   },
   "migrationRestoredBanner": {
     "message": "Solo + Us の最近の更新を適用できませんでした。既存の記録は無事ですが、この問題が解決するまで、アプリは以前のデータ形式で動作します。"

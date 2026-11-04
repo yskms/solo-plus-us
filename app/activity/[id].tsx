@@ -12,12 +12,13 @@
  * Date/time editing: originally scoped out of this screen (README read
  * UI/UX §27's Phase 3 line as limited to the Add Activity entry point
  * only), then brought into scope by 設計判断記録 D-50. Tapping DATE & TIME
- * opens the same native picker as `app/record.tsx`'s "Change date & time"
- * (`hooks/useNativeDateTimePicker.ts` + `components/DateTimePickerSheet.tsx`,
- * shared by both screens — see that hook's doc comment and `contexts/
- * AppLock.tsx` for why the iOS sheet is a plain absolutely-positioned
- * `View`, not RN's `<Modal>`). Unlike `record.tsx`, there is no "use now
- * instead" reset — this screen always has a real recorded value, never a
+ * opens the native picker (`hooks/useNativeDateTimePicker.ts` +
+ * `components/DateTimePickerSheet.tsx` — see that hook's doc comment and
+ * `contexts/AppLock.tsx` for why the iOS sheet is a plain
+ * absolutely-positioned `View`, not RN's `<Modal>`). `app/record.tsx` used
+ * to share it but now has in-screen wheels (`components/DateTimeWheel.tsx`);
+ * this screen was left on the native picker. Unlike `record.tsx`, there is
+ * no "use now instead" reset — this screen always has a real recorded value, never a
  * "Just now" placeholder. The picked value is held in `customInstant` and
  * only actually persisted when the screen's own Save button is pressed,
  * same as every other field here.

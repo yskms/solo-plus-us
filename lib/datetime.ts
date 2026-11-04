@@ -221,9 +221,9 @@ export function addSecondsIso(iso: string, seconds: number): string {
 }
 
 /**
- * Minute-level identity check — used by the date/time pickers in
- * `app/record.tsx` and `app/activity/[id].tsx` (via
- * `hooks/useNativeDateTimePicker.ts` and `resolveOccurredAtEdit` below) to
+ * Minute-level identity check — used by `app/activity/[id].tsx`'s
+ * picker (via `hooks/useNativeDateTimePicker.ts` and
+ * `resolveOccurredAtEdit` below) and `components/DateTimeWheel.tsx` to
  * tell "opened and confirmed without actually changing anything" apart
  * from a real edit, since `occurred_at_utc` is minute precision anyway
  * (§4.2).
