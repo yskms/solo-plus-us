@@ -1,8 +1,9 @@
 /**
  * One scrolling "reel" column of `components/DateTimeWheel.tsx`: a
- * `ScrollView` that snaps to rows, with the selected row in the middle of
- * `WHEEL_VISIBLE_ROWS`. Plain JS (no native picker), so it sits inside the
- * screen's own view tree like any other content.
+ * `ScrollView` that snaps to rows, with the selected row in the middle and
+ * only `WHEEL_PEEK` of the rows above and below showing — just enough to
+ * read as a reel that can be turned. Plain JS (no native picker), so it
+ * sits inside the screen's own view tree like any other content.
  *
  * Controlled: `selectedValue` is the source of truth. A scroll that settles
  * on a row calls `onSelect`; if the parent then picks a different value
@@ -20,9 +21,9 @@ import React, { useEffect, useReducer, useRef } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../constants/theme';
 
-export const WHEEL_ITEM_HEIGHT = 36;
-export const WHEEL_VISIBLE_ROWS = 5;
-const PADDING = WHEEL_ITEM_HEIGHT * Math.floor(WHEEL_VISIBLE_ROWS / 2);
+export const WHEEL_ITEM_HEIGHT = 34;
+/** How much of the neighbouring rows shows above and below the selected one. */
+export const WHEEL_PEEK = 16;
 // iOS reports the release velocity in `onScrollEndDrag`; below this the list
 // isn't going to coast, so no `onMomentumScrollEnd` can be relied on to follow.
 const STILL_VELOCITY = 0.05;
@@ -99,7 +100,7 @@ export function WheelColumn({ items, selectedValue, onSelect, label, flex = 1 }:
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
-        contentContainerStyle={{ paddingVertical: PADDING }}
+        contentContainerStyle={{ paddingVertical: WHEEL_PEEK }}
         showsVerticalScrollIndicator={false}
         snapToInterval={WHEEL_ITEM_HEIGHT}
         decelerationRate="fast"
@@ -143,7 +144,7 @@ export function WheelColumn({ items, selectedValue, onSelect, label, flex = 1 }:
 }
 
 const styles = StyleSheet.create({
-  column: { height: WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_ROWS },
+  column: { height: WHEEL_ITEM_HEIGHT + 2 * WHEEL_PEEK },
   scroll: { flex: 1 },
   row: { height: WHEEL_ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center' },
   text: { fontSize: 18, fontVariant: ['tabular-nums'] },

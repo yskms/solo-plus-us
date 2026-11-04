@@ -414,10 +414,6 @@
     "close": "Close",
     "prompt": "How would you like to log?",
     "justNow": "Just now",
-    "changeDateTime": "Change date & time",
-    "changeDateTimeA11y": "Change date and time",
-    "hideDateTime": "Hide picker",
-    "hideDateTimeA11y": "Hide the date and time picker",
     "useNowInstead": "Use now instead",
     "useNowInsteadA11y": "Use current time instead",
     "couldNotRecord": "Could not record"

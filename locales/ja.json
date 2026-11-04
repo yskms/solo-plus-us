@@ -394,10 +394,6 @@
     "close": "閉じる",
     "prompt": "どのように記録しますか？",
     "justNow": "たった今",
-    "changeDateTime": "日時を変更",
-    "changeDateTimeA11y": "日時を変更する",
-    "hideDateTime": "選択を閉じる",
-    "hideDateTimeA11y": "日時の選択を閉じる",
     "useNowInstead": "現在時刻を使う",
     "useNowInsteadA11y": "現在時刻を使う",
     "couldNotRecord": "記録できませんでした"

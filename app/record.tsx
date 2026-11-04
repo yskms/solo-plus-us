@@ -8,9 +8,10 @@
  *
  * 基本設計 §11.4/§4.4: changing the recorded time is an optional detour
  * from "Just now", not a required step, so it must not add a tap to the
- * default flow: the wheels (`components/DateTimeWheel.tsx`) stay closed
- * until "Change date & time" is tapped, and turning them is what sets
- * `customInstant` (merely opening them leaves "Just now"). No timezone
+ * default flow: the wheels (`components/DateTimeWheel.tsx`) are always on
+ * screen, and turning them is what sets `customInstant` (until then they
+ * follow the clock, and Solo/Partnered record the moment they're tapped).
+ * No timezone
  * picker in v1 (§4.4 known limitation) — the picked wall-clock time is
  * always interpreted in the device's current IANA zone, via
  * `ActivityService.recordActivity`'s existing `timezoneId` default
@@ -22,7 +23,7 @@
  * (see that file's doc comment). `app/activity/[id].tsx`'s post-hoc edit
  * (D-50) still uses the native picker (`hooks/useNativeDateTimePicker.ts`).
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,7 +32,7 @@ import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
 import { DateTimeWheel } from '../components/DateTimeWheel';
-import { clampToNow, instantForPastLocalDateAtNow } from '../lib/datetime';
+import { clampToNow, instantForPastLocalDateAtNow, sameMinute } from '../lib/datetime';
 import { formatPickedDateTime } from '../lib/timeFormat';
 import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
@@ -39,6 +40,9 @@ import * as ActivityService from '../services/ActivityService';
 import { getSetting } from '../services/SettingsRepository';
 import type { ActivityContext } from '../types/Activity';
 import type { TimeFormat } from '../types/Settings';
+
+// How long after a touch ends a wheel may still be coasting to its resting row.
+const WHEEL_COAST_MS = 1500;
 
 export default function RecordScreen() {
   const { colors } = useTheme();
@@ -54,10 +58,13 @@ export default function RecordScreen() {
   const { date } = useLocalSearchParams<{ date?: string }>();
   const [initialInstant] = useState(() => (typeof date === 'string' ? instantForPastLocalDateAtNow(date) : null));
   const [customInstant, setCustomInstant] = useState<Date | null>(initialInstant);
-  const [wheelOpen, setWheelOpen] = useState(false);
-  // What the wheels show while `customInstant` is still null ("Just now"): the
-  // moment they were opened / reset, not the live clock.
+  // What the wheels show while `customInstant` is still null ("Just now"). It
+  // follows the clock (below) so the wheels never read a different minute
+  // from the one Solo/Partnered will record.
   const [wheelBase, setWheelBase] = useState(getNow);
+  // Until this time (ms) the wheels are being touched or are still coasting;
+  // the clock must not move them under a finger.
+  const wheelBusyUntilRef = useRef(0);
 
   useEffect(() => {
     getSetting(db, 'preferences.timeFormat')
@@ -65,10 +72,14 @@ export default function RecordScreen() {
       .catch((error) => logError('Loading preferences.timeFormat failed', error));
   }, [db]);
 
-  const toggleWheel = () => {
-    if (!wheelOpen) setWheelBase(getNow());
-    setWheelOpen((open) => !open);
-  };
+  useEffect(() => {
+    if (customInstant) return;
+    const id = setInterval(() => {
+      if (Date.now() < wheelBusyUntilRef.current) return;
+      setWheelBase((base) => (sameMinute(base, getNow()) ? base : getNow()));
+    }, 5000);
+    return () => clearInterval(id);
+  }, [customInstant]);
 
   const resetToNow = () => {
     setCustomInstant(null);
@@ -136,28 +147,24 @@ export default function RecordScreen() {
         <Text style={[styles.now, { color: colors.textTertiary }]}>
           {customInstant ? formatPickedDateTime(t, customInstant, timeFormat) : t('record.justNow')}
         </Text>
-        <Pressable
-          onPress={toggleWheel}
-          disabled={saving}
-          style={({ pressed }) => [styles.changeRow, { opacity: pressed ? 0.7 : 1 }]}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: wheelOpen }}
-          accessibilityLabel={wheelOpen ? t('record.hideDateTimeA11y') : t('record.changeDateTimeA11y')}
+        <View
+          onTouchStart={() => {
+            wheelBusyUntilRef.current = Number.POSITIVE_INFINITY;
+          }}
+          onTouchEnd={() => {
+            wheelBusyUntilRef.current = Date.now() + WHEEL_COAST_MS;
+          }}
+          onTouchCancel={() => {
+            wheelBusyUntilRef.current = Date.now() + WHEEL_COAST_MS;
+          }}
         >
-          <Text style={[styles.changeLink, { color: colors.solo }]}>
-            {wheelOpen ? t('record.hideDateTime') : t('record.changeDateTime')}
-          </Text>
-        </Pressable>
-        {/* The reset link sits below the wheels: it appears on the first change,
-            and above them it would push them down mid-gesture. */}
-        {wheelOpen && (
           <DateTimeWheel
             value={customInstant ?? wheelBase}
             max={getNow()}
             timeFormat={timeFormat}
             onChange={setCustomInstant}
           />
-        )}
+        </View>
         {customInstant && (
           <Pressable
             onPress={resetToNow}
@@ -191,10 +198,8 @@ const styles = StyleSheet.create({
   dot: { width: 20, height: 20, borderRadius: 10 },
   optionTitle: { fontSize: 17, fontWeight: '600' },
   optionCaption: { fontSize: 13, marginTop: 2 },
-  whenBlock: { alignItems: 'stretch', marginTop: spacing.sm, gap: 2 },
-  now: { fontSize: 13, textAlign: 'center' },
-  changeRow: { minHeight: minTouchTarget, justifyContent: 'center', alignItems: 'center' },
-  changeLink: { fontSize: 13, fontWeight: '600' },
+  whenBlock: { alignItems: 'stretch', marginTop: spacing.sm },
+  now: { fontSize: 13, textAlign: 'center', marginBottom: spacing.xs },
   resetRow: { minHeight: minTouchTarget, justifyContent: 'center', alignItems: 'center' },
   resetLink: { fontSize: 12, textDecorationLine: 'underline' },
 });
