@@ -4233,6 +4233,7 @@ iOS 版 **1.0.0 (4)** を App Store の審査へ提出した（リリース方�
 - **2026-10-10 に Guideline 1.1（description の語句）で却下**。どの語句かは Apple が
   示さなかった。2026-11-04 に Apple から「却下は解決済み、再提出してください」と
   返信が来た（原因は未確定。Resolution Center に2回質問、10/23 に Contact Us も送信）。
+  同日 13:16 に掲載文を変えずに再提出し、審査待ち。
   経緯は [docs/app-store-listing.md](docs/app-store-listing.md)「App Review の記録」
 
 ### v1.0.1 の Play ストア提出（2026-10-24）
