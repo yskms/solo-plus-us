@@ -234,6 +234,25 @@ Play Console のプレビューで確認する。詳細は README「Android R8 �
 
 ---
 
+## リリースノート（v1.0.3 / versionCode 7）
+
+記録を追加の画面の日時選択を、ネイティブの日付・時刻ダイアログから、画面内の年・月・日・時・分の
+ホイールに置き換えたビルド（README「日時編集 UI」冒頭の注記）。JS のみの変更で、DB スキーマ・
+ネイティブ・権限は変わらない（1.0.1 と同じ区分で、健康アプリ申告・データセーフティの更新は不要）。
+
+```
+<en-US>
+- The date and time picker on the Add Activity screen is now a set of scrolling wheels: turn the year, month, day, hour and minute to pick a time
+</en-US>
+<ja-JP>
+・記録を追加の画面で、年・月・日・時・分のホイールを回して、日時をすばやく選べるようになりました
+</ja-JP>
+```
+
+リリース名は `7 (1.0.3)`。
+
+---
+
 ## Play Console 申告の記録（2026-09-24、v0.1.0 提出時）
 
 更新版を出すときに、同じ回答で通るか／変わったかを判断するための控え。

@@ -4323,3 +4323,25 @@ Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas buil
 - リリースノートは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.2 / versionCode 6）」
 - 審査が通ったら、Console の「DEX コードの最適化」の率が上記のとおりか、Android vitals に警告が出ていないかを見る
 - 注意: `expo.version` は iOS と共通。次の iOS ビルドは 1.0.2 になる（iOS は 1.0.0 (4) のまま却下の返信待ち）
+
+### v1.0.3 の Play ストア提出に向けた AAB（2026-11-04、AAB の作成と検査まで）
+
+記録を追加の日時ホイール（上記「日時編集 UI」冒頭の注記）を載せた Play 向け AAB を、`feat/record-wheel-picker` から
+`eas build --local -p android --profile production` でビルドした。**Console への提出は利用者の作業で、この記録の
+時点では未提出。`main` へのマージ・push も未実施。** JS のみの変更（DB スキーマ・ネイティブ・権限・依存は変更なし）
+なので、健康アプリ申告・データセーフティの更新は不要で、R8 の再確認も行っていない。
+
+- `app.json`: `version` 1.0.2→1.0.3（利用者の判断。iOS と共通の値で、次の iOS ビルドも 1.0.3 になる）、
+  `android.versionCode` 6→7（`autoIncrement` が加算）
+- AAB の確認: versionCode 7・versionName 1.0.3、4 つの ABI（arm64-v8a・armeabi-v7a・x86・x86_64）、DEX 1 ファイル
+  9,855,832 バイトで **1.0.2 と同一**（JS のみの変更のため。DEX が同じなので R8 の `mapping.txt` も 1.0.2 と同一）、
+  AAB のサイズは 91,854,900 バイト。権限は `INTERNET`・`USE_BIOMETRIC`・`USE_FINGERPRINT`・`VIBRATE` のみ
+  （＋自前の `<permission>` 1 と Play の install referrer）で `android.permission.health.*` は無い。署名の SHA-256 は
+  `AF:5D:C2:49:…:C0:10:36` で 1.0.2 と同じ
+- `mapping.txt.gz` は `docs/_local/mapping/1.0.3-vc7/`（gitignore 済み）に保管。AAB は
+  `docs/_local/release/solo-plus-us-1.0.3.aab`（gitignore 済み。提出を終えたら削除する）
+- 実機確認は、**debug ビルド**（Pixel 3・Android 12）で、ホイールの手触り、日・時を前日の23時にして記録、時計への追従、
+  未来の時刻への操作を確認した。release ビルドでの実機確認は省いた（JS のみの変更で、DEX が 1.0.2 と同一のため）
+- リリースノートは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.3 / versionCode 7）」
+- **iOS は未確認。** この変更は次の iOS ビルドで載る（iOS は 1.0.0 (4) の審査待ちで、今回のバイナリには入っていない）。
+  その前に、iPhone 18 Pro のシミュレータでホイール（スナップ、行タップ、時計への追従、App Lock のオーバーレイ）を確認する
