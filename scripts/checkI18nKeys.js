@@ -56,7 +56,7 @@ const PLURAL_SUFFIX_PATTERN = new RegExp(`(${PLURAL_SUFFIXES.join('|')})$`);
 /**
  * Keys deliberately exempted from check 4 ({{variable}} parity). A locale
  * whose date/time *format itself* differs structurally (not just its
- * words — see CLAUDE.md's i18n section) legitimately uses a different
+ * words) legitimately uses a different
  * subset of a shared interpolation payload per language, e.g.
  * `today.dateHeader`: the caller (`app/(tabs)/index.tsx`'s
  * `weekdayHeader()`) always passes both `weekdayFull` and `weekdayShort`,

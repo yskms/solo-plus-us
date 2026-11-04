@@ -9,6 +9,11 @@ Solo / Partnered な性的活動を長期間記録し、自分自身の変化を
 
 ## ステータス
 
+> **注記（iOS のビルドに関する記述）：** 以下の各 Phase の記録にある「iOS ローカルビルドがブロック中」
+> 「Xcode 26.3 のコンパイラ不具合」は、旧 Mac での当時の状況。2026-09-28 の M4 MacBook Air 移行後は
+> 解消している（2026-09-30 確認。CLAUDE.md「ローカル iOS ビルドは M4 MacBook Air 移行後にブロック解除済み」）。
+> 記録中の「iOS は未確認」は記録時点のもので、その後の確認状況は `docs/ios-notes.md` を参照。
+
 設計文書は **v0.11** で確定済み。**Phase 1**（暗号化 DB → Migration runner → スキーマ →
 Repository → Quick Record → Undo → 履歴 → Export/Import の往復）・**Phase 2**（Calendar）は
 クローズ済み。**Phase 3**（Insights → App Lock → Recovery 画面 → Export/Import の UI →
