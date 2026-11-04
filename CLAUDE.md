@@ -1,131 +1,61 @@
 # Solo + Us — Claude 向けメモ
 
+## 詳細ドキュメントの案内
+
+詳細は `docs/` にある。下表の作業をするときだけ該当ファイルを読む（先読み・通読はしない。`@import` は使わない）。
+各節のスタブには禁止事項・設計制約を残してあり、経緯・検証記録・原文は docs 側にある。
+節の見出しを変えるときは、コード・README・docs が節名で参照しているので、旧見出しを `grep -rn` で探し、参照元を確認して一緒に更新する。
+
+| 作業 | 読むファイル |
+|---|---|
+| iOS のビルド・TestFlight、UIScene、戻るボタン・UndoSnackbar | `docs/ios-notes.md` |
+| Health Connect の同期・切断・全削除、ビルド分離、`EXPO_PUBLIC_*` | `docs/health-connect-dev-notes.md` |
+| ネイティブモジュール追加、Android のリリースビルド・AAB 確認、R8、ダーク/ライト切替 | `docs/android-build-notes.md` |
+| `schema.ts`/migration を変えた後の実機テスト、adb のタップ無反応 | `docs/device-testing-notes.md` |
+| `t()`・翻訳キー・複数形 | `docs/i18n-notes.md` |
+| ストア掲載・紹介ページの文面、審査対応 | `docs/store-listing.md`、`docs/app-store-listing.md` |
+| 仕様・設計判断 | README「ドキュメント」の表（設計判断記録 v0.11 が正本） |
+
 ## ローカル iOS ビルドは M4 MacBook Air 移行後にブロック解除済み（2026-09-30 確認）
 
-旧 Mac（Xcode 26.3）では `expo-modules-jsi` の `swift-tools-version: 6.2`
-まわりのコンパイラ不具合で `expo run:ios` が失敗していた。**2026-09-28 の
-M4 MacBook Air 移行後（macOS 27.0 / Xcode 27.0）はこの不具合が再現しない**
-ことを 2026-09-30 に確認済み——今後のセッションでこの制約を前提に判断
-しないこと（経緯の詳細は git 履歴参照）。EAS build
-は引き続き明示的な許可なしに実行しない（ビルド枠が貴重）。
+旧 Mac（Xcode 26.3）の `expo run:ios` 失敗は、M4 移行後（macOS 27.0 / Xcode 27.0）は再現しない。この制約を前提に判断しないこと。Android・iOS ともにローカルで検証できる。
 
-**実機確認が必要なタスクでは：** Android・iOS ともにローカルで検証可能に
-なった。iOS はシミュレータで `xcodebuild` のビルド成功に加え、
-`simctl install`/`launch` でのシミュレータ起動・Metro 接続・JS バンドルの
-描画（オンボーディング画面表示）を Debug 構成・Release 構成の両方で
-確認済み（2026-09-30、下記「iOS 27 (UIScene) 対応」の対応後）。
-**物理 iPhone（iPhone 8 / iOS 16.7）では TestFlight 経由で確認済み**
-（2026-10-01、ビルド 0.1.0 (2)）：Touch ID での解除・バックグラウンド復帰時の
-ロック・App Switcher のぼかし・記録などの基本操作・Google Drive からの
-インポート。**iOS の実機確認は TestFlight 経由で行う**（iPhone 8 は Xcode で
-直接ペアリングできない——グローバル CLAUDE.md 参照）。ビルドは
-`eas build --local -p ios --profile production`、提出は `eas submit -p ios
---path <ipa>`（`eas.json` の `submit.production.ios.ascAppId` 設定済みのため
-対話なしで通る）。`expo run:ios`（CLI 経由の自動フロー）もまだ未確認——
-DeviceHub.app 関連の既知の問題が出うる（グローバル CLAUDE.md 参照）
-ため、都度 `xcodebuild` + `simctl install`/`launch` の直接操作で
-代替できる（`xcrun simctl` がシミュレータに対して無反応になった場合の
-対処は、Solo + Us 固有の事象ではないためグローバル CLAUDE.md 参照）。
+- **EAS の実行許可：** `eas build` は `--local` を含め、ユーザーが明示的に実行を指示した場合のみ
+  実行する。`eas submit` も明示的な指示が必要。「TestFlight に上げて」はビルドと提出の両方の
+  明示的な指示として扱ってよい。「リリースビルドを作って」はビルドのみの許可で、提出の許可は含まない。
+  「iPhone 8 で確認したい」だけでは実行許可とみなさず、実行前に確認する。
+  `expo prebuild`・`expo run:*`・`xcodebuild`・`./gradlew` はこの制限の対象外。
+  理由：ビルド枠が貴重なことに加え、リリース用ビルド・提出操作は明示指示で実施する方針のため
+- **iOS の実機確認は TestFlight 経由**（iPhone 8 は Xcode で直接ペアリングできない。グローバル CLAUDE.md 参照）。
+  EAS の実行許可を得たうえで `eas build --local -p ios --profile production`、`eas submit -p ios --path <ipa>`
+- `expo run:ios` は未確認（DeviceHub.app 関連の既知の問題。グローバル CLAUDE.md 参照）。代わりに `xcodebuild` + `simctl install`/`launch` を使う
+
+検証記録: `docs/ios-notes.md`
 
 ## iOS 27 (UIScene) 対応
 
-**Xcode 27 (iOS 27 SDK) 向けにビルドしたアプリは、UIScene ライフサイクルに
-対応していないと起動直後にクラッシュする**（EXC_BREAKPOINT/SIGTRAP、
-クラッシュログのスタックトレースに
-`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` が出る）。
-2026-09-30 の作成時点では、Expo・RN 本体に公式のシーン対応が無かったため、
-`plugins/withIosSceneDelegate.js`（`filto-app` リポジトリの同名プラグインを
-移植）で `AppDelegate.swift`/`SceneDelegate.swift` へ手動でシーン対応を
-注入している（`app.json` の `plugins` に登録済み）。その後、公式の手段が
-入った（下記）。
-2026-09-30 に、このプラグイン適用後にシミュレータで（Debug・Release
-構成の両方、コールドスタート・URL 経由の起動を含め）クラッシュせず
-起動〜 JS バンドル描画まで進むことを確認済み。2026-10-01 に物理 iPhone
-（iPhone 8、TestFlight）でもクラッシュせず動作することを確認済み。
+Xcode 27（iOS 27 SDK）向けは UIScene 未対応だと起動直後にクラッシュする。`plugins/withIosSceneDelegate.js`（`app.json` に登録済み）が `AppDelegate.swift`/`SceneDelegate.swift` へ注入している。
 
-- **`ios/` は `expo prebuild` の自動生成物（gitignore 対象）。修正は必ず
-  `plugins/withIosSceneDelegate.js` 側に加えること**——`ios/` を直接編集
-  しても次の `prebuild` で消える
-- **filto-app からの移植時、Swift 6.2 の「import のアクセスレベル」機能
-  (SE-0409) により追加の修正が必要だった**：このプロジェクトの Expo
-  テンプレートが生成する `AppDelegate.swift` は `internal import Expo` と
-  明示指定しており、`expo-modules-autolinking` が生成する
-  `ExpoModulesProvider.swift`（アプリのターゲットに直接コンパイルされる）は
-  `internal import ExpoModulesCore` を明示指定している。移植元の
-  `SceneDelegate.swift` テンプレートはこれらを暗黙アクセスレベル
-  （`import Expo`/`import ExpoModulesCore`）で書いていたため、同一
-  モジュール内で「同じモジュールを異なる暗黙アクセスレベルで import」と
-  判定されコンパイルエラーになった（`ambiguous implicit access level for
-  import of 'Expo'/'ExpoModulesCore'`）。`internal import` に揃えて解決
-  済み——**このプラグインを別プロジェクトへ移植する際や、Expo/RN の
-  バージョンを上げた際は、`AppDelegate.swift`・自動生成の
-  `ExpoModulesProvider.swift` 側の import 指定と、この
-  プラグインの `SCENE_DELEGATE_SOURCE` 側の import 指定が一致しているか
-  確認すること**（`grep -rn "^import\|^internal import" ios/SoloUs/*.swift`
-  等で比較できる）
-- **公式の対応手段は既にある（2026-10-31 に判明）が、このプロジェクトはまだ乗り換えて
-  いない。** `app.json` の `expo-build-properties`（既に登録済み）の `ios` に
-  `enableSceneSupport: true` を足す方法で、`expo` 57.0.23 以上・`expo-build-properties`
-  57.0.20 以上が条件（公式ガイド: github.com/expo/fyi の `ios-scene-lifecycle.md`）。
-  このプロジェクトは `expo` 57.0.23・`expo-build-properties` 57.0.21 で条件を満たす
-  （2026-10-31 時点。ただし検証したのは `expo` 57.0.31 で、57.0.23〜57.0.30 は未確認）。
-  検証用の新規プロジェクト（`expo` 57.0.31・`expo-build-properties` 57.0.22）の
-  iOS 27 シミュレータでは、Release の起動・URL（コールドスタート含む）・バックグラウンド
-  復帰と、`expo-dev-client` 入りの Debug の起動・Metro 接続まで確認済み（2026-10-31。
-  設定を外すと症状どおり落ちることも確認）。**このプロジェクト自体**でのビルド・起動・
-  TestFlight 実機確認は未実施。乗り換えは `ios/` の起動処理を変える変更なので、
-  **ユーザーの指示があるまで実施しない**。乗り換えるときは、併用できない
-  （公式は `UIApplicationSceneManifest` が既にあるとエラーにする）ので、先に
-  `plugins/withIosSceneDelegate.js` と `app.json` の登録を外す。SDK 58 に上げたら、
-  どちらも不要（`enableSceneSupport` は警告が出るだけ）
-- **既知の制約：コールドスタート（未起動状態）でのディープリンクの URL が
-  JS 側の `Linking.getInitialURL()` に渡らない**（ウォームスタートは問題
-  ない）。2026-09-30 時点でアプリ内にディープリンク機能は無いため実害は
-  無いが、ウィジェット・通知・共有シート等で `soloplusus://` を使い始める
-  場合は要注意。根拠・再現手順は `plugins/withIosSceneDelegate.js` の
-  `willConnectTo` 内コメント参照。公式の `enableSceneSupport` 構成（`expo` 57.0.31、
-  検証用プロジェクト）では、コールドスタートの URL が `getInitialURL()` に届くことを
-  確認済み（2026-10-31）。乗り換えれば、この制約は解消する見込み。ただし、このプロジェクトの
-  `expo` 57.0.23 では未確認なので、乗り換えたら、アプリを終了して `xcrun simctl openurl` で
-  開き、`getInitialURL()` に届くかを確かめる
-- **App Lock・App Switcher ぼかし・`AppState` 依存の同期/言語処理は、
-  シーン方式でも影響しないとソースコード上（静的確認のみ）で確認済み**
-  （2026-09-30）——いずれも `UIApplicationDelegate` のコールバックではなく
-  `NotificationCenter` 経由で `UIApplication` レベルの通知を購読しており、
-  この種の通知はシーン方式でも引き続き発行されるため。2026-10-01 に
-  iPhone 8 実機（TestFlight）でバックグラウンド復帰時のロックと App Switcher
-  のぼかしを目視確認済み
+- **`ios/` は `expo prebuild` の自動生成物。修正は必ず plugin 側に加える**（直接編集は次の `prebuild` で消える）
+- **import のアクセスレベルを揃える**（SE-0409）：`AppDelegate.swift`・`ExpoModulesProvider.swift` の `internal import` と、plugin の `SCENE_DELEGATE_SOURCE` が食い違うとコンパイルエラー。移植時や Expo/RN の更新時に確認する（コマンド: `docs/ios-notes.md`）
+- **公式の `enableSceneSupport` への乗り換えは、ユーザーの指示があるまで実施しない。** 併用不可（先に plugin と `app.json` の登録を外す）。このプロジェクトでの検証は未実施。SDK 58 では不要になる
+- **既知の制約：コールドスタートのディープリンクの URL が `Linking.getInitialURL()` に渡らない。** ウィジェット・通知・共有シート等で `soloplusus://` を使い始める場合は要注意
 
-### schema.ts を変更した後の実機テストは、既存アプリを一度アンインストールすること
+経緯・検証記録・乗り換えの条件: `docs/ios-notes.md`
 
-v1 は未リリースのため D-11「ALTER TABLE のみ」はまだ適用されず、
-`database/schema.ts` を直接編集する方針（README 各所に記載）。これは
-「新規インストール前提」の設計であり、**過去に一度でもインストールした
-実機/エミュレータの DB ファイルは、`schema.ts` に後から追加された列を
-自動では持たない**（`adb install -r` はアプリデータを保持したまま
-アップグレードするため、DB ファイルは古いスキーマのまま残る）。
+### DBスキーマ変更後の実機テストはmigrationを確認する（アンインストールに注意）
 
-実際に、D-51（`health_sync.sync_state` 列追加）より前からテストに使って
-いた Pixel 11 に最新ビルドを `-r` で上書きインストールしたところ、
-`table health_sync has no column named sync_state` という SQLite
-エラーが `SyncWorker` の finalize で発生し続けた（Settings 画面の
-接続ステータスが不安定に見えるなど、無関係に見える副作用も伴った——
-Health Connect Settings UI 実装時に実際に踏んだ）。
+Android 版は公開済みで、D-11（基本設計 §7.1）が効いている。**スキーマ変更は `SCHEMA_V1_STATEMENTS`（`database/schema.ts`）を直接編集せず、新しい migration として足す**（`database/migrations/` に追加し、`database/connection.ts` の `MIGRATIONS` に登録する。直接編集した内容は、migration 001 が走る新規インストールにしか入らない）。D-11 の制約は、前方向のみ、列追加は `ALTER TABLE ADD COLUMN` のみ、改名・型変更・CHECK 変更は新テーブル作成 → コピー → 差し替えを migration のトランザクション内で行う。
 
-**`schema.ts` を変更した回のブランチ/コミットを実機でテストする際は、
-`adb uninstall <applicationId>` してから `adb install` し直すこと。**
-`-r`（保持アップグレード）で踏むと、コードのバグと勘違いして無駄に
-調査することになる。
+- **アップグレードの確認は、アンインストールせず、旧版の上に `adb install -r` で入れて行う**（データを保持したまま migration が走る）。旧版は、同じ署名で入る自分の開発ビルド（旧コミット）を使う。Play 版は署名が違うので、`-r` では入らない
+- アンインストールが要るのは、開発中の migration を書き換えたとき（端末が旧版を適用済み）、migration を含むブランチから含まないブランチへ切り替えたとき（`SchemaTooNewError` で DB を開けない）、新規インストール経路の確認、直接編集した古いブランチで `no column named …` が出たときだけ
+- **`adb uninstall` はアプリのデータと DB 暗号鍵を消し、戻せない**（OS バックアップも無効、D-07）。**実使用の記録がある端末（Play 版を入れている端末を含む）では、安易に実行しない。** 必要なら先に Export（JSON）で書き出し、共有シートは保存の成否を返さないので、保存先にファイルがあることを確認してから実行する。JSON で復元できるのは記録（Activity）と、記録項目・表示・言語の設定だけ。App Lock・スクリーンショット・Health Connect の設定と同期状態は戻らず、CSV は復元に使えない
+
+経緯（D-51）、公開前の方針、Export の復元範囲の詳細: `docs/device-testing-notes.md`
 
 ### adb での実機 UI 操作時、LogBox の警告バナーがタップを奪うことがある
 
-開発ビルドで LogBox の警告バナー（「Open debugger to view warnings」等）が画面下部に
-出ている間、`adb shell input tap` でその帯と重なる位置（Save ボタン等）をタップしても
-**ネイティブの overlay に吸われて何も起こらない**——ログも出ず、画面遷移もしない。
-一見「保存処理がサイレントに失敗している」ように見えるため、これを実際のアプリの
-不具合と誤診しかけたことがある（Activity Detail の DATE & TIME 編集、2026-09-21）。
-adb でのタップが理由なく無反応に見えたら、まず `uiautomator dump` でバナーの有無を
-確認し、バナーの「X」を閉じてから再現し直すこと。
+開発ビルドで LogBox の警告バナーが画面下部に出ていると、重なる位置（Save ボタン等）への `adb shell input tap` は何も起こらない。アプリの不具合と誤診しないこと。タップが理由なく無反応なら、まず `uiautomator dump` でバナーを確認し、「X」で閉じてから再現する。経緯: `docs/device-testing-notes.md`
 
 ### スクリーンショットに関する方針
 
@@ -160,212 +90,52 @@ comment を先に読むこと。
 
 ### Health Connect 同期の排他制御（`SyncWorker`/`SyncCoordinator`/`SyncWorkerLoop`）
 
-`services/SyncWorker.ts` は「v1 はプロセス内単一ワーカー」（§6.2/D-36）を
-前提に書かれているが、**この前提はコード自身では守られず、呼び出し側が
-守る責務**になっている。実際に一度、この前提が壊れて
-「cannot start a transaction within a transaction」（`db.transaction` の
-衝突）と「claim が解放されずに次回起動まで残る」の両方を実機相当の
-再現で踏んだ（`contexts/SyncWorkerLoop.tsx` のレビュー時）。
+`SyncWorker` は「プロセス内単一ワーカー」（§6.2/D-36）が前提だが、これはコード自身では守られず、呼び出し側が守る責務。
 
-- **drain のトリガを増やすときは、必ず `contexts/SyncWorkerLoop.tsx` の
-  `drainingRef`/`rerunRequestedRef` による直列化を経由すること。**
-  `drainDueJobs` を独自のタイマーやイベントから直接呼ぶコードを新設しない。
-- **破壊的操作（置換復元・全削除・HC切断等）は必ず
-  `SyncCoordinator.runExclusive` 経由で呼ぶこと。** そして
-  `runExclusive` に渡す関数の**内側**から `drainDueJobs`/`useSyncWorkerLoop`
-  相当の処理を呼ばないこと——`SyncCoordinator` の直列化キューは同一
-  呼び出しスタック内でのネストに対応できず、デッドロックする
-  （`services/SyncCoordinator.ts` の「直列化」節参照）。
+- **drain のトリガを増やすときは、必ず `contexts/SyncWorkerLoop.tsx` の `drainingRef`/`rerunRequestedRef` による直列化を経由する。** `drainDueJobs` を独自のタイマーやイベントから直接呼ばない
+- **破壊的操作（置換復元・全削除・HC切断等）は必ず `SyncCoordinator.runExclusive` 経由で呼ぶ。** `runExclusive` に渡す関数の内側から `drainDueJobs`/`useSyncWorkerLoop` 相当を呼ばない（直列化キューがネストでデッドロックする。`services/SyncCoordinator.ts` の「直列化」節）
 
-Settings UI（HC の ON/OFF・手動再試行/破棄）を実装する際は、新しい
-drain トリガや破壊的操作を追加することになるため、この2点を必ず踏まえる
-こと。詳細な経緯は README「Phase 4 実装状況」のレビュー履歴参照。
+Settings UI など新しい drain トリガや破壊的操作を足すときは、この2点を必ず踏まえる。経緯: README「Phase 4 実装状況」、`docs/health-connect-dev-notes.md`
 
 ### `react-native-health-connect` は iOS で「呼ぶと必ず throw する Proxy」
 
-`node_modules/react-native-health-connect/lib/commonjs/index.js` は iOS/未対応
-プラットフォーム向けに `HealthConnectModule` を「どのメソッドを呼んでも
-`throw` する `Proxy`」にしている（`moduleProxy`）。つまり
-`HealthConnectService.isAvailable()`/`ensureInitialized()` 等は iOS では
-**毎回確実に reject する**——一時的なエラーではなく恒常的な状態。
+iOS ではモジュールが「どのメソッドを呼んでも `throw` する `Proxy`」で、`HealthConnectService.isAvailable()`/`ensureInitialized()` 等は**毎回確実に reject する**（恒常的な状態）。DB 読み取りなど他の非同期処理と同じ `Promise.all` に入れない（全体が常に失敗する。初版で踏んだ）。
 
-これを他の非同期処理（特に DB 読み取り）と同じ `Promise.all` に入れると、
-その `Promise.all` 全体が常に失敗扱いになる。Settings > Health Connect 画面
-（`app/settings/health-connect.tsx`）の初版でこの事故を実際に踏んだ——DB
-読み取り4件とまとめていたため、iOS では毎回「何も同期されていない」ように
-見えるだけでなく、未処理の delete job が残っていても件数が0件に見え、
-§10.5「未処理が残っている間は件数を表示し続ける」に違反していた。
+- HC のネイティブ呼び出しは、DB 読み取りとは別の `try/catch` に分離する（`SyncWorker.drainDueJobs` の `ensureInitialized()` の扱いと同じ形）
+- 根本対策は `app/settings/index.tsx` の HEALTH セクションを `Platform.OS === 'android'` でガードすること（HC は Android 専用機能、§9.11）
 
-- Health Connect のネイティブ呼び出しは、DB 読み取りとは別の `try/catch`
-  に分離すること（`services/SyncWorker.ts` の `drainDueJobs` が
-  `ensureInitialized()` の reject を個別に扱っているのと同じ形）。
-- 根本的な対策は `app/settings/index.tsx` の HEALTH セクションを
-  `Platform.OS === 'android'` でガードすること——Health Connect は
-  Android 専用機能（§9.11）なので、iOS でこの画面自体を表示しない。
+経緯（§10.5 違反）: `docs/health-connect-dev-notes.md`
 
 ### package.json にあるのに未リンクなネイティブモジュール（Gradle デーモンのキャッシュ）
 
-`expo-application`/`expo-constants` は Phase 1 から `package.json` の
-dependencies にあったが、実際には一度もネイティブ側でリンクされておらず、
-2026-09-21（Settings > Version 表示で `expo-application` を初めて使おうと
-した際）まで気づかれていなかった。`npx expo-modules-autolinking resolve -p
-android --json` を直接実行すると両方とも解決対象に含まれるのに、Android の
-通常のネイティブビルド（`expo run:android`・`./gradlew installDebug`）を
-何度実行しても効果が無かった。
-
-**原因は Gradle デーモンの再利用**：`expo-modules-autolinking` の解決結果は
-Gradle の settings 評価フェーズでキャッシュされる。デーモンが起動したまま
-だと、依存関係の解決結果が古いまま使い回されることがある（今回は長時間
-（2日以上）起動しっぱなしだった `expo run:android` プロセスが影響していた
-可能性が高い）。
-
-**新しいネイティブモジュール（native code を持つ Expo モジュール）を
-package.json に追加した／既存の未使用モジュールを初めて import した際、
-通常のビルドで一見成功していてもリンクされていないことがある。** 疑わしい
-場合は、ビルド前に一度 `cd android && ./gradlew --stop` で Gradle デーモンを
-止めてから再ビルドすること。`android/build/generated/autolinking/
-autolinking.json`（React Native コミュニティ側の legacy autolinking 設定）
-は Expo モジュールのリンク状況の確認には使えない——別物なので確認先を
-間違えないこと。確実な確認方法は、対象モジュールの値だけが変わる形で
-JS 側のフォールバック値と native 側の値を意図的に食い違わせ（例：
-`app.json` の `version` を一時的に別の値へ変更して JS だけリロードし、
-native から読んだ値が変わらないことを見る）、実際に native 経由で
-読めているかを実機で確認すること——見た目の値が同じだと「動いているように
-見えるだけ」で気づけない。
+新しい（native code を持つ）Expo モジュールを `package.json` に追加した／未使用だったモジュールを初めて import したときは、通常のビルドが成功してもリンクされていないことがある（Gradle デーモンが autolinking の解決結果を古いまま使い回すため）。疑わしければ `cd android && ./gradlew --stop` してから再ビルドする。リンクの確認に `android/build/generated/autolinking/autolinking.json` は使えない（別物）。確認手順・経緯: `docs/android-build-notes.md`
 
 ### Android のダーク/ライト切替まわりの落とし穴
 
-画面遷移中に一瞬見える帯や、テーマ切替の反映漏れは `contentStyle`（React Navigation
-の各画面コンテナ）や `useColorScheme()` のオーバーライドだけでは直らないことがある。
-原因はそれより下のネイティブ層（`android:windowBackground`、`AppCompatDelegate` の
-Day/Night モード、ステータスバー）にあることが多く、`values-night/colors.xml` や
-`Appearance.setColorScheme()`、`expo-system-ui` での対応が必要になる。色の定数は
-`constants/theme.ts`・`plugins/withAndroidNightColors.js`・`app.json` の3箇所に
-手動同期が必要（自動参照する手段が無い）。詳細と発見の経緯は README「Phase 3
-実装状況 > Appearance」参照。
+遷移中の帯やテーマ切替の反映漏れは、`contentStyle` や `useColorScheme()` では直らず、ネイティブ層（`android:windowBackground`、`AppCompatDelegate` の Day/Night、ステータスバー）が原因のことが多い。**色の定数は `constants/theme.ts`・`plugins/withAndroidNightColors.js`・`app.json` の3箇所に手動同期が必要**（自動参照する手段が無い）。詳細: README「Phase 3 実装状況 > Appearance」、`docs/android-build-notes.md`
 
 ### ローカルで Health Connect を触るには `.env.local` が必要（既定は無効）
 
 `npm run android`/`expo start` は**既定で without-health-connect
 （HC 無効）**。`cp .env.local.example .env.local` しないと、Settings に
 HEALTH セクション自体が出ない（機能が無いのではなく、意図的にビルドごと
-隠している——詳細は次の節）。schema.ts 変更後のアンインストールと同じく、
+隠している。詳細は次の節）。DB スキーマ変更後の実機テストの落とし穴と同じく、
 「コードのバグでは？」と無駄に調査する前にまずこれを疑うこと。
 
 ### リリースビルド分離（`without-health-connect`/`with-health-connect`）はネイティブモジュールを除去しない
 
-§9.11/§25.1 の実装（`app.config.js`・`lib/healthConnectBuild.ts`・
-`eas.json`）は、`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED` で **Manifest の
-permission（`android.permission.health.WRITE_SEXUAL_ACTIVITY`）と
-`withHealthConnectPermissionsRationale` plugin だけ** を切り替えている。
-`react-native-health-connect` ネイティブモジュール自体は両ビルドとも
-リンクされたまま——これは手抜きではなく意図的な設計判断。**既定値
-（env 未設定）は「無効」**（`=== '1'` のときだけ有効、opt-in）——当初は
-「未設定 = 有効」だったが、env 指定を忘れた/新しい build profile が
-黙って permission 入りに倒れるのは危険側だとレビューで指摘され直した
-（`app.config.js`・`lib/healthConnectBuild.ts` の doc comment参照）。
-ローカルの `expo run:android`/`expo start` を HC 込みで使いたい場合は
-`.env.local.example` を `.env.local` にコピーすること。
+`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED` で切り替わるのは Manifest の permission（`android.permission.health.WRITE_SEXUAL_ACTIVITY`）と `withHealthConnectPermissionsRationale` plugin だけ。`react-native-health-connect` ネイティブモジュールは両ビルドともリンクされたまま（意図的な設計判断）。
 
-- Health apps declaration の提出トリガーは「配布 AAB の Manifest に
-  health permission が含まれているか」であって、ネイティブモジュールの
-  リンク有無ではない（§9.11 本文）。permission を切れば要件は満たされる。
-  ただしライブラリ自身の `<queries><package android:name="com.google.
-  android.apps.healthdata" /></queries>` は without ビルドでも Manifest に
-  残る（審査トリガーになる permission ではないので問題無いが、「HC の痕跡が
-  完全に消える」わけではない——レビュー指摘、2026-09-21）。
-- ネイティブモジュールの物理除外（autolinking の `exclude`）は、
-  Gradle デーモンのキャッシュ問題（本ファイル「package.json にあるのに
-  未リンクなネイティブモジュール」の節）を踏むリスクの割に実益が無い
-  ため、あえてやっていない。**「ネイティブモジュールも除外すべきでは」
-  という直感で `exclude` 設定を足すような変更はしないこと**——上記の
-  理由で不要かつリスクだけが増える。
+- **既定値（env 未設定）は「無効」**（`=== '1'` のときだけ有効）。有効扱いに戻さない。判定式は `app.config.js` と `lib/healthConnectBuild.ts` の2箇所にあるので、両方直す
+- **autolinking の `exclude` でネイティブモジュールを除外しない。** 審査のトリガーは Manifest の permission で、除外は実益が無くリスクだけが増える
+- **「行を隠せば実行時参照は起こり得ない」は誤り。** with→without の入れ替えと deep link で到達する（対処: `reconcileHealthConnectBuildFlag()` と `health-connect.tsx` の `<Redirect>`。保証するのは壊れた UI・誤った案内を出さないところまで）。同種のビルドフラグ分岐を足すときも、UI を隠すことと「その状態になれない」ことを混同しない
+- `EXPO_PUBLIC_*` は dev-client のライブリロードでは shell の export が JS 側に反映されない。`.env.local` に書いて `expo start --clear`
 
-**「行を隠せば実行時参照は起こり得ない」は誤りだった（レビュー指摘、
-2026-09-21・実装当日に発見）。** 当初 `app/settings/index.tsx` が
-`isHealthConnectBuildEnabled()` で HEALTH 行を隠すだけで十分だと考えたが、
-以下の2経路で破られる：
-
-1. **同一 applicationId での with→without 入れ替え。** `healthConnect.
-   enabled` は暗号化 DB の設定として永続化され、アプリの入れ替え
-   （`adb install -r` 相当のアップグレード）では消えない。以前
-   with-health-connect ビルドで ON にしていた端末へ without ビルドを
-   重ねると、`getActiveProviders`（`services/ActivityService.ts`）が
-   health_connect を active と返し続け、`drainDueJobs` が permission の無い
-   ビルドでジョブを claim しては失敗させ続ける——しかもそれを見る/止める
-   UI（`health-connect.tsx`）は行が隠れていて到達不能。
-2. **deep link での直接到達。** `app/settings/index.tsx` が行を隠しても、
-   `soloplusus://settings/health-connect` は Expo Router のルートとして
-   常に開ける。ON トグルを押すと `healthConnect.enabled = true` が書き込め
-   てしまう（iOS は同じ「行を隠すだけ」だが、そちらはネイティブ呼び出しが
-   必ず throw する Proxy なので安全側に倒れる——ビルドフラグのケースは
-   ネイティブモジュールが生きたまま応答するため、同じロジックが通用しない）。
-
-**対処（両方実装済み）：**
-- `services/ActivityService.ts` の `reconcileHealthConnectBuildFlag()` を
-  `contexts/DatabaseContext.tsx` の DB 接続確立直後（アプリへ公開する前）に
-  1回呼び、`!isHealthConnectBuildEnabled()` なら `healthConnect.enabled` を
-  false に是正する（この時点では SyncWorker は構造上まだ起動しえないため
-  `SyncCoordinator.runExclusive` は不要——「初期化は runExclusive で
-  包んでいない」と同じ理由。呼び出しは try/catch で握り、失敗しても DB
-  接続自体は開いたまま起動を続ける——`ensureLocaleDefaultsPersisted` の
-  ような「失敗したら以降の表示が壊れる」処理とは重みが違うため）。
-- `app/settings/health-connect.tsx` の default export は薄いラッパーで、
-  `!isHealthConnectBuildEnabled()` なら中身（全 hooks を持つ
-  `HealthConnectSettingsScreenInner`）をマウントせず
-  `<Redirect href="/settings" />`（`expo-router`）を返す（2回目のレビュー
-  指摘で `useEffect`+`router.replace` の自作から差し替え——コンポーネント
-  分割なら形式的にも Rules of Hooks 違反にならない）。
-
-**ただし `reconcileHealthConnectBuildFlag` が解決するのは「provider が
-active のまま止まる」「トグル画面が到達不能」の2点だけで、with-health-
-connect ビルドで積まれた delete ジョブ自体が消えるわけではない
-（3回目のレビュー指摘、2026-09-21）。** permission が無いビルドではその
-ジョブを HC へ送る手段が無いため、jobs テーブルには残り続ける
-（`drainDueJobs` の provider-disabled 早期 return で claim されないだけ
-——§10.5 の「無効化中もジョブは保持される」と同じ扱い）。
-`app/settings/delete-data.tsx` の全削除完了メッセージは、
-`!isHealthConnectBuildEnabled()` のときだけ「このバージョンでは送信できない
-（HC 対応版に更新されれば自動的に再開する）」という文言に分岐させている
-——`healthConnect.enabled` が既に false なのに旧来の「Settings › Health
-Connect で再接続してください」を出すと、到達不能な画面へ誘導することになる
-ため。**with→without の入れ替えは、実際の配布（Play では片方のみ）ではなく
-主にローカルでのビルド取り違え対策として作った経路であり、「ジョブが
-いつか必ず送信される」ところまでは保証しない**——保証するのは「壊れた
-UI 状態や誤った案内を出さない」ところまで。
-
-「行を隠すだけで到達不能」という単純化は、**設定が他の経路（アップグレード・
-deep link・将来の Import 等）で変わりうる場合は成立しない**——今後同種の
-ビルドフラグ分岐を足すときは、UI を隠すことと「その状態に実際になれない」
-ことを混同しないこと。
-
-**`EXPO_PUBLIC_*` は `expo start`/`expo run:android` の dev-client 経由の
-ライブリロードでは、shell の export だけでは反映されない（実機で実際に
-踏んだ、2026-09-21）。** `app.config.js`（prebuild 時、素の Node プロセスが
-`process.env` を読むだけ）は shell export で問題なく動くが、JS 側
-（`lib/healthConnectBuild.ts` 等、bundle に埋め込まれる値）は別の仕組み
-（`expo/virtual/env`、実体は `.env`/`.env.local`/`.env.development`/
-`.env.development.local` からのみ値を取る require-context）を経由しており、
-dev-client のライブ bundle ではこれが優先され、shell export した値が
-反映されない（`undefined` になる）。**`npx expo export`（＝`eas build` が
-実際に使う本番相当の静的バンドル生成)では shell export だけで正しく
-リテラルへインライン展開される**（`return false;` まで定数畳み込みされる
-ことを実際に確認済み）——つまり `eas.json` の `env` を使うリリースビルドは
-問題なく動く。ローカルで dev-client 接続のまま JS 側の分岐だけを試したい
-場合は、`.env.local`（gitignore 済み）に書いてから `expo start --clear`
-すること。`app.config.js` と JS 側の判定で挙動が食い違って見えたら、まず
-これを疑うこと。
+詳細・経緯: `docs/health-connect-dev-notes.md`
 
 ### ストア掲載のアセットを更新したら、提出済みのビルドにも同じ画像が入っているか確認する
 
-Play 版 v1.0（versionCode 2）は、アプリ内アイコンを Expo 既定の青い三角から
-独自の「＋」へ差し替える**前**にビルドした AAB を提出し、掲載情報の 512px
-アイコンだけを新しくしていたため、「インストールされたアイコンが掲載情報と
-異なる」（誤解を与える表現）で却下された（2026-10-06）。`assets/images/` の
-アイコン類を変えたら、掲載情報の更新だけで済ませず、**そのアイコンを含む
-ビルドを作り直して提出すること**。審査前に、実際にインストールしたアプリの
-ランチャーアイコンを掲載情報の画像と見比べる。詳細は
-`docs/store-listing.md` の「Play Console 申告の記録」。
+Play 版 v1.0（versionCode 2）は、アイコン差し替え前にビルドした AAB を提出し、「インストールされたアイコンが掲載情報と異なる」で却下された（2026-10-06。経緯: `docs/store-listing.md` の「Play Console 申告の記録」）。`assets/images/` のアイコン類を変えたら、掲載情報の更新だけで済ませず、**そのアイコンを含むビルドを作り直して提出すること**。審査前に、インストールしたアプリのランチャーアイコンを掲載情報の画像と見比べる。
 
 **Play のストアの名前は、端末上のアプリ名「Solo + Us」（`app.json` の `name`）と意図的に違う**
 （en「Solo + Us: Sex Tracker」、ja「Solo + Us: 性行為・自慰行為の記録」。2026-10-31 に決定。
@@ -387,8 +157,7 @@ Google Play の表示名に合わせた `yskms.studio` のままでよい（ス�
 ルート（`/solo-plus-us/`）は Play のストア掲載情報の「ウェブサイト」欄。`/solo-plus-us/ios/` は
 App Store Connect の「サポート URL」と「マーケティング URL」（日本語のローカライズも）。
 HTML コメントはそのまま配信されて誰でもソースで読めるので、**審査の状況・Apple の指摘・
-判断の経緯をコメントに書かない**（2026-10-29 に、書いてあったのを公開後に見つけて移した。
-経緯と判断は `docs/app-store-listing.md` の「紹介ページとサポート URL」の節）。
+判断の経緯をコメントに書かない**。経緯と判断は `docs/app-store-listing.md` の「紹介ページとサポート URL」の節。
 
 - **2026-10-31 に URL を分けた**（このアプリは Android が主）。ルートは性行為・自慰行為を
   名指しで書く（`docs/store-listing.md` の Play の掲載文と揃える）。**`/ios/` は、Apple が
@@ -406,122 +175,43 @@ HTML コメントはそのまま配信されて誰でもソースで読めるの
 
 ### 多言語対応（i18n）——`lib/` は `t` を引数で受け取る、`t()` のキーに厳密な型は付けていない
 
-日本語 + 英語対応（`i18next`/`react-i18next`）を実装済み（設計判断記録 D-53、
-D-48 のスコープ外指定を撤回）。翻訳リソースは `locales/en.json`/`locales/ja.json`。
+日本語 + 英語（`i18next`/`react-i18next`、D-53）。リソースは `locales/en.json`/`locales/ja.json`。
 
-- **`lib/` 配下の関数は `i18next` singleton を直接 import せず、呼び出し元
-  （コンポーネントの `useTranslation()`）から `TFunction` を引数で渡す**
-  （`lib/timeFormat.ts`・`lib/relativeDate.ts`・`lib/calendarGrid.ts`・
-  `lib/statistics.ts`・`lib/labels.ts`・`lib/activityDetailsFields.ts` 等）。
-  `lib/` を i18n/React に直接依存させない、このコードベースの「依存を明示的に
-  渡す」作法（`SqlExecutor` を毎回渡す等）に合わせている。新しく `lib/` に
-  表示文字列を返す関数を足すときもこのパターンを踏襲すること。
-- **`t()` のキー引数に `locales/en.json` から生成した厳密な型は付けていない**
-  （一度 `types/i18next.d.ts` で試みて撤回済み——react-i18next のオーバーロード
-  解決が、このリソースツリーの規模（150キー超）で特定の呼び出しを誤ったオーバー
-  ロードに解決し、正しいコードに対して的外れなコンパイルエラーを出すように
-  なった）。**`t('...')` に typo があってもコンパイルは通る**——キーの整合性は
-  型ではなく `npm run check-i18n`（`scripts/checkI18nKeys.js`）で検出すること。
-  全ソースの `t('...')` 呼び出しを `locales/en.json`/`ja.json` の実キーと
-  突き合わせ、未定義キー・翻訳漏れ・複数形の `_one`/`_other` 片側欠けを検出する
-  （新しいキーを大量に追加した後は、このコマンドを一度走らせて確認する。
-  CI には組み込んでいない——手動実行が前提）。
-- 複数形は i18next の `count` + `_one`/`_other` 接尾辞（CLDR plural rules）に
-  委ねている——日本語は常に "other" カテゴリのみだが、`locales/ja.json` 側も
-  **`_other` 接尾辞を省略せず付けている**（`statistics.days_other` 等。21キー
-  すべてこの形）。**注：接尾辞なしのキーでも i18next は解決できる**（未接尾辞
-  キーへのフォールバックが実装されている——実際に確認済み）ので、これは
-  必須ではなく規約上の選択——`en.json` 側は `_one`/`_other` を書き分ける
-  必要があるため、`ja.json` 側も明示的に揃えることで「このキーは複数形
-  対応済み」と一目で分かるようにしている。
-  `en.json` 側は `_one`/`_other` の両方が必要。どちらかの言語だけ追加して
-  もう片方を書き忘れる、という抜け漏れに注意。
-- **`Intl.PluralRules` は、この Android 実機（Pixel 11）の Hermes では
-  `undefined`（`lib/i18n/index.ts` で実機確認・2026-09-21）。** `lib/datetime.ts`
-  が既に指摘している「Hermes の Intl サポートは部分的」の実例がもう1つ増えた形——
-  これが無いと i18next の複数形解決が、言語に関わらず「`count === 1` なら
-  `_one`」という素朴な規則にフォールバックし、`ja.json` に `_one` が存在しない
-  ため `fallbackLng: 'en'` で英語の `_one` 文言が出てしまう（**count が 1 の
-  ときだけ**発生し、2以上では両言語とも `_other` に着地するため気づきにくい
-  ——実際、`tsc`/`jest` はどちらも Node の `Intl.PluralRules` を使うため通過し、
-  実機でしか再現しなかった）。`@formatjs/intl-pluralrules` のポリフィルを
-  `lib/i18n/index.ts` で `Intl.PluralRules` 未定義時のみ `require`
-  （Jest の ESM 未対応な `polyfill.js` を静的 import すると壊れるため、
-  静的 `import` ではなく実行時ガード付き `require` にしている）で読み込んで
-  解決済み。**新しい複数形キー（`_one`/`_other`）を追加したときは、`tsc`/
-  `jest` だけでなく実機（または実機相当）で count=1 のケースを一度目視
-  確認すること**——このクラスのバグは静的解析では検出できない。
-- `services/importValidation.ts` の個別フィールド検証メッセージ（約25種類）は
-  意図的に未翻訳——壊れた backup JSON のスキーマ違反を説明する開発者向けの
-  技術的詳細で、通常の UI 文言よりログ出力に近いと判断した（設計判断記録 D-53）。
-  周囲の「このファイルはバックアップに見えません」等の文言は翻訳済み。
+- **`lib/` 配下の関数は `i18next` を直接 import せず、呼び出し元の `useTranslation()` から `TFunction` を引数で渡す**（新しい関数も踏襲する）
+- **`t()` のキーに厳密な型は付けていない**（試して撤回済み）。typo はコンパイルを通るので、`npm run check-i18n`（手動実行）で確認する
+- 複数形は `count` + `_one`/`_other`。`en.json` は両方が必要。`ja.json` は `_other` 付きが規約（接尾辞なしでも解決できるので必須ではない）
+- **Hermes には `Intl.PluralRules` が無い。** `lib/i18n/index.ts` がポリフィルを実行時ガード付き `require` で読み込んでいる（静的 `import` にしない）。**複数形キーを足したら、実機で count=1 のケースを目視確認する**（`tsc`/`jest` では検出できない）
+- `services/importValidation.ts` の検証メッセージ（約25種類）は意図的に未翻訳
+
+理由・経緯: `docs/i18n-notes.md`
 
 ### 戻るボタンが前画面のルート名（例: `(tabs)`）を表示してしまう問題
 
-iOS の戻るボタンは、前の画面の `Stack.Screen` に `title` が未設定だと
-ルート名をそのまま表示・読み上げる——通常表示・長押しの履歴メニュー・
-VoiceOver のいずれも同じフォールバック先になる。`app/_layout.tsx` の
-`<Stack.Screen name="(tabs)">` に `title: 'Solo + Us'` を明示して解消済み
-（2026-09-30、シミュレーターの長押しメニューで実際に `"Solo + Us"` と
-表示されることを確認済み）。
-
-同ファイルの `headerBackButtonDisplayMode: 'minimal'`（Stack 全体で戻る
-ボタンの文字を常に非表示にする設定）とは役割が別——`minimal` は見た目の
-調整で、長押しメニュー・VoiceOver の表示元には効かない。新しく
-`Stack.Screen` を追加する際、`title` を省略すると同じ問題が再発するので
-注意（役割の違いは `app/_layout.tsx` 内のコメント参照）。
+iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOver）は、前画面の `Stack.Screen` に `title` が
+未設定だとルート名を表示・読み上げる。**新しく `Stack.Screen` を追加するときは `title` を付ける。**
+`headerBackButtonDisplayMode: 'minimal'` とは役割が別で、長押しメニュー・VoiceOver には効かない
+（`app/_layout.tsx` 内のコメント参照）。原文（確認日 2026-09-30 を含む）: `docs/ios-notes.md`
 
 ### 記録トースト（UndoSnackbar）とボトムタブの重なり
 
-`components/UndoSnackbar.tsx` はルート直下（`(tabs)` の外）に描画され、
-以前は下端固定位置（`bottom: 24`）だったためボトムタブ（自前実装、
-`app/(tabs)/_layout.tsx`）と重なっていた。`contexts/TabBarHeight.tsx` で
-タブバーの実測高さを共有し、その分だけ底上げして解消済み（2026-09-30、
-シミュレーターで記録保存して確認済み）。`(tabs)` 以外の画面（`record`・
-`activity/[id]`）ではタブバー分の高さが残ったままトーストが高めに出る
-既知の制約はレビューで許容済み——詳細と理由は
-`contexts/TabBarHeight.tsx` の doc comment 参照。
+`components/UndoSnackbar.tsx` はルート直下（`(tabs)` の外）に描画されるため、`contexts/TabBarHeight.tsx` で
+共有したタブバーの実測高さの分だけ底上げしている。`(tabs)` 以外の画面でトーストが高めに出るのは、
+既知の制約としてレビューで許容済み（`contexts/TabBarHeight.tsx` の doc comment 参照）。原文（確認日 2026-09-30 を含む）: `docs/ios-notes.md`
 
 ### Android リリースビルド（`eas build --local`）の注意
 
-- **`versionCode` は手で上げない。** `eas.json` の `production` は
-  `autoIncrement: true` で、ビルド時に `app.json` の `android.versionCode` を
-  +1 する（ログに `Bumping expo.android.versionCode from N to N+1`）。手で
-  上げてからビルドすると二重に上がる（1.0.1 で 4 → 5 になった実例）。ビルド後に
-  `app.json` の差分をコミットして AAB と揃える。iOS の `buildNumber` は別管理。
-- **`eas` は PATH に無い。** `npx --yes eas-cli@25.3.0 build --local …`（npx
-  キャッシュにある版）で実行する。`--output` で出力先を指定する。
-- **AAB の中身の確認（bundletool が無いとき）：** `aapt2` は AAB を直接読めない。
-  AAB を unzip し、`base/` の `AndroidManifest.xml`（`manifest/` から出す）・
-  `resources.pb`・`res/` だけを zip し直して `aapt2 convert --output-format
-  binary` → `aapt2 dump badging` で versionCode・versionName・権限を見る
-  （`~/Library/Android/sdk/build-tools/*/aapt2`）。健康データ権限
-  （`android.permission.health.*`）が無いことを毎回確認する。
-- ビルドログの `expo doctor` の「Patch version mismatches」は警告で、ビルドは
-  止まらず成功する（既存の状態）。
+`eas build`・`eas submit` の実行許可は、「ローカル iOS ビルドは M4 MacBook Air 移行後にブロック解除済み」の節の「EAS の実行許可」に従う。
+
+- **`versionCode` は手で上げない。** `production` の `autoIncrement: true` がビルド時に +1 する。手で上げると二重に上がる（1.0.1 で 4 → 5 の実例）。ビルド後は `app.json` の差分をコミットして AAB と揃える。iOS の `buildNumber` は別管理
+- `eas` は PATH に無いので `npx --yes eas-cli@25.3.0 build --local …` で実行する
+- **リリース前に、AAB の Manifest に `android.permission.health.*` が無いことを毎回確認する**（手順: `docs/android-build-notes.md`）
 
 ### Android R8（難読化・最適化・縮小）——`plugins/withAndroidR8.js` は外さない・簡略化しない
 
-2027年2月から、Google Play は DEX が 10MB 超のアプリに難読化・最適化・縮小の各率 25% 以上を
-求める。Expo/RN のテンプレートは R8 を使わず、このアプリの DEX は約 46MB（1.0.1）。plugin で
-R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範囲は README「Android R8 の有効化」。
-各設定が必要な理由は plugin 冒頭のコメントにある。簡略化したくなるが外さないもの：
+2027年2月から、Play は DEX が 10MB 超のアプリに難読化・最適化・縮小の各率 25% 以上を求める。plugin なしの DEX は約 46MB、ありで約 9.9MB（10MB に近い。依存を足して超えると各率が要件の対象になる）。理由は `plugins/withAndroidR8.js` 冒頭のコメント、実測は README「Android R8 の有効化」。外さないもの：
 
-- **`proguard-android-optimize.txt` への置き換えと `plugins/android-r8-rules.pro`（Expo の注釈
-  インターフェースの keep）はセット。** 最適化を有効にして keep を外すと、Expo の Record 変換が
-  R8 に壊され、**リリースビルドだけ**で起動直後にネイティブ関数が `NullPointerException` になる
-  （debug・`tsc`・`jest` では出ない）。`-dontoptimize` へ戻して済ませない（最適化率が出ない）。
-  keep を `Field`・`Required` の2つに絞らない
-- **AGP は plugin が 8.12.3（8.12 系の最新パッチ）に指定している。** Play が `r8.json` から率を読むのは
-  「AGP 8.10 以降の最新パッチ」のときだけで、RN 固定の 8.12.0 のままだと最適化率・縮小率が `-` になる。
-  RN・Expo の更新で AGP が変わったときや 8.12.4 以降が出たときは `AGP_VERSION` を見直す
-- **`shrinkResources` は無効のまま。** 要件は DEX の率だけ。JS から `require()` した画像はリリースで
-  名前引きされ、リソース縮小に消される恐れがある（今は画像の `require()` が無いが、足したとき用の予防）
-- `org.gradle.jvmargs` の 4GB 指定を戻さない（minify で AAB に約 100MB の対応表 `proguard.map`
-  が入り、2GB だと AAB のバンドルが `Java heap space` で落ちうる）
-- **R8 の不具合はリリースの実行時にしか出ない。** Expo・RN・ライブラリ・plugin を更新したら、R8 入りの
-  release APK（arm64・debug 署名でよい。`cd android && nice -n 10 ./gradlew assembleRelease
-  -PreactNativeArchitectures=arm64-v8a`）をエミュレータへ新規インストールし、オンボーディング→記録→
-  App Lock→書き出し・読み込みまで動かして、logcat の `FATAL EXCEPTION`・`has been rejected` を探す。
-  `with-health-connect` ビルドは HC 経由の動作も確認する（2026-10-24 時点では未確認）
-- DEX は 10MB に近い（9.86MB）。依存を足して 10MB を超えると、率（各 25% 以上）が要件の対象になる
+- **`proguard-android-optimize.txt` への置き換えと `plugins/android-r8-rules.pro` はセット。** keep を外すと、リリースビルドだけで起動直後に `NullPointerException`（debug・`tsc`・`jest` では出ない）。`-dontoptimize` へ戻さない。keep を `Field`・`Required` の2つに絞らない
+- **AGP は plugin が 8.12.3 に指定している。** RN 固定の 8.12.0 では Play の最適化率・縮小率が `-` になる。RN・Expo の更新や 8.12.4 以降の登場時は `AGP_VERSION` を見直す
+- **`shrinkResources` は無効のまま。** JS から `require()` した画像が消される恐れがある
+- `org.gradle.jvmargs` の 4GB 指定を戻さない（AAB のバンドルが `Java heap space` で落ちうる）
+- **R8 の不具合はリリースの実行時にしか出ない。** Expo・RN・ライブラリ・plugin を更新したら、R8 入りの release APK をエミュレータで動かして確認する（手順と、`with-health-connect` が未確認の点: `docs/android-build-notes.md`）

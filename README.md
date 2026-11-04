@@ -3292,8 +3292,8 @@ UI/UX §17/§18 を実装。§10.6「全 Activity 削除」の進行表示付き
 
 `adb install -r` で上書きインストールした際に `table health_sync has no
 column named sync_state`（D-51 より前の古い DB スキーマが端末に残って
-いたため——CLAUDE.md「schema.ts を変更した後の実機テストは、既存アプリを
-一度アンインストールすること」参照）を踏んだが、これはコードの不具合では
+いたため——CLAUDE.md「DBスキーマ変更後の実機テストはmigrationを確認する
+（アンインストールに注意）」参照）を踏んだが、これはコードの不具合では
 なく実機側のデータが古かっただけ。アンインストール→再インストールで解消し、
 以下をクリーンな状態で確認できた：
 
@@ -4129,8 +4129,9 @@ Protection トグル OFF のまま Partnered へ Protection 既定値が反映�
   `appVersionSource: "local"` + `app.config.js` の組み合わせでの EAS の
   挙動（未検証。EAS build はビルド枠を使うため、実行前に必ず許可を取る）
 - **v1.0 公開後は D-11「ALTER TABLE のみ」が適用され、`database/schema.ts`
-  の直接編集はできなくなる**（CLAUDE.md の「schema.ts を変更した後の実機
-  テスト」の節の前提もそこで変わる）。スキーマに入れておくべき変更が
+  の直接編集はできなくなる**（CLAUDE.md の「DBスキーマ変更後の実機テストは
+  migrationを確認する（アンインストールに注意）」の節は、公開後の方針に
+  書き換え済み）。スキーマに入れておくべき変更が
   残っていないか、申請前に確認する
 
 ### v1.0 リリースビルドの実機確認（Pixel 11、release APK、2026-09-23）
@@ -4203,7 +4204,8 @@ Play Console の製品版トラックへ提出し、審査待ち。表示バー�
   2026-10-07 に審査へ再送信した。経緯は [docs/store-listing.md](docs/store-listing.md)
 - **審査を通過して公開された時点で D-11 が効き始め、`database/schema.ts` の
   直接編集はできなくなる**（以降は migration の追加が必要。CLAUDE.md の
-  「schema.ts を変更した後の実機テスト」の節の前提もそこで変わる）
+  「DBスキーマ変更後の実機テストはmigrationを確認する（アンインストールに注意）」の節は、
+  公開後の方針に書き換え済み）
 
 ### v1.0 の App Store 提出（2026-10-01）
 
