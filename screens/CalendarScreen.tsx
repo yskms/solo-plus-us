@@ -312,7 +312,8 @@ export default function CalendarScreen({ isActive }: { isActive: boolean }) {
             )}
             {/* Quiet on purpose — the Today tab's record button is the primary
                 way in; this is for back-filling a day. Not offered for a future
-                day: recording in the future is never allowed (`clampToNow`). */}
+                day (a future time can be picked on the Add Activity wheels, with
+                a confirmation, but this shortcut is only for the past, D-56). */}
             {selectedLocalDate <= today && (
               <Pressable
                 onPress={() => router.push({ pathname: '/record', params: { date: selectedLocalDate } })}

@@ -3,8 +3,12 @@
  * minute reels, always shown on the screen and kept compact (the selected
  * row plus a sliver of its neighbours), replacing the old chained native
  * dialogs on Android and the bottom sheet on iOS. Every turn of a reel
- * reports a new value straight away (no OK / Done step), and nothing here
- * can produce a time after `max`.
+ * reports a new value straight away (no OK / Done step).
+ *
+ * A time after "now" can be chosen: the reels never snap back (that fought
+ * the finger and froze the screen), and `app/record.tsx` asks for a
+ * confirmation when saving one. Hour and minute are endless reels (23 above
+ * 0) that don't touch the other fields; see `lib/dateTimeWheel`.
  *
  * It's a plain in-tree view, so `contexts/AppLock.tsx`'s overlay covers it
  * like the rest of the screen and nothing needs to be dismissed from code
@@ -18,20 +22,14 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { radius, spacing, useTheme } from '../constants/theme';
 import { sameMinute } from '../lib/datetime';
-import {
-  type WheelField,
-  isWheelItemSelectable,
-  setWheelField,
-  toWheelFields,
-  wheelFieldValues,
-} from '../lib/dateTimeWheel';
+import { type WheelField, isLoopingWheelField, setWheelField, toWheelFields, wheelFieldValues } from '../lib/dateTimeWheel';
 import type { TimeFormat } from '../types/Settings';
 import { WHEEL_ITEM_HEIGHT, WHEEL_PEEK, WheelColumn, type WheelItem } from './WheelColumn';
 
 interface DateTimeWheelProps {
   value: Date;
-  /** Upper bound ("now"); later times can't be chosen. */
-  max: Date;
+  /** "Now": only decides where the year column ends. */
+  now: Date;
   timeFormat: TimeFormat;
   onChange: (date: Date) => void;
 }
@@ -45,7 +43,7 @@ const COLUMNS: { field: WheelField; flex: number }[] = [
   { field: 'minute', flex: 1 },
 ];
 
-export function DateTimeWheel({ value, max, timeFormat, onChange }: DateTimeWheelProps) {
+export function DateTimeWheel({ value, now, timeFormat, onChange }: DateTimeWheelProps) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const fields = toWheelFields(value);
@@ -68,8 +66,8 @@ export function DateTimeWheel({ value, max, timeFormat, onChange }: DateTimeWhee
   };
 
   const select = (field: WheelField, n: number) => {
-    const next = setWheelField(value, field, n, max);
-    // Settling back on the minute already shown (or being clamped onto it) isn't a change.
+    const next = setWheelField(value, field, n);
+    // Settling back on the minute already shown isn't a change.
     if (!sameMinute(next, value)) onChange(next);
   };
 
@@ -85,10 +83,9 @@ export function DateTimeWheel({ value, max, timeFormat, onChange }: DateTimeWhee
       <View style={[styles.wheels, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View pointerEvents="none" style={[styles.band, { backgroundColor: colors.border }]} />
         {COLUMNS.map(({ field, flex }) => {
-          const items: WheelItem[] = wheelFieldValues(field, value, max).map((n) => ({
+          const items: WheelItem[] = wheelFieldValues(field, value, now).map((n) => ({
             value: n,
             label: itemLabel(field, n),
-            selectable: isWheelItemSelectable(value, field, n, max),
           }));
           return (
             <WheelColumn
@@ -98,6 +95,7 @@ export function DateTimeWheel({ value, max, timeFormat, onChange }: DateTimeWhee
               onSelect={(n) => select(field, n)}
               label={fieldLabels[field]}
               flex={flex}
+              loop={isLoopingWheelField(field)}
             />
           );
         })}

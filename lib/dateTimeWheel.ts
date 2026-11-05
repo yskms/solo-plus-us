@@ -1,7 +1,14 @@
 /**
  * The arithmetic behind `components/DateTimeWheel.tsx` (Add Activity's
  * year / month / day / hour / minute wheels, §11.4). Kept free of React so
- * the clamping rules can be unit-tested.
+ * the rules can be unit-tested.
+ *
+ * There is deliberately no "not in the future" rule here: the wheel used to
+ * pull a future pick back to "now", which made the reel jump back under the
+ * finger (the case this wheel exists for, "just after midnight, record
+ * 23:xx of the day before", passes through a future time on the way, since
+ * the hour is turned before the day). `app/record.tsx` asks for a
+ * confirmation at save time instead. Don't put a clamp back.
  *
  * Like `instantForPastLocalDateAtNow`, this reads and builds `Date`s via
  * the runtime's *local* getters/constructor: the wheel shows the wall-clock
@@ -13,8 +20,6 @@
  * that a DST transition skips over is shifted forward by the `Date`
  * constructor rather than rejected.
  */
-import { clampTo, truncateToMinute } from './datetime';
-
 export type WheelField = 'year' | 'month' | 'day' | 'hour' | 'minute';
 
 /** Oldest year the year wheel offers (earlier `value`s extend it, so an existing value is never off the wheel). */
@@ -49,50 +54,39 @@ export function fromWheelFields(fields: WheelFields): Date {
 }
 
 /**
- * The wheel value after one column settles on `n`. The result is never past
- * `max`: choosing a future year/month/day/hour/minute pulls the whole value
- * back to `max` (to the minute), and the wheels follow it.
+ * The wheel value after one column settles on `n`. Nothing is clamped (see
+ * the file comment); a day past the end of the month lands on its last day.
  */
-export function setWheelField(value: Date, field: WheelField, n: number, max: Date): Date {
-  const next = fromWheelFields({ ...toWheelFields(value), [field]: n });
-  return clampTo(next, truncateToMinute(max));
+export function setWheelField(value: Date, field: WheelField, n: number): Date {
+  return fromWheelFields({ ...toWheelFields(value), [field]: n });
 }
 
 /**
- * Whether choosing `n` in `field` (with the other columns as in `value`) can
- * still lead to a time that isn't in the future: true when the *earliest*
- * moment of that period is not after `max`. Used to dim items that would
- * just snap back; an out-of-month day is never selectable.
+ * Hour and minute wrap around (23 sits above 0, 59 above 0), so the last
+ * row of the previous period is one turn away. Nothing is linked: wrapping
+ * the hour never changes the day, and wrapping the minute never changes the
+ * hour. Year / month / day stay linear (days per month vary).
  */
-export function isWheelItemSelectable(value: Date, field: WheelField, n: number, max: Date): boolean {
-  const f = toWheelFields(value);
-  switch (field) {
-    case 'year':
-      return new Date(n, 0, 1).getTime() <= max.getTime();
-    case 'month':
-      return new Date(f.year, n - 1, 1).getTime() <= max.getTime();
-    case 'day':
-      if (n > daysInMonth(f.year, f.month)) return false;
-      return new Date(f.year, f.month - 1, n).getTime() <= max.getTime();
-    case 'hour':
-      return new Date(f.year, f.month - 1, f.day, n).getTime() <= max.getTime();
-    case 'minute':
-      return new Date(f.year, f.month - 1, f.day, f.hour, n).getTime() <= max.getTime();
-  }
+export function isLoopingWheelField(field: WheelField): boolean {
+  return field === 'hour' || field === 'minute';
 }
 
-/** The numbers each column offers, in wheel order (top to bottom). */
-export function wheelFieldValues(field: WheelField, value: Date, max: Date): number[] {
+/**
+ * The numbers each column offers, in wheel order (top to bottom). `now` only
+ * decides where the year column ends; the day column has exactly the days
+ * of the month shown (no dimmed 31st in February).
+ */
+export function wheelFieldValues(field: WheelField, value: Date, now: Date): number[] {
   switch (field) {
     case 'year': {
       const first = Math.min(MIN_WHEEL_YEAR, value.getFullYear());
-      const last = Math.max(max.getFullYear(), value.getFullYear());
+      const last = Math.max(now.getFullYear(), value.getFullYear());
       return range(first, last);
     }
     case 'month':
       return range(1, 12);
     case 'day':
-      return range(1, 31);
+      return range(1, daysInMonth(value.getFullYear(), value.getMonth() + 1));
     case 'hour':
       return range(0, 23);
     case 'minute':

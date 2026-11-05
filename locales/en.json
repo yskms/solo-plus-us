@@ -415,7 +415,10 @@
     "prompt": "How would you like to log?",
     "useNowInstead": "Use now instead",
     "useNowInsteadA11y": "Use current time instead",
-    "couldNotRecord": "Could not record"
+    "couldNotRecord": "Could not record",
+    "futureTitle": "Record a future time?",
+    "futureMessage": "The time you chose ({{datetime}}) hasn't come yet. Record it anyway?",
+    "futureConfirm": "Record"
   },
   "activityDetail": {
     "notRecorded": "Not recorded",

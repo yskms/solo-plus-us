@@ -2,7 +2,7 @@ import {
   MIN_WHEEL_YEAR,
   daysInMonth,
   fromWheelFields,
-  isWheelItemSelectable,
+  isLoopingWheelField,
   setWheelField,
   toWheelFields,
   wheelFieldValues,
@@ -37,66 +37,41 @@ describe('toWheelFields / fromWheelFields', () => {
 
 describe('setWheelField', () => {
   it('the case this wheel exists for: 01:05 on the 4th -> yesterday 23:00', () => {
-    const day = setWheelField(NOW, 'day', 3, NOW);
-    const hour = setWheelField(day, 'hour', 23, NOW);
-    const minute = setWheelField(hour, 'minute', 0, NOW);
+    const day = setWheelField(NOW, 'day', 3);
+    const hour = setWheelField(day, 'hour', 23);
+    const minute = setWheelField(hour, 'minute', 0);
     expect(minute).toEqual(new Date(2026, 10, 3, 23, 0));
   });
 
   it('switching to a shorter month shortens the day instead of overflowing', () => {
     const value = new Date(2026, 2, 31, 12, 0); // Mar 31
-    expect(setWheelField(value, 'month', 2, NOW)).toEqual(new Date(2026, 1, 28, 12, 0));
+    expect(setWheelField(value, 'month', 2)).toEqual(new Date(2026, 1, 28, 12, 0));
   });
 
-  it('never goes past max: a future minute snaps back to max (to the minute)', () => {
-    expect(setWheelField(NOW, 'minute', 40, NOW)).toEqual(new Date(2026, 10, 4, 1, 5));
+  it('does not clamp: a time after "now" stays as picked (the case that used to freeze the reel)', () => {
+    // 01:05 on the 4th, hour turned to 23 before the day was changed
+    expect(setWheelField(NOW, 'hour', 23)).toEqual(new Date(2026, 10, 4, 23, 5));
+    expect(setWheelField(NOW, 'minute', 40)).toEqual(new Date(2026, 10, 4, 1, 40));
+    expect(setWheelField(NOW, 'month', 12)).toEqual(new Date(2026, 11, 4, 1, 5));
   });
 
-  it('a future month in the current year snaps back to max', () => {
-    expect(setWheelField(NOW, 'month', 12, NOW)).toEqual(new Date(2026, 10, 4, 1, 5));
+  it('then changing the day gives yesterday 23:05', () => {
+    const hour = setWheelField(NOW, 'hour', 23);
+    expect(setWheelField(hour, 'day', 3)).toEqual(new Date(2026, 10, 3, 23, 5));
   });
 
-  it('moving the year back keeps the other digits, moving to the max year clamps them', () => {
-    const lastYear = setWheelField(new Date(2026, 5, 15, 8, 30), 'year', 2025, NOW);
-    expect(lastYear).toEqual(new Date(2025, 5, 15, 8, 30));
-    const dec = new Date(2025, 11, 20, 22, 0);
-    expect(setWheelField(dec, 'year', 2026, NOW)).toEqual(new Date(2026, 10, 4, 1, 5));
-  });
-
-  it('allows exactly max', () => {
-    expect(setWheelField(NOW, 'minute', 5, NOW)).toEqual(new Date(2026, 10, 4, 1, 5));
+  it('moving the year back keeps the other digits', () => {
+    expect(setWheelField(new Date(2026, 5, 15, 8, 30), 'year', 2025)).toEqual(new Date(2025, 5, 15, 8, 30));
   });
 });
 
-describe('isWheelItemSelectable', () => {
-  const value = new Date(2026, 10, 3, 23, 0); // Nov 3 23:00
-
-  it('years after max are not selectable, max year is', () => {
-    expect(isWheelItemSelectable(value, 'year', 2026, NOW)).toBe(true);
-    expect(isWheelItemSelectable(value, 'year', 2027, NOW)).toBe(false);
-  });
-
-  it('months after max month are not selectable in the max year, but are in earlier years', () => {
-    expect(isWheelItemSelectable(value, 'month', 11, NOW)).toBe(true);
-    expect(isWheelItemSelectable(value, 'month', 12, NOW)).toBe(false);
-    expect(isWheelItemSelectable(new Date(2025, 10, 3), 'month', 12, NOW)).toBe(true);
-  });
-
-  it('days after max day are not selectable; days beyond the month are never selectable', () => {
-    expect(isWheelItemSelectable(value, 'day', 4, NOW)).toBe(true);
-    expect(isWheelItemSelectable(value, 'day', 5, NOW)).toBe(false);
-    expect(isWheelItemSelectable(new Date(2026, 9, 3), 'day', 31, NOW)).toBe(true);
-    expect(isWheelItemSelectable(new Date(2026, 8, 3), 'day', 31, NOW)).toBe(false); // September
-  });
-
-  it('hours and minutes are only limited on the max day / max hour', () => {
-    expect(isWheelItemSelectable(value, 'hour', 23, NOW)).toBe(true); // Nov 3
-    const today = new Date(2026, 10, 4, 0, 0);
-    expect(isWheelItemSelectable(today, 'hour', 1, NOW)).toBe(true);
-    expect(isWheelItemSelectable(today, 'hour', 2, NOW)).toBe(false);
-    const thisHour = new Date(2026, 10, 4, 1, 0);
-    expect(isWheelItemSelectable(thisHour, 'minute', 5, NOW)).toBe(true);
-    expect(isWheelItemSelectable(thisHour, 'minute', 6, NOW)).toBe(false);
+describe('isLoopingWheelField', () => {
+  it('only hour and minute wrap around', () => {
+    expect(isLoopingWheelField('hour')).toBe(true);
+    expect(isLoopingWheelField('minute')).toBe(true);
+    expect(isLoopingWheelField('year')).toBe(false);
+    expect(isLoopingWheelField('month')).toBe(false);
+    expect(isLoopingWheelField('day')).toBe(false);
   });
 });
 
@@ -111,9 +86,15 @@ describe('wheelFieldValues', () => {
     expect(wheelFieldValues('year', new Date(1999, 0, 1), NOW)[0]).toBe(1999);
   });
 
+  it('the day column has exactly the days of the month shown', () => {
+    expect(wheelFieldValues('day', new Date(2026, 10, 4), NOW)).toHaveLength(30); // November
+    expect(wheelFieldValues('day', new Date(2026, 11, 4), NOW)).toHaveLength(31);
+    expect(wheelFieldValues('day', new Date(2026, 1, 4), NOW)).toHaveLength(28);
+    expect(wheelFieldValues('day', new Date(2028, 1, 4), NOW)).toHaveLength(29);
+  });
+
   it('fixed ranges for the other columns', () => {
     expect(wheelFieldValues('month', NOW, NOW)).toHaveLength(12);
-    expect(wheelFieldValues('day', NOW, NOW)).toHaveLength(31);
     expect(wheelFieldValues('hour', NOW, NOW)).toEqual(Array.from({ length: 24 }, (_, i) => i));
     expect(wheelFieldValues('minute', NOW, NOW)).toHaveLength(60);
   });

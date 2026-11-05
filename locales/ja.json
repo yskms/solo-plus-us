@@ -395,7 +395,10 @@
     "prompt": "どのように記録しますか？",
     "useNowInstead": "現在時刻を使う",
     "useNowInsteadA11y": "現在時刻を使う",
-    "couldNotRecord": "記録できませんでした"
+    "couldNotRecord": "記録できませんでした",
+    "futureTitle": "未来の日時です",
+    "futureMessage": "選んだ日時（{{datetime}}）は、まだ先の時刻です。このまま記録しますか？",
+    "futureConfirm": "記録する"
   },
   "activityDetail": {
     "notRecorded": "未記録",

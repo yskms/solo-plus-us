@@ -11,7 +11,10 @@
  * default flow: the wheels (`components/DateTimeWheel.tsx`) are always on
  * screen, and turning them is what sets `customInstant` (until then they
  * follow the clock, and Solo/Partnered record the moment they're tapped).
- * There is deliberately no "Just now" / picked-time text above them: the
+ * A time after now can be picked (the wheels never snap back, which fought
+ * the finger and froze the screen); tapping Solo/Partnered with one asks for
+ * a confirmation first (`record` below). "Just now" is never in the future,
+ * so the default flow gets no extra step. There is deliberately no "Just now" / picked-time text above them: the
  * wheels already show the value, and a line that appears on the first
  * change would push them down mid-gesture. No timezone picker in v1 (§4.4
  * known limitation) — the picked wall-clock time is always interpreted in
@@ -34,9 +37,10 @@ import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
 import { DateTimeWheel } from '../components/DateTimeWheel';
-import { clampToNow, instantForPastLocalDateAtNow, sameMinute } from '../lib/datetime';
+import { instantForPastLocalDateAtNow, sameMinute } from '../lib/datetime';
 import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
+import { formatPickedDateTime } from '../lib/timeFormat';
 import * as ActivityService from '../services/ActivityService';
 import { getSetting } from '../services/SettingsRepository';
 import type { ActivityContext } from '../types/Activity';
@@ -51,6 +55,8 @@ export default function RecordScreen() {
   const db = useDatabase();
   const { announceRecorded } = useRecordFeedback();
   const [saving, setSaving] = useState(false);
+  // True while the "that's in the future" alert is up: stops a second tap from stacking another.
+  const confirmingFutureRef = useRef(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const getNow = () => new Date();
   // The Calendar tab's "add to this day" passes `date` (YYYY-MM-DD); it starts
@@ -87,11 +93,10 @@ export default function RecordScreen() {
     setWheelBase(getNow());
   };
 
-  const record = async (context: ActivityContext) => {
+  const save = async (context: ActivityContext, instantUtc: Date) => {
     if (saving) return; // guards against a double-tap firing two records
     setSaving(true);
     try {
-      const instantUtc = customInstant ? clampToNow(customInstant) : new Date();
       const activity = await ActivityService.recordActivity(db, { context, instantUtc });
       router.back();
       announceRecorded(activity);
@@ -101,6 +106,47 @@ export default function RecordScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const record = (context: ActivityContext) => {
+    if (saving || confirmingFutureRef.current) return;
+    if (!customInstant) {
+      void save(context, new Date());
+      return;
+    }
+    if (customInstant.getTime() <= Date.now()) {
+      void save(context, customInstant);
+      return;
+    }
+    // A future time is allowed, but it's far more often a slip (the hour was
+    // turned to 23 and the day left alone) than intended, so ask once.
+    confirmingFutureRef.current = true;
+    Alert.alert(
+      t('record.futureTitle'),
+      t('record.futureMessage', { datetime: formatPickedDateTime(t, customInstant, timeFormat) }),
+      [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+          onPress: () => {
+            confirmingFutureRef.current = false;
+          },
+        },
+        {
+          text: t('record.futureConfirm'),
+          onPress: () => {
+            confirmingFutureRef.current = false;
+            void save(context, customInstant);
+          },
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => {
+          confirmingFutureRef.current = false;
+        },
+      },
+    );
   };
 
   return (
@@ -158,7 +204,7 @@ export default function RecordScreen() {
         >
           <DateTimeWheel
             value={customInstant ?? wheelBase}
-            max={getNow()}
+            now={getNow()}
             timeFormat={timeFormat}
             onChange={setCustomInstant}
           />

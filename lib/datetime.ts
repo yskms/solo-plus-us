@@ -243,7 +243,7 @@ export function clampTo(date: Date, max: Date): Date {
   return date.getTime() > max.getTime() ? max : date;
 }
 
-/** Never allow a future recorded time (the date/time pickers in `app/record.tsx` and `app/activity/[id].tsx`), regardless of what a platform picker itself enforces — Android's `maximumDate` only constrains the date dialog, not the time dialog that follows it. */
+/** Never allow a future recorded time when *editing* an Activity (`app/activity/[id].tsx`), regardless of what a platform picker itself enforces: Android's `maximumDate` only constrains the date dialog, not the time dialog that follows it. */
 export function clampToNow(date: Date): Date {
   return clampTo(date, new Date());
 }
@@ -259,8 +259,9 @@ export function clampToNow(date: Date): Date {
  * so the caller falls back to the plain "Just now" flow:
  * - today: "Just now" already means exactly this, and a preset instant would
  *   freeze the time at screen-open instead of at save;
- * - a future day: recording in the future is never allowed (`clampToNow`),
- *   which would otherwise silently turn it into today's "now";
+ * - a future day: the Calendar tab doesn't offer to add to one (the Add
+ *   Activity wheels can pick a future time, but only by choice, with a
+ *   confirmation at save time, see D-56), so there is nothing to preset;
  * - not a valid date at all (e.g. a hand-typed deep link).
  */
 export function instantForPastLocalDateAtNow(localDate: string, now: Date = new Date()): Date | null {
