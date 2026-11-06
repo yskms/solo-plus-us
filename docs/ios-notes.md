@@ -128,3 +128,15 @@ VoiceOver のいずれも同じフォールバック先になる。`app/_layout.
 `activity/[id]`）ではタブバー分の高さが残ったままトーストが高めに出る
 既知の制約はレビューで許容済み——詳細と理由は
 `contexts/TabBarHeight.tsx` の doc comment 参照。
+
+## シミュレータで Add Activity などを操作して確認する手順のメモ（2026-11-06）
+
+`xcodebuild`（Debug、`-sdk iphonesimulator`）→ `simctl install`/`launch` → `idb`（`idb_companion` を `--grpc-domain-sock` 付きで起動）で操作する。
+`idb ui describe-all` のアクセシビリティの木で、画面の要素・値・読み上げ対象を確認できる（スクリーンショットだけでは分からない）。
+
+- **シミュレータにアプリのデータが残っていて、App Lock が有効だと、解除画面（「端末認証でロック解除」）で止まる。** シミュレータには生体認証・パスコードが
+  登録されていないので解除できない。`xcrun simctl uninstall <UDID> com.yskms.soloplusus` で、このアプリだけ消して入れ直す（デバイス全体の消去はしない）。
+  オンボーディングの「記録を保護しますか？」は「後で」で進む
+- 初回の Metro のバンドルは、iOS 向けに約50秒かかる（「Bundling 71%…」が出ている間は待つ）
+- シミュレータの言語が日本語の場合、時刻表示の既定は24時間になる（12時間表記は、設定 > 時刻表示で切り替える）
+

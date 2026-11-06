@@ -2641,7 +2641,7 @@ D-12 は「コードフリーズ時点で承認済みなら with、未承認な�
 
 - **一覧に、スクロール後の補正・スナップ・再スクロールを足さない**（`components/OptionListPopover.tsx` の冒頭コメント）
 - 安全領域の補正が必要だった。Android は edge-to-edge で、画面の View はナビゲーションバーの裏まで伸びる。`measureInWindow` の値をそのまま使うと、一覧がバーの裏へはみ出す（開発中に実際に起きた）
-- **未確認・既知の制約**：iOS（`measureInWindow` の位置、`accessibilityViewIsModal`、一覧の見た目）。Android のリリースビルド（R8 入り）。TalkBack / VoiceOver での実機確認。小さい端末での高さ（矢印を含めた列は約132dp、一覧は最大約536dp）。ダークモードでの一覧の見た目
+- **未確認・既知の制約**：Android のリリースビルド（R8 入り）。VoiceOver / TalkBack での実際の読み上げ（iOS Simulator では、一覧が開いている間、背後の要素がアクセシビリティの木から外れることまでを確認した）。小さい端末での高さ（矢印を含めた列は約132dp、一覧は最大約536dp）。iOS での12時間表記。iOS Simulator（iPhone 18 Pro、iOS 27）で、位置・スクロールの安定・行の選択・ダークモードは確認した（2026-11-06）
 - 1分単位の細かい指定は、Add Activity ではできない（5分刻み）。記録後の編集画面でできる
 
 ---
