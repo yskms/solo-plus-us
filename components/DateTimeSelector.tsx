@@ -27,6 +27,7 @@
  * carrier" works as well as a real instant.
  */
 import React, { useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { minTouchTarget, radius, spacing, useTheme } from '../constants/theme';
@@ -49,12 +50,12 @@ interface Options {
   onChange: (fields: DateTimeFields) => void;
 }
 
-// Year has four digits; the rest are one or two.
+// Year has four digits; the rest are one or two and share the same width.
 const COLUMNS: { field: DateTimeField; flex: number }[] = [
   { field: 'year', flex: 1.5 },
   { field: 'month', flex: 1 },
   { field: 'day', flex: 1 },
-  { field: 'hour', flex: 1.2 },
+  { field: 'hour', flex: 1 },
   { field: 'minute', flex: 1 },
 ];
 
@@ -167,52 +168,10 @@ export function useDateTimeSelector({ value, now, timeFormat, onChange }: Option
   return { selector, popover, isListOpen: openList !== null };
 }
 
-// The chevron is two equal bars meeting at the apex, each tilted by the same
-// angle: flat (a smaller angle is flatter) and exactly symmetric. A square's
-// corner turned 45 degrees and squashed with `scaleY` came out lopsided.
-const ARM_LENGTH = 11;
-const ARM_THICKNESS = 2;
-const ARM_ANGLE = 28; // degrees from horizontal
-// The two bars overlap this much at the apex; flush, the round ends leave a notch.
-const APEX_OVERLAP = 0.6;
-const ARM_RAD = (ARM_ANGLE * Math.PI) / 180;
-const HALF_RUN = (ARM_LENGTH / 2) * Math.cos(ARM_RAD);
-const HALF_RISE = (ARM_LENGTH / 2) * Math.sin(ARM_RAD);
-const CHEVRON_WIDTH = Math.ceil(2 * HALF_RUN + ARM_THICKNESS);
-const CHEVRON_HEIGHT = Math.ceil(2 * HALF_RISE + ARM_THICKNESS);
+// 16 (tried 16 / 18 / 20 side by side): small enough to stay out of the way of the numbers.
+const ARROW_SIZE = 16;
 
-function Chevron({ direction, color }: { direction: 'up' | 'down'; color: string }) {
-  const up = direction === 'up';
-  // Vertical centre of the two bars: the apex is at the top for "up", the bottom for "down".
-  const centerY = up ? ARM_THICKNESS / 2 + HALF_RISE : CHEVRON_HEIGHT - ARM_THICKNESS / 2 - HALF_RISE;
-  const bar = (side: 'left' | 'right') => {
-    const centerX = CHEVRON_WIDTH / 2 + (side === 'left' ? -1 : 1) * (HALF_RUN - APEX_OVERLAP);
-    // Left arm of "up" rises to the right (anticlockwise); the others follow from that.
-    const tilt = (side === 'left') === up ? -ARM_ANGLE : ARM_ANGLE;
-    return (
-      <View
-        style={{
-          position: 'absolute',
-          left: centerX - ARM_LENGTH / 2,
-          top: centerY - ARM_THICKNESS / 2,
-          width: ARM_LENGTH,
-          height: ARM_THICKNESS,
-          borderRadius: ARM_THICKNESS / 2,
-          backgroundColor: color,
-          transform: [{ rotate: `${tilt}deg` }],
-        }}
-      />
-    );
-  };
-  return (
-    <View style={{ width: CHEVRON_WIDTH, height: CHEVRON_HEIGHT }}>
-      {bar('left')}
-      {bar('right')}
-    </View>
-  );
-}
-
-/** A subtle chevron as a full-size tap target. */
+/** A subtle chevron (Ionicons, like the tab bar) as a full-size tap target. */
 function ArrowButton({
   direction,
   color,
@@ -231,7 +190,14 @@ function ArrowButton({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Chevron direction={direction} color={color} />
+      {/* Hidden from screen readers: the button's own label is what they read. */}
+      <Ionicons
+        name={direction === 'up' ? 'chevron-up' : 'chevron-down'}
+        size={ARROW_SIZE}
+        color={color}
+        importantForAccessibility="no"
+        accessibilityElementsHidden
+      />
     </Pressable>
   );
 }
