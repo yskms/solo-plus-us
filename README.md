@@ -4353,3 +4353,29 @@ Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas buil
 - **iOS は未確認。** この変更は次の iOS ビルドで載る（iOS は 1.0.0 (4) の審査待ちで、今回のバイナリには入っていない）。
   その前に、iPhone 18 Pro のシミュレータでホイール（スナップ、行タップ、時計への追従、App Lock のオーバーレイ）を確認する
   （2026-11-06 に、ホイールは数字＋矢印＋一覧へ置き換えた。次の iOS ビルドで確認するのは、置き換え後の部品）
+
+### v1.0.4 の Play ストア提出の準備（2026-11-06、ビルド・確認済み、未提出）
+
+記録を追加の日時入力を、スクロール式ホイールから「数字＋矢印＋一覧」へ作り直した版（上記「日時編集 UI」の2026-11-06 追記（2）、
+設計判断 [D-57](docs/Solo%20+%20Us_設計判断記録%20v0.11.md)）。`fix/wheel-future-and-wrap` を **`main` へ `git merge --ff-only` でマージしたあと、
+`main` から** `eas build --local -p android --profile production` でビルドした（`nice -n 10`）。**`origin` への push と、
+Play Console への提出は未実施**（提出は 1.0.3 のときと同じく、利用者が行う）。JS のみの変更（DB スキーマ・ネイティブ・権限・依存は変更なし）なので、
+健康アプリ申告・データセーフティの更新は不要。
+
+- `app.json`: `version` 1.0.3→1.0.4（利用者の判断。iOS と共通の値で、次の iOS ビルドも 1.0.4 になる）、
+  `android.versionCode` 7→8（`autoIncrement` が加算。ログに `Bumping expo.android.versionCode from 7 to 8`）
+- AAB の確認: versionCode 8・versionName 1.0.4、4 つの ABI（arm64-v8a・armeabi-v7a・x86・x86_64）、DEX 1 ファイル
+  9,855,832 バイトで **1.0.2・1.0.3 と同一**（JS のみの変更のため。`proguard.map` も 1.0.3 と同一のハッシュ）、
+  AAB のサイズは 91,857,392 バイト。権限は `INTERNET`・`USE_BIOMETRIC`・`USE_FINGERPRINT`・`VIBRATE` のみ
+  （＋自前の `<permission>` 1 と Play の install referrer）で `android.permission.health.*` は無い。署名の SHA-256 は
+  `AF:5D:C2:49:…:C0:10:36` で 1.0.2・1.0.3 と同じ。Ionicons のフォント（`res/raw`）も入っている
+- ビルド前の確認: 型チェック、jest（469 件）、`check-i18n`、Android・iOS の JS バンドル生成、iOS Simulator の `xcodebuild`（Debug）
+- `mapping.txt.gz` は `docs/_local/mapping/1.0.4-vc8/`（gitignore 済み）に保管。AAB は
+  `docs/_local/release/solo-plus-us-1.0.4.aab`（gitignore 済み。**提出後に削除する**）
+- 実機確認は、**debug ビルド**（Pixel 3・Android 12）と、iOS Simulator で行った。**release ビルドでの実機確認は省いた**
+  （JS のみの変更で、DEX が 1.0.2 と同一のため）。VoiceOver / TalkBack の実際の読み上げ、小さい端末での高さは未確認
+- リリースノートは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.4 / versionCode 8）」
+- 注意: 1.0.3 (7) の審査状況は未確認。1.0.3 は旧ホイール（揺れ・固まりが出うる版）なので、**1.0.3 が公開されていても、
+  その後にこの 1.0.4 を出す**。1.0.3 がまだ審査中なら、1.0.4 を出して置き換えるかは、Play Console で利用者が判断する
+- **iOS には、まだ入っていない。** iOS は 1.0.0 (4) の審査待ちで、この変更は次の iOS ビルドで載る
+

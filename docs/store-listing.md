@@ -253,6 +253,27 @@ Play Console のプレビューで確認する。詳細は README「Android R8 �
 
 ---
 
+## リリースノート（v1.0.4 / versionCode 8）
+
+記録を追加の画面の日時入力を、スクロール式のホイールから、矢印と一覧に作り直したビルド（README「日時編集 UI」冒頭の
+2026-11-06 追記（2）、設計判断 D-57）。未来の日時も記録できる（記録前に確認が出る）。JS のみの変更で、DB スキーマ・
+ネイティブ・権限は変わらない（1.0.1・1.0.3 と同じ区分で、健康アプリ申告・データセーフティの更新は不要）。
+
+```
+<en-US>
+- Redesigned the date and time picker on the Add Activity screen: tap the arrows to move a value up or down, or tap a number to choose from a list. Minutes move in 5-minute steps
+- You can now record a future time (you will be asked to confirm before it is saved)
+</en-US>
+<ja-JP>
+・記録を追加の画面の日時選択を作り直しました。矢印で1つずつ増減したり、数字をタップして一覧から選べます。分は5分刻みです
+・未来の日時も記録できるようになりました（保存の前に確認が出ます）
+</ja-JP>
+```
+
+リリース名は `8 (1.0.4)`。
+
+---
+
 ## Play Console 申告の記録（2026-09-24、v0.1.0 提出時）
 
 更新版を出すときに、同じ回答で通るか／変わったかを判断するための控え。
