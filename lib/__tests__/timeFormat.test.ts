@@ -1,5 +1,5 @@
 import i18n from '../i18n';
-import { formatCalendarDateTime, formatLocalTime, formatWheelFields } from '../timeFormat';
+import { formatCalendarDateTime, formatLocalTime } from '../timeFormat';
 import { ValidationError } from '../errors';
 
 const en = i18n.getFixedT('en');
@@ -51,14 +51,5 @@ describe('formatCalendarDateTime', () => {
 
   it('orders year-month-day and appends 日 in Japanese', () => {
     expect(formatCalendarDateTime(ja, 2026, 8, 14, '23:42', '24h')).toBe('2026年9月14日 23:42');
-  });
-});
-
-describe('formatWheelFields', () => {
-  it('shows a day the month does not have as it is (no roll-over to the next month)', () => {
-    const nov31 = { year: 2026, month: 11, day: 31, hour: 9, minute: 5 };
-    expect(formatWheelFields(en, nov31, '24h')).toBe('Nov 31, 2026 · 09:05');
-    expect(formatWheelFields(en, nov31, '12h')).toBe('Nov 31, 2026 · 9:05 AM');
-    expect(formatWheelFields(ja, nov31, '24h')).toBe('2026年11月31日 09:05');
   });
 });

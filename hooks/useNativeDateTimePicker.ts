@@ -13,7 +13,7 @@ import { logError } from '../lib/log';
  * ("its iOS sheet is a plain absolutely-positioned `View`... Android's
  * dialog... is dismissed the moment `AppState` leaves `active`") that two
  * independently-edited copies could let drift. `record.tsx` has since moved
- * to in-screen wheels (`components/DateTimeWheel.tsx`).
+ * to an in-screen chooser (`components/DateTimeSelector.tsx`).
  *
  * `getBase` and `getMax` both return values in whatever shared
  * representation the caller uses for `customInstant` — a digit carrier in

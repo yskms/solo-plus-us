@@ -23,7 +23,7 @@ import { clampTo, sameMinute } from './datetime';
  *
  * Used by `app/activity/[id].tsx` (Activity Detail's post-hoc edit) via
  * `hooks/useNativeDateTimePicker.ts`; `app/record.tsx` used it too before
- * moving to `components/DateTimeWheel.tsx`.
+ * moving to `components/DateTimeSelector.tsx`.
  */
 export function openAndroidPicker(current: Date, max: Date, isLocked: () => boolean, onPicked: (date: Date) => void) {
   DateTimePickerAndroid.open({

@@ -418,9 +418,7 @@
     "couldNotRecord": "Could not record",
     "futureTitle": "Record a future time?",
     "futureMessage": "The time you chose ({{datetime}}) hasn't come yet. Record it anyway?",
-    "futureConfirm": "Record",
-    "invalidDateTitle": "That date doesn't exist",
-    "invalidDateMessage": "The date you chose ({{datetime}}) doesn't exist. Please pick another day."
+    "futureConfirm": "Record"
   },
   "activityDetail": {
     "notRecorded": "Not recorded",
@@ -449,13 +447,17 @@
   "dateTimePickerSheet": {
     "dismiss": "Dismiss date picker"
   },
-  "dateTimeWheel": {
+  "dateTimeSelector": {
     "year": "Year",
     "month": "Month",
     "day": "Day",
     "hour": "Hour",
     "minute": "Min",
-    "hour12": "{{hour}} {{period}}"
+    "hour12": "{{hour}} {{period}}",
+    "increase": "Increase {{field}}",
+    "decrease": "Decrease {{field}}",
+    "listHint": "Opens a list to choose from",
+    "closeList": "Close list"
   },
   "migrationRestoredBanner": {
     "message": "A recent update to Solo + Us couldn't be applied. Your existing records are safe, but the app is running an older version of its data format until this is fixed."

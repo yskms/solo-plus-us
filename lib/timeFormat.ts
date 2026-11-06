@@ -14,7 +14,6 @@
  */
 import type { TFunction } from 'i18next';
 import { isValidLocalTime } from './datetime';
-import type { WheelFields } from './dateTimeWheel';
 import { ValidationError } from './errors';
 import type { TimeFormat } from '../types/Settings';
 
@@ -43,13 +42,4 @@ export function formatCalendarDateTime(t: TFunction, year: number, month0: numbe
 export function formatPickedDateTime(t: TFunction, date: Date, format: TimeFormat): string {
   const localTime = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   return formatCalendarDateTime(t, date.getFullYear(), date.getMonth(), date.getDate(), localTime, format);
-}
-
-/**
- * Same display again, from the Add Activity wheel's five numbers. They can name a day the
- * month doesn't have (Nov 31), which a `Date` would turn into Dec 1, so this takes them as they are.
- */
-export function formatWheelFields(t: TFunction, fields: WheelFields, format: TimeFormat): string {
-  const localTime = `${String(fields.hour).padStart(2, '0')}:${String(fields.minute).padStart(2, '0')}`;
-  return formatCalendarDateTime(t, fields.year, fields.month - 1, fields.day, localTime, format);
 }

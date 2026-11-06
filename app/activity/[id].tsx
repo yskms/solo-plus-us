@@ -16,7 +16,7 @@
  * `components/DateTimePickerSheet.tsx` — see that hook's doc comment and
  * `contexts/AppLock.tsx` for why the iOS sheet is a plain
  * absolutely-positioned `View`, not RN's `<Modal>`). `app/record.tsx` used
- * to share it but now has in-screen wheels (`components/DateTimeWheel.tsx`);
+ * to share it but now has an in-screen chooser (`components/DateTimeSelector.tsx`);
  * this screen was left on the native picker. Unlike `record.tsx`, there is
  * no "use now instead" reset — this screen always has a real recorded value, never a
  * "Just now" placeholder. The picked value is held in `customInstant` and

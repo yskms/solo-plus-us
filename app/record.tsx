@@ -8,27 +8,28 @@
  *
  * 基本設計 §11.4/§4.4: changing the recorded time is an optional detour
  * from "Just now", not a required step, so it must not add a tap to the
- * default flow: the wheels (`components/DateTimeWheel.tsx`) are always on
- * screen, and turning them is what sets `customFields` (until then they
- * follow the clock, and Solo/Partnered record the moment they're tapped).
- * The wheels never correct a pick (that fought the finger and froze the
- * screen), so a time after now and a day the month doesn't have (Nov 31) can
- * both be parked on. Both are dealt with when Solo/Partnered is tapped
- * (`record` below): a future time asks for a confirmation, a day that
- * doesn't exist is refused with an alert. "Just now" is neither, so the
- * default flow gets no extra step. There is deliberately no "Just now" / picked-time text above them: the
- * wheels already show the value, and a line that appears on the first
- * change would push them down mid-gesture. No timezone picker in v1 (§4.4
+ * default flow: the chooser (`components/DateTimeSelector.tsx`: numbers with
+ * an arrow above and below, tap a number for a list) is always on screen, and
+ * using it is what sets `customFields` (until then it follows the clock, and
+ * Solo/Partnered record the moment they're tapped).
+ * Nothing is corrected under a finger, so a time after now can be parked on;
+ * `record` below asks for a confirmation when Solo/Partnered is tapped with
+ * one. "Just now" is never in the future, so the default flow gets no extra
+ * step. There is deliberately no "Just now" / picked-time text above the
+ * chooser: it already shows the value, and a line that appears on the first
+ * change would push it down mid-tap. No timezone picker in v1 (§4.4
  * known limitation) — the picked wall-clock time is always interpreted in
  * the device's current IANA zone, via `ActivityService.recordActivity`'s
  * existing `timezoneId` default (`getDeviceTimeZoneId()`), which also
  * resolves the DST-correct offset for that moment
  * (`resolveOffsetMinutesForZone`).
  *
- * The wheels are plain in-tree views, not a native dialog/sheet, so
- * `contexts/AppLock.tsx`'s overlay covers them with the rest of the screen
- * (see that file's doc comment). `app/activity/[id].tsx`'s post-hoc edit
- * (D-50) still uses the native picker (`hooks/useNativeDateTimePicker.ts`).
+ * The chooser and its list are plain in-tree views, not a native
+ * dialog/sheet/`<Modal>`, so `contexts/AppLock.tsx`'s overlay covers them with
+ * the rest of the screen (see that file's doc comment). The list is drawn
+ * here, over the whole screen (`popover` below). `app/activity/[id].tsx`'s
+ * post-hoc edit (D-50) still uses the native picker
+ * (`hooks/useNativeDateTimePicker.ts`).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -38,19 +39,16 @@ import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../constants/theme';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
-import { DateTimeWheel } from '../components/DateTimeWheel';
+import { useDateTimeSelector } from '../components/DateTimeSelector';
 import { instantForPastLocalDateAtNow, sameMinute } from '../lib/datetime';
-import { type WheelFields, fromWheelFields, isValidWheelDate, toWheelFields } from '../lib/dateTimeWheel';
+import { type DateTimeFields, fromDateTimeFields, toDateTimeFields } from '../lib/dateTimeFields';
 import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
-import { formatPickedDateTime, formatWheelFields } from '../lib/timeFormat';
+import { formatPickedDateTime } from '../lib/timeFormat';
 import * as ActivityService from '../services/ActivityService';
 import { getSetting } from '../services/SettingsRepository';
 import type { ActivityContext } from '../types/Activity';
 import type { TimeFormat } from '../types/Settings';
-
-// How long after a touch ends a wheel may still be coasting to its resting row.
-const WHEEL_COAST_MS = 1500;
 
 export default function RecordScreen() {
   const { colors } = useTheme();
@@ -58,7 +56,7 @@ export default function RecordScreen() {
   const db = useDatabase();
   const { announceRecorded } = useRecordFeedback();
   const [saving, setSaving] = useState(false);
-  // True while a "future time" / "no such date" alert is up: stops a second tap from stacking another.
+  // True while the "future time" alert is up: stops a second tap from stacking another.
   const alertOpenRef = useRef(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const getNow = () => new Date();
@@ -66,18 +64,15 @@ export default function RecordScreen() {
   // the picked time as that day + the current time of day. `null` (no/invalid
   // param, today, or a future day) leaves the normal "Just now" flow.
   const { date } = useLocalSearchParams<{ date?: string }>();
-  // The picked time as the wheel's five numbers (not a `Date`: the wheel can hold Nov 31, see `record`).
-  const [customFields, setCustomFields] = useState<WheelFields | null>(() => {
+  // The picked time as the chooser's five numbers (not a `Date`: see `lib/dateTimeFields.ts`).
+  const [customFields, setCustomFields] = useState<DateTimeFields | null>(() => {
     const instant = typeof date === 'string' ? instantForPastLocalDateAtNow(date) : null;
-    return instant ? toWheelFields(instant) : null;
+    return instant ? toDateTimeFields(instant) : null;
   });
-  // What the wheels show while `customFields` is still null ("Just now"). It
-  // follows the clock (below) so the wheels never read a different minute
-  // from the one Solo/Partnered will record.
-  const [wheelBase, setWheelBase] = useState(getNow);
-  // Until this time (ms) the wheels are being touched or are still coasting;
-  // the clock must not move them under a finger.
-  const wheelBusyUntilRef = useRef(0);
+  // What the chooser shows while `customFields` is still null ("Just now"). It
+  // follows the clock (below) so it never reads a different minute from the
+  // one Solo/Partnered will record.
+  const [timeBase, setTimeBase] = useState(getNow);
 
   useEffect(() => {
     getSetting(db, 'preferences.timeFormat')
@@ -85,18 +80,25 @@ export default function RecordScreen() {
       .catch((error) => logError('Loading preferences.timeFormat failed', error));
   }, [db]);
 
+  const { selector, popover, isListOpen } = useDateTimeSelector({
+    value: customFields ?? toDateTimeFields(timeBase),
+    now: getNow(),
+    timeFormat,
+    onChange: setCustomFields,
+  });
+
   useEffect(() => {
-    if (customFields) return;
+    // Not while a list is open: the number it was opened from must not change under it.
+    if (customFields || isListOpen) return;
     const id = setInterval(() => {
-      if (Date.now() < wheelBusyUntilRef.current) return;
-      setWheelBase((base) => (sameMinute(base, getNow()) ? base : getNow()));
+      setTimeBase((base) => (sameMinute(base, getNow()) ? base : getNow()));
     }, 5000);
     return () => clearInterval(id);
-  }, [customFields]);
+  }, [customFields, isListOpen]);
 
   const resetToNow = () => {
     setCustomFields(null);
-    setWheelBase(getNow());
+    setTimeBase(getNow());
   };
 
   const save = async (context: ActivityContext, instantUtc: Date) => {
@@ -123,25 +125,13 @@ export default function RecordScreen() {
     const closeAlert = () => {
       alertOpenRef.current = false;
     };
-    // The wheel lets "Nov 31" sit there (it never corrects a pick under the
-    // finger); a `Date` would quietly turn it into Dec 1, so refuse it here.
-    if (!isValidWheelDate(customFields)) {
-      alertOpenRef.current = true;
-      Alert.alert(
-        t('record.invalidDateTitle'),
-        t('record.invalidDateMessage', { datetime: formatWheelFields(t, customFields, timeFormat) }),
-        [{ text: t('common.ok'), onPress: closeAlert }],
-        { cancelable: true, onDismiss: closeAlert },
-      );
-      return;
-    }
-    const instant = fromWheelFields(customFields);
+    const instant = fromDateTimeFields(customFields);
     if (instant.getTime() <= Date.now()) {
       void save(context, instant);
       return;
     }
     // A future time is allowed, but it's far more often a slip (the hour was
-    // turned to 23 and the day left alone) than intended, so ask once.
+    // moved to 23 and the day left alone) than intended, so ask once.
     alertOpenRef.current = true;
     Alert.alert(
       t('record.futureTitle'),
@@ -161,85 +151,78 @@ export default function RecordScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.headerRow}>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>{t('record.title')}</Text>
-        <Pressable onPress={() => router.back()} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('record.close')}>
-          <Text style={[styles.close, { color: colors.textSecondary }]}>✕</Text>
-        </Pressable>
-      </View>
-
-      <Text style={[styles.prompt, { color: colors.textSecondary }]}>{t('record.prompt')}</Text>
-
-      <Pressable
-        onPress={() => record('solo')}
-        disabled={saving}
-        style={({ pressed }) => [
-          styles.option,
-          { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed || saving ? 0.7 : 1 },
-        ]}
+    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* Hidden from screen readers while a list is open: the list is a sibling
+          laid over it, not a native modal, so nothing else keeps them out. */}
+      <View
+        style={styles.container}
+        importantForAccessibility={isListOpen ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={isListOpen}
       >
-        <View style={[styles.dot, { backgroundColor: colors.solo }]} />
-        <View>
-          <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>{contextLabel(t, 'solo')}</Text>
-          <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>{contextCaption(t, 'solo')}</Text>
+        <View style={styles.headerRow}>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>{t('record.title')}</Text>
+          <Pressable onPress={() => router.back()} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('record.close')}>
+            <Text style={[styles.close, { color: colors.textSecondary }]}>✕</Text>
+          </Pressable>
         </View>
-      </Pressable>
 
-      <Pressable
-        onPress={() => record('partnered')}
-        disabled={saving}
-        style={({ pressed }) => [
-          styles.option,
-          { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed || saving ? 0.7 : 1 },
-        ]}
-      >
-        <View style={[styles.dot, { backgroundColor: colors.partneredStrong }]} />
-        <View>
-          <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>{contextLabel(t, 'partnered')}</Text>
-          <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>{contextCaption(t, 'partnered')}</Text>
-        </View>
-      </Pressable>
+        <Text style={[styles.prompt, { color: colors.textSecondary }]}>{t('record.prompt')}</Text>
 
-      <View style={styles.whenBlock}>
-        <View
-          onTouchStart={() => {
-            wheelBusyUntilRef.current = Number.POSITIVE_INFINITY;
-          }}
-          onTouchEnd={() => {
-            wheelBusyUntilRef.current = Date.now() + WHEEL_COAST_MS;
-          }}
-          onTouchCancel={() => {
-            wheelBusyUntilRef.current = Date.now() + WHEEL_COAST_MS;
-          }}
-        >
-          <DateTimeWheel
-            value={customFields ?? toWheelFields(wheelBase)}
-            now={getNow()}
-            timeFormat={timeFormat}
-            onChange={setCustomFields}
-          />
-        </View>
-        {/* Always laid out, only shown once there's something to reset: the
-            content is centered on the screen, so a row that came and went
-            would shift the wheels under the finger. */}
         <Pressable
-          onPress={resetToNow}
-          disabled={!customFields}
-          style={[styles.resetRow, !customFields && styles.resetRowHidden]}
-          accessibilityRole="button"
-          accessibilityLabel={t('record.useNowInsteadA11y')}
-          accessibilityElementsHidden={!customFields}
-          importantForAccessibility={customFields ? 'auto' : 'no-hide-descendants'}
+          onPress={() => record('solo')}
+          disabled={saving}
+          style={({ pressed }) => [
+            styles.option,
+            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed || saving ? 0.7 : 1 },
+          ]}
         >
-          <Text style={[styles.resetLink, { color: colors.textTertiary }]}>{t('record.useNowInstead')}</Text>
+          <View style={[styles.dot, { backgroundColor: colors.solo }]} />
+          <View>
+            <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>{contextLabel(t, 'solo')}</Text>
+            <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>{contextCaption(t, 'solo')}</Text>
+          </View>
         </Pressable>
+
+        <Pressable
+          onPress={() => record('partnered')}
+          disabled={saving}
+          style={({ pressed }) => [
+            styles.option,
+            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed || saving ? 0.7 : 1 },
+          ]}
+        >
+          <View style={[styles.dot, { backgroundColor: colors.partneredStrong }]} />
+          <View>
+            <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>{contextLabel(t, 'partnered')}</Text>
+            <Text style={[styles.optionCaption, { color: colors.textSecondary }]}>{contextCaption(t, 'partnered')}</Text>
+          </View>
+        </Pressable>
+
+        <View style={styles.whenBlock}>
+          {selector}
+          {/* Always laid out, only shown once there's something to reset: the
+              content is centered on the screen, so a row that came and went
+              would shift the chooser between two taps. */}
+          <Pressable
+            onPress={resetToNow}
+            disabled={!customFields}
+            style={[styles.resetRow, !customFields && styles.resetRowHidden]}
+            accessibilityRole="button"
+            accessibilityLabel={t('record.useNowInsteadA11y')}
+            accessibilityElementsHidden={!customFields}
+            importantForAccessibility={customFields ? 'auto' : 'no-hide-descendants'}
+          >
+            <Text style={[styles.resetLink, { color: colors.textTertiary }]}>{t('record.useNowInstead')}</Text>
+          </Pressable>
+        </View>
       </View>
+      {popover}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   container: { flex: 1, padding: spacing.lg, gap: spacing.md, justifyContent: 'center' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 20, fontWeight: '700' },

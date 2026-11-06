@@ -398,9 +398,7 @@
     "couldNotRecord": "記録できませんでした",
     "futureTitle": "未来の日時です",
     "futureMessage": "選んだ日時（{{datetime}}）は、まだ先の時刻です。このまま記録しますか？",
-    "futureConfirm": "記録する",
-    "invalidDateTitle": "存在しない日付です",
-    "invalidDateMessage": "選んだ日付（{{datetime}}）は存在しません。日を選び直してください。"
+    "futureConfirm": "記録する"
   },
   "activityDetail": {
     "notRecorded": "未記録",
@@ -429,13 +427,17 @@
   "dateTimePickerSheet": {
     "dismiss": "日時ピッカーを閉じる"
   },
-  "dateTimeWheel": {
+  "dateTimeSelector": {
     "year": "年",
     "month": "月",
     "day": "日",
     "hour": "時",
     "minute": "分",
-    "hour12": "{{period}}{{hour}}"
+    "hour12": "{{period}}{{hour}}",
+    "increase": "{{field}}を増やす",
+    "decrease": "{{field}}を減らす",
+    "listHint": "一覧から選びます",
+    "closeList": "一覧を閉じる"
   },
   "migrationRestoredBanner": {
     "message": "Solo + Us の最近の更新を適用できませんでした。既存の記録は無事ですが、この問題が解決するまで、アプリは以前のデータ形式で動作します。"

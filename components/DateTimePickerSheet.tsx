@@ -1,7 +1,7 @@
 /**
  * The iOS date/time picker sheet for `app/activity/[id].tsx` (D-50; it was
  * shared with `app/record.tsx` before that moved to
- * `components/DateTimeWheel.tsx`) — a plain absolutely-positioned `View`,
+ * `components/DateTimeSelector.tsx`) — a plain absolutely-positioned `View`,
  * deliberately NOT React Native's `<Modal>`. See `contexts/AppLock.tsx`'s
  * doc comment: a native modal presentation runs outside the view
  * hierarchy the App Lock overlay covers, so it wouldn't be covered by it.

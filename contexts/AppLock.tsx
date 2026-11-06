@@ -33,7 +33,8 @@
  * anything else to finish closing.
  *
  * Same reasoning shaped the date/time pickers. `app/record.tsx`'s (§11.4)
- * is now `components/DateTimeWheel.tsx`: plain in-tree views, so this
+ * is now `components/DateTimeSelector.tsx` (and its list,
+ * `components/OptionListPopover.tsx`): plain in-tree views, so this
  * overlay covers it like the rest of the screen and nothing has to be
  * dismissed when the app locks. `app/activity/[id].tsx`'s (D-50, the
  * post-hoc edit) is still the native picker, and `record.tsx` used to
