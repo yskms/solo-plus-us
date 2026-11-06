@@ -1,6 +1,6 @@
 /**
  * Index arithmetic for a wrap-around reel (`components/WheelColumn.tsx`'s
- * `loop` mode, used for hour and minute). Free of React so it can be
+ * `loop` mode, used for every column but the year). Free of React so it can be
  * unit-tested.
  *
  * A looping reel is a plain `ScrollView` holding several identical copies of
@@ -36,10 +36,4 @@ export function wrapIndex(physical: number, n: number): number {
 /** Physical index of the same row in the middle copy. */
 export function homeIndex(physical: number, n: number): number {
   return loopHomeStart(n) + wrapIndex(physical, n);
-}
-
-/** Signed number of rows from logical `from` to logical `to` by the shorter way round (a tie goes forward). */
-export function shortestLoopDelta(from: number, to: number, n: number): number {
-  const forward = wrapIndex(to - from, n);
-  return forward > n / 2 ? forward - n : forward;
 }

@@ -7,8 +7,8 @@
  *
  * Controlled: `selectedValue` is the source of truth. A scroll that settles
  * on a row calls `onSelect`; if the parent then picks a different value
- * (a day shortened by a shorter month, or the clock moving the minute), the
- * column scrolls to it. `scrollIndexRef` is where the column is *physically*
+ * (the clock moving the minute, or "Use now instead"), the column scrolls
+ * to it. `scrollIndexRef` is where the column is *physically*
  * scrolled to, which is what the sync effect compares `selectedIndex`
  * against; `syncTick` re-runs that comparison after every settle.
  *
@@ -18,6 +18,21 @@
  * *without animation* (the rows are identical, so nothing visible happens).
  * Don't animate that jump.
  *
+ * Never scroll a reel programmatically with `animated: true` (every
+ * `scrollTo` here is instant). On Android an animated `scrollTo` makes the
+ * ScrollView report "scroll ended" (also when it is restarted or interrupted),
+ * and reacting to that with another correction starts it again, forever: on a
+ * Pixel 3 the reel re-issued the same `scrollTo` every 50 ms and crept 0.3 px
+ * per round, and in other runs swung between two rows for seconds, each round
+ * re-rendering the whole screen (it froze). An instant `scrollTo` onto a row's
+ * exact position is a fixed point: the next "ended" event finds the reel
+ * already on the row and does nothing.
+ *
+ * iOS snaps natively (`snapToInterval`). Android doesn't: `settleAt` moves a
+ * reel that stopped between rows (a slow release) onto the nearest one, so
+ * there is only one thing that scrolls a reel at rest. Whether Android's own
+ * snap had a part in the swinging was not separated out; keep it off.
+ *
  * The rows are `React.memo`'d on purpose: every settle re-renders the whole
  * screen, and with a few hundred rows (looping reels repeat theirs) that
  * used to be the cost of each turn. Keep the props of `WheelRow` primitive.
@@ -26,9 +41,18 @@
  * volume keys to step) rather than 24-60 separately focusable rows.
  */
 import React, { memo, useCallback, useEffect, useReducer, useRef } from 'react';
-import { type NativeScrollEvent, type NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useTheme } from '../constants/theme';
-import { homeIndex, loopCopies, loopHomeStart, shortestLoopDelta, wrapIndex } from '../lib/wheelLoop';
+import { homeIndex, loopCopies, loopHomeStart, wrapIndex } from '../lib/wheelLoop';
 
 export const WHEEL_ITEM_HEIGHT = 34;
 /** How much of the neighbouring rows shows above and below the selected one. */
@@ -36,6 +60,8 @@ export const WHEEL_PEEK = 16;
 // iOS reports the release velocity in `onScrollEndDrag`; below this the list
 // isn't going to coast, so no `onMomentumScrollEnd` can be relied on to follow.
 const STILL_VELOCITY = 0.05;
+// Only iOS snaps natively; see the file comment.
+const NATIVE_SNAP = Platform.OS === 'ios';
 
 export interface WheelItem {
   value: number;
@@ -87,28 +113,26 @@ export function WheelColumn({ items, selectedValue, onSelect, label, flex = 1, l
   const selectedIndex = found < 0 ? 0 : found; // logical
   const scrollIndexRef = useRef(homeStart + selectedIndex); // physical
   const didInitialScrollRef = useRef(false);
+  // The scroll offset of the last "ended" event `settleAt` acted on; reset by a
+  // new drag. Skipping a repeat of the same offset is only right while the
+  // reel is moved by nothing but a drag (and our own instant corrections,
+  // which end on a row's exact offset): if another path ever scrolls the reel
+  // and ends up reporting an offset it had before, clear this there too.
+  const handledYRef = useRef<number | null>(null);
   const [syncTick, bumpSyncTick] = useReducer((count: number) => count + 1, 0);
 
-  const scrollToRow = (row: number, animated: boolean) => {
-    scrollRef.current?.scrollTo({ y: row * WHEEL_ITEM_HEIGHT, animated });
+  // Instant, on purpose: see the file comment.
+  const scrollToRow = (row: number) => {
+    scrollRef.current?.scrollTo({ y: row * WHEEL_ITEM_HEIGHT, animated: false });
   };
 
+  // The parent picked a value the reel isn't on (the clock moving the minute,
+  // "Use now instead"): put the reel on that row of the middle copy.
   useEffect(() => {
-    const current = scrollIndexRef.current;
-    if (!loop) {
-      if (current === selectedIndex) return;
-      scrollIndexRef.current = selectedIndex;
-      scrollToRow(selectedIndex, true);
-      return;
-    }
-    const currentLogical = wrapIndex(current, n);
-    if (currentLogical === selectedIndex) return;
-    // Park on the middle copy first (invisible), then take the shorter way round.
-    const parked = homeStart + currentLogical;
-    if (parked !== current) scrollToRow(parked, false);
-    const target = parked + shortestLoopDelta(currentLogical, selectedIndex, n);
+    const target = homeStart + selectedIndex;
+    if (scrollIndexRef.current === target) return;
     scrollIndexRef.current = target;
-    scrollToRow(target, true);
+    scrollToRow(target);
   }, [selectedIndex, syncTick, loop, n, homeStart]);
 
   const commit = (row: number) => {
@@ -118,27 +142,36 @@ export function WheelColumn({ items, selectedValue, onSelect, label, flex = 1, l
     bumpSyncTick();
   };
 
-  const settleAt = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  // `fromDragEnd`: called when the finger lifted with no speed, not when the scroll stopped.
+  const settleAt = (event: NativeSyntheticEvent<NativeScrollEvent>, fromDragEnd = false) => {
     const y = event.nativeEvent.contentOffset.y;
     const row = Math.round(y / WHEEL_ITEM_HEIGHT);
-    // A slow drag released between rows can stop where `snapToInterval` never
-    // pulled it (seen on Android), leaving the text off-center from the band.
+    // How far the reel stopped from the exact position of its nearest row. On
+    // Android nothing snaps it (see the file comment), and a slow release
+    // between rows leaves the text off-center from the band.
     const offCenter = Math.abs(y - row * WHEEL_ITEM_HEIGHT) > 1;
-    if (loop) {
-      const home = homeIndex(row, n);
-      if (home !== row) scrollToRow(home, false);
-      else if (offCenter) scrollToRow(row, true);
-      commit(home);
-      return;
-    }
-    if (offCenter) scrollToRow(row, true);
-    commit(row);
+    // iOS snaps a reel released between rows by itself and reports the stop
+    // afterwards: leave that to it rather than scrolling against its animation.
+    if (fromDragEnd && NATIVE_SNAP && offCenter) return;
+    const home = loop ? homeIndex(row, n) : row;
+    // The end of a scroll is reported more than once, some of them late, with
+    // the offset from before our correction. The same offset as the last one we
+    // handled (and not a new drag since): already dealt with.
+    if (handledYRef.current !== null && Math.abs(y - handledYRef.current) < 0.01) return;
+    // Already exactly on the row we last committed: nothing to do.
+    if (!offCenter && home === row && row === scrollIndexRef.current) return;
+    handledYRef.current = y;
+    // Onto the nearest row (exactly) of the middle copy, in one instant step;
+    // for a looping reel that is also the jump back from another copy.
+    if (home !== row || offCenter) scrollToRow(home);
+    commit(home);
   };
 
   const goTo = (row: number) => {
     const clamped = Math.min(Math.max(row, 0), copies * n - 1);
-    scrollToRow(clamped, true);
-    commit(clamped);
+    const home = loop ? homeIndex(clamped, n) : clamped;
+    scrollToRow(home);
+    commit(home);
   };
 
   // `WheelRow` is memoized, so it gets one stable callback that reads the latest `goTo`.
@@ -167,7 +200,7 @@ export function WheelColumn({ items, selectedValue, onSelect, label, flex = 1, l
         style={styles.scroll}
         contentContainerStyle={{ paddingVertical: WHEEL_PEEK }}
         showsVerticalScrollIndicator={false}
-        snapToInterval={WHEEL_ITEM_HEIGHT}
+        snapToInterval={NATIVE_SNAP ? WHEEL_ITEM_HEIGHT : undefined}
         decelerationRate="fast"
         nestedScrollEnabled
         onContentSizeChange={() => {
@@ -175,12 +208,15 @@ export function WheelColumn({ items, selectedValue, onSelect, label, flex = 1, l
           if (didInitialScrollRef.current) return;
           didInitialScrollRef.current = true;
           scrollIndexRef.current = homeStart + selectedIndex;
-          scrollToRow(homeStart + selectedIndex, false);
+          scrollToRow(homeStart + selectedIndex);
         }}
-        onMomentumScrollEnd={settleAt}
+        onScrollBeginDrag={() => {
+          handledYRef.current = null;
+        }}
+        onMomentumScrollEnd={(event) => settleAt(event)}
         onScrollEndDrag={(event) => {
           const velocity = event.nativeEvent.velocity?.y;
-          if (velocity !== undefined && Math.abs(velocity) < STILL_VELOCITY) settleAt(event);
+          if (velocity !== undefined && Math.abs(velocity) < STILL_VELOCITY) settleAt(event, true);
         }}
       >
         {Array.from({ length: copies * n }, (_, row) => (

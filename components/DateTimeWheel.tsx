@@ -5,33 +5,41 @@
  * dialogs on Android and the bottom sheet on iOS. Every turn of a reel
  * reports a new value straight away (no OK / Done step).
  *
- * A time after "now" can be chosen: the reels never snap back (that fought
- * the finger and froze the screen), and `app/record.tsx` asks for a
- * confirmation when saving one. Hour and minute are endless reels (23 above
- * 0) that don't touch the other fields; see `lib/dateTimeWheel`.
+ * Nothing is corrected while turning (`lib/dateTimeWheel` explains why): a
+ * time after "now" can be chosen, and so can a day the month doesn't have
+ * (Nov 31). The reels never snap or shrink under the finger (that fought it
+ * and froze the screen); `app/record.tsx` checks both when saving. Every
+ * column but the year is an endless reel (23 above 0, 31 above 1) that
+ * doesn't touch the other fields.
  *
  * It's a plain in-tree view, so `contexts/AppLock.tsx`'s overlay covers it
  * like the rest of the screen and nothing needs to be dismissed from code
  * when the app locks.
  *
- * Only the wall-clock digits of `value` are read (via `lib/dateTimeWheel`),
- * so a "digit carrier" `Date` works as well as a real instant.
+ * The value is the five wall-clock numbers (not a `Date`, which can't hold
+ * Nov 31), so a "digit carrier" works as well as a real instant.
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { radius, spacing, useTheme } from '../constants/theme';
-import { sameMinute } from '../lib/datetime';
-import { type WheelField, isLoopingWheelField, setWheelField, toWheelFields, wheelFieldValues } from '../lib/dateTimeWheel';
+import {
+  type WheelField,
+  type WheelFields,
+  isLoopingWheelField,
+  sameWheelFields,
+  setWheelField,
+  wheelFieldValues,
+} from '../lib/dateTimeWheel';
 import type { TimeFormat } from '../types/Settings';
 import { WHEEL_ITEM_HEIGHT, WHEEL_PEEK, WheelColumn, type WheelItem } from './WheelColumn';
 
 interface DateTimeWheelProps {
-  value: Date;
+  value: WheelFields;
   /** "Now": only decides where the year column ends. */
   now: Date;
   timeFormat: TimeFormat;
-  onChange: (date: Date) => void;
+  onChange: (fields: WheelFields) => void;
 }
 
 // Year has four digits; the rest are one or two.
@@ -46,7 +54,6 @@ const COLUMNS: { field: WheelField; flex: number }[] = [
 export function DateTimeWheel({ value, now, timeFormat, onChange }: DateTimeWheelProps) {
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const fields = toWheelFields(value);
   // Literal keys (not `dateTimeWheel.${field}`) so `npm run check-i18n` can see them.
   const fieldLabels: Record<WheelField, string> = {
     year: t('dateTimeWheel.year'),
@@ -67,8 +74,8 @@ export function DateTimeWheel({ value, now, timeFormat, onChange }: DateTimeWhee
 
   const select = (field: WheelField, n: number) => {
     const next = setWheelField(value, field, n);
-    // Settling back on the minute already shown isn't a change.
-    if (!sameMinute(next, value)) onChange(next);
+    // Settling back on the value already shown isn't a change.
+    if (!sameWheelFields(next, value)) onChange(next);
   };
 
   return (
@@ -91,7 +98,7 @@ export function DateTimeWheel({ value, now, timeFormat, onChange }: DateTimeWhee
             <WheelColumn
               key={field}
               items={items}
-              selectedValue={fields[field]}
+              selectedValue={value[field]}
               onSelect={(n) => select(field, n)}
               label={fieldLabels[field]}
               flex={flex}

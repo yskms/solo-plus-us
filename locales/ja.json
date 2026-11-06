@@ -398,7 +398,9 @@
     "couldNotRecord": "記録できませんでした",
     "futureTitle": "未来の日時です",
     "futureMessage": "選んだ日時（{{datetime}}）は、まだ先の時刻です。このまま記録しますか？",
-    "futureConfirm": "記録する"
+    "futureConfirm": "記録する",
+    "invalidDateTitle": "存在しない日付です",
+    "invalidDateMessage": "選んだ日付（{{datetime}}）は存在しません。日を選び直してください。"
   },
   "activityDetail": {
     "notRecorded": "未記録",

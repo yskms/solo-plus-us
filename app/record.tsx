@@ -9,12 +9,14 @@
  * 基本設計 §11.4/§4.4: changing the recorded time is an optional detour
  * from "Just now", not a required step, so it must not add a tap to the
  * default flow: the wheels (`components/DateTimeWheel.tsx`) are always on
- * screen, and turning them is what sets `customInstant` (until then they
+ * screen, and turning them is what sets `customFields` (until then they
  * follow the clock, and Solo/Partnered record the moment they're tapped).
- * A time after now can be picked (the wheels never snap back, which fought
- * the finger and froze the screen); tapping Solo/Partnered with one asks for
- * a confirmation first (`record` below). "Just now" is never in the future,
- * so the default flow gets no extra step. There is deliberately no "Just now" / picked-time text above them: the
+ * The wheels never correct a pick (that fought the finger and froze the
+ * screen), so a time after now and a day the month doesn't have (Nov 31) can
+ * both be parked on. Both are dealt with when Solo/Partnered is tapped
+ * (`record` below): a future time asks for a confirmation, a day that
+ * doesn't exist is refused with an alert. "Just now" is neither, so the
+ * default flow gets no extra step. There is deliberately no "Just now" / picked-time text above them: the
  * wheels already show the value, and a line that appears on the first
  * change would push them down mid-gesture. No timezone picker in v1 (§4.4
  * known limitation) — the picked wall-clock time is always interpreted in
@@ -38,9 +40,10 @@ import { useDatabase } from '../contexts/DatabaseContext';
 import { useRecordFeedback } from '../contexts/RecordFeedback';
 import { DateTimeWheel } from '../components/DateTimeWheel';
 import { instantForPastLocalDateAtNow, sameMinute } from '../lib/datetime';
+import { type WheelFields, fromWheelFields, isValidWheelDate, toWheelFields } from '../lib/dateTimeWheel';
 import { contextLabel, contextCaption } from '../lib/labels';
 import { logError } from '../lib/log';
-import { formatPickedDateTime } from '../lib/timeFormat';
+import { formatPickedDateTime, formatWheelFields } from '../lib/timeFormat';
 import * as ActivityService from '../services/ActivityService';
 import { getSetting } from '../services/SettingsRepository';
 import type { ActivityContext } from '../types/Activity';
@@ -55,17 +58,20 @@ export default function RecordScreen() {
   const db = useDatabase();
   const { announceRecorded } = useRecordFeedback();
   const [saving, setSaving] = useState(false);
-  // True while the "that's in the future" alert is up: stops a second tap from stacking another.
-  const confirmingFutureRef = useRef(false);
+  // True while a "future time" / "no such date" alert is up: stops a second tap from stacking another.
+  const alertOpenRef = useRef(false);
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const getNow = () => new Date();
   // The Calendar tab's "add to this day" passes `date` (YYYY-MM-DD); it starts
   // the picked time as that day + the current time of day. `null` (no/invalid
   // param, today, or a future day) leaves the normal "Just now" flow.
   const { date } = useLocalSearchParams<{ date?: string }>();
-  const [initialInstant] = useState(() => (typeof date === 'string' ? instantForPastLocalDateAtNow(date) : null));
-  const [customInstant, setCustomInstant] = useState<Date | null>(initialInstant);
-  // What the wheels show while `customInstant` is still null ("Just now"). It
+  // The picked time as the wheel's five numbers (not a `Date`: the wheel can hold Nov 31, see `record`).
+  const [customFields, setCustomFields] = useState<WheelFields | null>(() => {
+    const instant = typeof date === 'string' ? instantForPastLocalDateAtNow(date) : null;
+    return instant ? toWheelFields(instant) : null;
+  });
+  // What the wheels show while `customFields` is still null ("Just now"). It
   // follows the clock (below) so the wheels never read a different minute
   // from the one Solo/Partnered will record.
   const [wheelBase, setWheelBase] = useState(getNow);
@@ -80,16 +86,16 @@ export default function RecordScreen() {
   }, [db]);
 
   useEffect(() => {
-    if (customInstant) return;
+    if (customFields) return;
     const id = setInterval(() => {
       if (Date.now() < wheelBusyUntilRef.current) return;
       setWheelBase((base) => (sameMinute(base, getNow()) ? base : getNow()));
     }, 5000);
     return () => clearInterval(id);
-  }, [customInstant]);
+  }, [customFields]);
 
   const resetToNow = () => {
-    setCustomInstant(null);
+    setCustomFields(null);
     setWheelBase(getNow());
   };
 
@@ -109,43 +115,48 @@ export default function RecordScreen() {
   };
 
   const record = (context: ActivityContext) => {
-    if (saving || confirmingFutureRef.current) return;
-    if (!customInstant) {
+    if (saving || alertOpenRef.current) return;
+    if (!customFields) {
       void save(context, new Date());
       return;
     }
-    if (customInstant.getTime() <= Date.now()) {
-      void save(context, customInstant);
+    const closeAlert = () => {
+      alertOpenRef.current = false;
+    };
+    // The wheel lets "Nov 31" sit there (it never corrects a pick under the
+    // finger); a `Date` would quietly turn it into Dec 1, so refuse it here.
+    if (!isValidWheelDate(customFields)) {
+      alertOpenRef.current = true;
+      Alert.alert(
+        t('record.invalidDateTitle'),
+        t('record.invalidDateMessage', { datetime: formatWheelFields(t, customFields, timeFormat) }),
+        [{ text: t('common.ok'), onPress: closeAlert }],
+        { cancelable: true, onDismiss: closeAlert },
+      );
+      return;
+    }
+    const instant = fromWheelFields(customFields);
+    if (instant.getTime() <= Date.now()) {
+      void save(context, instant);
       return;
     }
     // A future time is allowed, but it's far more often a slip (the hour was
     // turned to 23 and the day left alone) than intended, so ask once.
-    confirmingFutureRef.current = true;
+    alertOpenRef.current = true;
     Alert.alert(
       t('record.futureTitle'),
-      t('record.futureMessage', { datetime: formatPickedDateTime(t, customInstant, timeFormat) }),
+      t('record.futureMessage', { datetime: formatPickedDateTime(t, instant, timeFormat) }),
       [
-        {
-          text: t('common.cancel'),
-          style: 'cancel',
-          onPress: () => {
-            confirmingFutureRef.current = false;
-          },
-        },
+        { text: t('common.cancel'), style: 'cancel', onPress: closeAlert },
         {
           text: t('record.futureConfirm'),
           onPress: () => {
-            confirmingFutureRef.current = false;
-            void save(context, customInstant);
+            closeAlert();
+            void save(context, instant);
           },
         },
       ],
-      {
-        cancelable: true,
-        onDismiss: () => {
-          confirmingFutureRef.current = false;
-        },
-      },
+      { cancelable: true, onDismiss: closeAlert },
     );
   };
 
@@ -203,10 +214,10 @@ export default function RecordScreen() {
           }}
         >
           <DateTimeWheel
-            value={customInstant ?? wheelBase}
+            value={customFields ?? toWheelFields(wheelBase)}
             now={getNow()}
             timeFormat={timeFormat}
-            onChange={setCustomInstant}
+            onChange={setCustomFields}
           />
         </View>
         {/* Always laid out, only shown once there's something to reset: the
@@ -214,12 +225,12 @@ export default function RecordScreen() {
             would shift the wheels under the finger. */}
         <Pressable
           onPress={resetToNow}
-          disabled={!customInstant}
-          style={[styles.resetRow, !customInstant && styles.resetRowHidden]}
+          disabled={!customFields}
+          style={[styles.resetRow, !customFields && styles.resetRowHidden]}
           accessibilityRole="button"
           accessibilityLabel={t('record.useNowInsteadA11y')}
-          accessibilityElementsHidden={!customInstant}
-          importantForAccessibility={customInstant ? 'auto' : 'no-hide-descendants'}
+          accessibilityElementsHidden={!customFields}
+          importantForAccessibility={customFields ? 'auto' : 'no-hide-descendants'}
         >
           <Text style={[styles.resetLink, { color: colors.textTertiary }]}>{t('record.useNowInstead')}</Text>
         </Pressable>

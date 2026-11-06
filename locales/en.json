@@ -418,7 +418,9 @@
     "couldNotRecord": "Could not record",
     "futureTitle": "Record a future time?",
     "futureMessage": "The time you chose ({{datetime}}) hasn't come yet. Record it anyway?",
-    "futureConfirm": "Record"
+    "futureConfirm": "Record",
+    "invalidDateTitle": "That date doesn't exist",
+    "invalidDateMessage": "The date you chose ({{datetime}}) doesn't exist. Please pick another day."
   },
   "activityDetail": {
     "notRecorded": "Not recorded",
