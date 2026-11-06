@@ -207,7 +207,10 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row' },
   header: { fontSize: 12, textAlign: 'center' },
   columns: { flexDirection: 'row' },
-  column: { alignItems: 'stretch', paddingHorizontal: 2 },
+  // Little padding and a 17 font: the room is for the numbers. The widest label is the Japanese 12-hour
+  // "午後12" on a 360dp-wide screen; at 18 with the old padding its digits were shrunk by
+  // `adjustsFontSizeToFit`, smaller than the other columns'.
+  column: { alignItems: 'stretch', paddingHorizontal: 1 },
   arrowButton: { height: minTouchTarget, alignItems: 'center', justifyContent: 'center' },
   valueBox: {
     height: minTouchTarget,
@@ -215,7 +218,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 2,
+    paddingHorizontal: 0,
   },
-  valueText: { fontSize: 18, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  valueText: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
 });
