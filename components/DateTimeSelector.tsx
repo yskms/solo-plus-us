@@ -111,7 +111,7 @@ export function useDateTimeSelector({ value, now, timeFormat, onChange }: Option
           <View key={field} style={[styles.column, { flex }]}>
             <ArrowButton
               direction="up"
-              color={colors.textSecondary}
+              color={colors.textTertiary}
               label={t('dateTimeSelector.increase', { field: fieldLabels[field] })}
               onPress={() => change(stepDateTimeField(value, field, 1, now))}
             />
@@ -136,7 +136,7 @@ export function useDateTimeSelector({ value, now, timeFormat, onChange }: Option
             </Pressable>
             <ArrowButton
               direction="down"
-              color={colors.textSecondary}
+              color={colors.textTertiary}
               label={t('dateTimeSelector.decrease', { field: fieldLabels[field] })}
               onPress={() => change(stepDateTimeField(value, field, -1, now))}
             />
@@ -167,7 +167,52 @@ export function useDateTimeSelector({ value, now, timeFormat, onChange }: Option
   return { selector, popover, isListOpen: openList !== null };
 }
 
-/** A flat chevron (the corner of a square, turned 45 degrees and squashed) as a full-size tap target. */
+// The chevron is two equal bars meeting at the apex, each tilted by the same
+// angle: flat (a smaller angle is flatter) and exactly symmetric. A square's
+// corner turned 45 degrees and squashed with `scaleY` came out lopsided.
+const ARM_LENGTH = 11;
+const ARM_THICKNESS = 2;
+const ARM_ANGLE = 28; // degrees from horizontal
+// The two bars overlap this much at the apex; flush, the round ends leave a notch.
+const APEX_OVERLAP = 0.6;
+const ARM_RAD = (ARM_ANGLE * Math.PI) / 180;
+const HALF_RUN = (ARM_LENGTH / 2) * Math.cos(ARM_RAD);
+const HALF_RISE = (ARM_LENGTH / 2) * Math.sin(ARM_RAD);
+const CHEVRON_WIDTH = Math.ceil(2 * HALF_RUN + ARM_THICKNESS);
+const CHEVRON_HEIGHT = Math.ceil(2 * HALF_RISE + ARM_THICKNESS);
+
+function Chevron({ direction, color }: { direction: 'up' | 'down'; color: string }) {
+  const up = direction === 'up';
+  // Vertical centre of the two bars: the apex is at the top for "up", the bottom for "down".
+  const centerY = up ? ARM_THICKNESS / 2 + HALF_RISE : CHEVRON_HEIGHT - ARM_THICKNESS / 2 - HALF_RISE;
+  const bar = (side: 'left' | 'right') => {
+    const centerX = CHEVRON_WIDTH / 2 + (side === 'left' ? -1 : 1) * (HALF_RUN - APEX_OVERLAP);
+    // Left arm of "up" rises to the right (anticlockwise); the others follow from that.
+    const tilt = (side === 'left') === up ? -ARM_ANGLE : ARM_ANGLE;
+    return (
+      <View
+        style={{
+          position: 'absolute',
+          left: centerX - ARM_LENGTH / 2,
+          top: centerY - ARM_THICKNESS / 2,
+          width: ARM_LENGTH,
+          height: ARM_THICKNESS,
+          borderRadius: ARM_THICKNESS / 2,
+          backgroundColor: color,
+          transform: [{ rotate: `${tilt}deg` }],
+        }}
+      />
+    );
+  };
+  return (
+    <View style={{ width: CHEVRON_WIDTH, height: CHEVRON_HEIGHT }}>
+      {bar('left')}
+      {bar('right')}
+    </View>
+  );
+}
+
+/** A subtle chevron as a full-size tap target. */
 function ArrowButton({
   direction,
   color,
@@ -179,7 +224,6 @@ function ArrowButton({
   label: string;
   onPress: () => void;
 }) {
-  const up = direction === 'up';
   return (
     <Pressable
       onPress={onPress}
@@ -187,15 +231,7 @@ function ArrowButton({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <View
-        style={[
-          styles.chevron,
-          up
-            ? { borderTopColor: color, borderLeftColor: color, borderTopWidth: 2, borderLeftWidth: 2 }
-            : { borderBottomColor: color, borderRightColor: color, borderBottomWidth: 2, borderRightWidth: 2 },
-          { transform: [{ translateY: up ? 3 : -3 }, { scaleY: 0.7 }, { rotate: '45deg' }] },
-        ]}
-      />
+      <Chevron direction={direction} color={color} />
     </Pressable>
   );
 }
@@ -207,7 +243,6 @@ const styles = StyleSheet.create({
   columns: { flexDirection: 'row' },
   column: { alignItems: 'stretch', paddingHorizontal: 2 },
   arrowButton: { height: minTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  chevron: { width: 14, height: 14 },
   valueBox: {
     height: minTouchTarget,
     alignItems: 'center',
