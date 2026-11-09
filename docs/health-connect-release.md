@@ -52,7 +52,7 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 - [x] `with-health-connect` の R8 入り release APK をエミュレータで動かす（2026-11-09 に実施。結果は下の節。**App Lock・書き出し/読み込みは再実行していない**）
 - [x] D-54 の Protection 既定値が、Health Connect に PROTECTED として届くか（2026-11-09 に確認。下の節）
 - [x] **AAB** の Manifest に `android.permission.health.WRITE_SEXUAL_ACTIVITY` が**あること**、ほかの `health.*` が無いこと（2026-11-09 に確認。versionCode 9・1.0.5。README「v1.0.5 の Health Connect 対応版ビルド」）
-- [ ] 権限の rationale 画面の文言が `public/privacy-policy.html` §4 と一致していること（AAB に新しい文言が入っていることは確認済み。**rationale 画面そのものを開いての確認は、まだ**）
+- [x] 権限の rationale 画面の文言が `public/privacy-policy.html` §4 と一致していること（2026-11-09 に Pixel 3 で、権限画面のリンクから開いて確認。**ポリシーの公開（`main` へのマージと push）は、まだ**）
 - [x] オンボーディングの「Health connection is optional」が HC 版で表示されること（2026-11-09 に確認）
 - [x] versionCode が 9 以降で、`production` と `production-with-health-connect` の共有が正しく進むこと（2026-11-09 に `8 から 9` で確認）
 
@@ -78,7 +78,20 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 - **削除の反映が遅れた。** 削除の約10秒後と約30秒後の確認では Health Connect 側にまだ残っていて、アプリを前面に戻した直後（Last synced 9:39 PM）に消えた。アプリが背景にある間は削除の同期が進まず、前面に戻ると進んだ可能性がある（推測。確認していない）。プライバシーポリシーの「Health Connect に残ることがある」旨の記述と、設定画面の注記（「アプリを閉じると削除は止まり、次に開いたとき再開する」）の範囲内の挙動
 - **記録1件の削除の確認ダイアログは「This will remove the record from this app.」だけで、Health Connect からも削除されることに触れていなかった。** 2026-11-09 に、Android の HC ビルドだけ「同期が有効な場合は、Health Connect からも削除されます」を足した（`app/activity/[id].tsx` の `confirmDelete`、キー `activityDetail.deleteConfirmMessageHealthConnect`）。ビルドのフラグだけで出し分け、同期の実行時の状態は読まない（`settings/activity-details.tsx` の注記と同じ方式）。型チェック・jest・`check-i18n` は通した。**実機・エミュレータでダイアログを表示しての確認は、まだ**
 
-確認していないこと: App Lock、書き出し・読み込み、rationale 画面（Health Connect の権限画面のポリシーのリンクから開く画面）、Android 12・13（Health Connect が別アプリ）、実機（Pixel 11）、AAB、置換復元後の再同期。
+確認していないこと: App Lock、書き出し・読み込み、Android 13、Pixel 11、Play 経由で配信される AAB、置換復元後の再同期（rationale 画面・Android 12・実機・削除ダイアログは、下の Pixel 3 の節で確認した）。
+
+## 2026-11-09 の確認結果（Pixel 3、Android 12、Health Connect は別アプリ、release APK 1.0.5）
+
+方法: 現在のブランチから、HC 有効の release APK（`EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=1`、arm64、debug 署名、versionCode 9）をビルドし、端末に入っていた開発用 1.0.1（debug 署名）へ `adb install -r` で上書きした（アンインストールしていない。データは保たれる）。この APK には、削除ダイアログと rationale 画面の新しい文言が入っている。**Android 12 のアプリ画面は `FLAG_SECURE` でスクリーンショットが取れない**（CLAUDE.md の既知の制約）。アプリ内は `uiautomator dump` で文字と座標を読んで操作し、Health Connect 側（別アプリ）はスクリーンショットで確認した。
+
+- 起動・操作中、logcat に `FATAL EXCEPTION`・`has been rejected`・`NoSuchMethodError` 等は出なかった。日本語表示で正常
+- 権限画面（Health Connect アプリ側）は「「Solo + Us」に書き込みを許可する: 性行為」の1項目だけ。読み取りの項目は無い。画面のプライバシーポリシーのリンクから **rationale 画面が開き、新しい文言**（アンインストールしても Health Connect 側で削除するまで残る）が表示された。プライバシーポリシー §4 と矛盾しない
+- 同期: 2件が届いた。Partnered（避妊の既定値「あり」、表示トグルは OFF のまま）は「避妊具使用」付き、Solo は付かない（D-54 の確認は、Android 12 でも成立）
+- **削除ダイアログに新しい文言**（「このアプリから記録が削除されます。Health Connect への同期が有効な場合は、Health Connect からも削除されます。」）が出る
+- 削除の同期: アプリで削除した記録は、Health Connect 側から消えた。削除の約25秒後に開いた一覧には、まだ残って見えた（古い画面の再表示とみられる。Health Connect アプリを開き直すと消えていた）。**アプリが前面か背景かで遅れが変わる、という推測は、確認できていない**
+- 切断（同期 OFF）は「未接続」に戻る。テストで入れた記録はすべて削除し、Health Connect 側の「月経周期の追跡」に、性行為の項目が残っていないことを確認した
+
+確認していないこと（Pixel 3 の範囲）: 英語表示の削除ダイアログ、Protection 既定値の「未記録」への復元を目視で確認すること（スクリーンショットが取れないため、「未記録」を押したことしか分からない）、Play 経由で入れた版。
 
 ## HC 版で見直す Play Console の項目
 
