@@ -90,7 +90,9 @@ R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範
   release APK（arm64・debug 署名でよい。`cd android && nice -n 10 ./gradlew assembleRelease
   -PreactNativeArchitectures=arm64-v8a`）をエミュレータへ新規インストールし、オンボーディング→記録→
   App Lock→書き出し・読み込みまで動かして、logcat の `FATAL EXCEPTION`・`has been rejected` を探す。
-  `with-health-connect` ビルドは HC 経由の動作も確認する（2026-10-24 時点では未確認）
+  `with-health-connect` ビルドは HC 経由の動作も確認する（2026-11-09 に確認済み。環境変数
+  `EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=1` を `expo prebuild` と `./gradlew assembleRelease` の両方に付ける。
+  結果と、確認しなかった範囲は `docs/health-connect-release.md`）
 - DEX は 10MB に近い（9.86MB）。依存を足して 10MB を超えると、率（各 25% 以上）が要件の対象になる
 
 ## `expo prebuild --clean` の影響と、実行前の確認

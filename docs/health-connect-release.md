@@ -49,12 +49,35 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 
 ## HC 版を出す前のアプリ側の確認
 
-- [ ] `with-health-connect` の R8 入り release APK をエミュレータで動かす（手順: `docs/android-build-notes.md` の R8 の節）。オンボーディング、記録、App Lock、書き出し・読み込みに加えて、Settings > Health Connect の有効化、権限ダイアログ、同期、削除の同期、切断まで。logcat の `FATAL EXCEPTION`・`has been rejected` を探す
-- [ ] D-54 の Protection 既定値が、Health Connect に PROTECTED として届くか（README「Quick Record の詳細項目の既定値」の未確認事項）
-- [ ] AAB の Manifest に `android.permission.health.WRITE_SEXUAL_ACTIVITY` が**あること**、ほかの `health.*` が無いこと（いつもと逆の確認）
-- [ ] 権限の rationale 画面の文言が `public/privacy-policy.html` §4 と一致していること
-- [ ] オンボーディングの「Health connection is optional」が HC 版で表示されること
+- [x] `with-health-connect` の R8 入り release APK をエミュレータで動かす（2026-11-09 に実施。結果は下の節。**App Lock・書き出し/読み込みは再実行していない**）
+- [x] D-54 の Protection 既定値が、Health Connect に PROTECTED として届くか（2026-11-09 に確認。下の節）
+- [ ] **AAB** の Manifest に `android.permission.health.WRITE_SEXUAL_ACTIVITY` が**あること**、ほかの `health.*` が無いこと（いつもと逆の確認）。2026-11-09 に確認したのはローカルの release **APK** で、AAB ではない
+- [ ] 権限の rationale 画面の文言が `public/privacy-policy.html` §4 と一致していること（rationale 画面そのものは、2026-11-09 の確認で開いていない）
+- [x] オンボーディングの「Health connection is optional」が HC 版で表示されること（2026-11-09 に確認）
 - [ ] versionCode が 9 以降で、`production` と `production-with-health-connect` の共有が正しく進むこと（`autoIncrement` は手で上げない）
+
+## 2026-11-09 の確認結果（エミュレータ Filto_API_36、Android 16、release APK）
+
+方法: `EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=1 npx expo prebuild -p android --no-install`（`--clean` なしと指定したが、`android/` は作り直された）→ 同じ環境変数を付けて `cd android && nice -n 10 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`（7分44秒）。debug 署名、versionCode 8・versionName 1.0.4（`app.json` は未変更）。**環境変数は JS バンドルのインライン展開にも要るので、gradle の実行にも付ける。**
+
+確認できたこと:
+
+- 起動直後からの操作で、logcat に `FATAL EXCEPTION`・`has been rejected`・`NoSuchMethodError` 等は出なかった（R8 由来の不具合なし）
+- APK の権限は `INTERNET`・`USE_BIOMETRIC`・`USE_FINGERPRINT`・`VIBRATE`・`health.WRITE_SEXUAL_ACTIVITY`（と自前・Play の2件）。ほかの `health.*` は無い
+- オンボーディングに「Health connection is optional」が出る。Settings に HEALTH セクションが出る。既定は OFF（Not connected）
+- 権限ダイアログは「Allow "Solo + Us" to write: **Sexual activity**」の1項目だけ。READ の項目は出ない。ダイアログにプライバシーポリシーへのリンクがある
+- 許可後は Connected。Partnered（Protection の既定値を Yes、**表示トグルは OFF のまま**）は、Health Connect 側で **Protected** になった。Solo は Protection の指定なしで届いた
+- Health Connect 自体が、Sexual activity を「**Cycle tracking**」のカテゴリに分類している（申告文の「周期管理アプリ」という用途の説明の裏づけになる）
+- アプリで記録を削除すると、Health Connect 側のレコードも消えた
+- OFF にすると Not connected に戻る
+- 新しい日時入力（数字＋矢印）は、release ビルドでも正常に表示された
+
+気づいた点（変更していない）:
+
+- **削除の反映が遅れた。** 削除の約10秒後と約30秒後の確認では Health Connect 側にまだ残っていて、アプリを前面に戻した直後（Last synced 9:39 PM）に消えた。アプリが背景にある間は削除の同期が進まず、前面に戻ると進んだ可能性がある（推測。確認していない）。プライバシーポリシーの「Health Connect に残ることがある」旨の記述と、設定画面の注記（「アプリを閉じると削除は止まり、次に開いたとき再開する」）の範囲内の挙動
+- **記録1件の削除の確認ダイアログは「This will remove the record from this app.」だけで、Health Connect からも削除されることに触れていない。** 同期が ON のときだけ、一言足すかどうかは、利用者の判断（文言の追加は `locales/` の en・ja の両方が要る）
+
+確認していないこと: App Lock、書き出し・読み込み、rationale 画面（Health Connect の権限画面のポリシーのリンクから開く画面）、Android 12・13（Health Connect が別アプリ）、実機（Pixel 11）、AAB、置換復元後の再同期。
 
 ## HC 版で見直す Play Console の項目
 

@@ -4128,8 +4128,8 @@ Orgasm/Ejaculation は表示トグル ON のときだけ適用、Protection は�
 Android（Pixel 11）で確認済み：設定 UI（トグルとの連動・Protection の常時
 表示・狭い画面での折り返し）、Solo への Ejaculation 既定値の反映、
 Protection トグル OFF のまま Partnered へ Protection 既定値が反映されること。
-**未確認**：既定値由来の Protection が HC に PROTECTED として送信されること
-（次に HC 有効ビルドで実機確認する機会に見る）。iOS は未確認。
+既定値由来の Protection が HC に PROTECTED として送信されることは、2026-11-09 に
+HC 有効の release APK（エミュレータ、Android 16）で確認した（詳細: `docs/health-connect-release.md`）。iOS は未確認。
 
 ### v1.0 のリリース方針：`without-health-connect` で出す（設計判断記録 D-55、2026-09-22 決定）
 

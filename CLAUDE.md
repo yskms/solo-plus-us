@@ -230,4 +230,4 @@ iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOv
 - **AGP は plugin が 8.12.3 に指定している。** RN 固定の 8.12.0 では Play の最適化率・縮小率が `-` になる。RN・Expo の更新や 8.12.4 以降の登場時は `AGP_VERSION` を見直す
 - **`shrinkResources` は無効のまま。** JS から `require()` した画像が消される恐れがある
 - `org.gradle.jvmargs` の 4GB 指定を戻さない（AAB のバンドルが `Java heap space` で落ちうる）
-- **R8 の不具合はリリースの実行時にしか出ない。** Expo・RN・ライブラリ・plugin を更新したら、R8 入りの release APK をエミュレータで動かして確認する（手順と、`with-health-connect` が未確認の点: `docs/android-build-notes.md`）
+- **R8 の不具合はリリースの実行時にしか出ない。** Expo・RN・ライブラリ・plugin を更新したら、R8 入りの release APK をエミュレータで動かして確認する（手順と、`with-health-connect` の確認結果: `docs/android-build-notes.md`）
