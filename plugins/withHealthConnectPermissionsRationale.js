@@ -66,7 +66,8 @@ const RATIONALE_TEXT_EN =
   'so other health apps you choose can read it there.\\n\\n' +
   'Solo + Us never reads anything back from Health Connect, and no other detail (context, outcome, mood, or notes) ' +
   'ever leaves this app.\\n\\n' +
-  'You can turn this off at any time in Solo + Us > Settings > Health Connect.';
+  'You can turn this off at any time in Solo + Us > Settings > Health Connect. ' +
+  'Records already saved in Health Connect remain there, even if you uninstall Solo + Us, until you delete them in Health Connect.';
 
 // public/privacy-policy.html の #doc-ja「4. Health Connect との連携」と
 // 用語を揃えること（「日時」「Protection（避妊具等の使用有無）」等）。
@@ -75,7 +76,8 @@ const RATIONALE_TEXT_JA =
   'Solo + Us は、記録ごとに「日時」と「Protection（避妊具等の使用有無）」を、あなたが有効にした場合に限り Health Connect に保存できます。' +
   'これにより、あなたが選んだ他のヘルスケアアプリからもこの情報を読み取れるようになります。\\n\\n' +
   'Solo + Us が Health Connect から情報を読み込むことはなく、それ以外の詳細（Solo / Partnered の区別、Orgasm / Ejaculation、気分、メモなど）がこのアプリの外に出ることもありません。\\n\\n' +
-  'この連携は、Solo + Us の 設定 > Health Connect からいつでもオフにできます。';
+  'この連携は、Solo + Us の 設定 > Health Connect からいつでもオフにできます。' +
+  'Health Connect に保存済みの記録は、Solo + Us をアンインストールしても、Health Connect 側で削除するまで残ります。';
 
 const RATIONALE_ACTIVITY_KOTLIN = `package com.yskms.soloplusus
 
