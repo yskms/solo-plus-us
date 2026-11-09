@@ -274,6 +274,26 @@ Play Console のプレビューで確認する。詳細は README「Android R8 �
 
 ---
 
+## リリースノート（v1.0.5 / versionCode 9、Health Connect 対応版の下書き）
+
+Health Connect を有効にした最初の版（D-55）。**Console の申告・データセーフティ・掲載文の最終確認が済むまでは下書き**
+（`docs/health-connect-release.md`）。書いた機能と送るデータが、申告・プライバシーポリシーと一致していること。
+
+```
+<en-US>
+- Added optional Health Connect sync (Android). Turn it on in Settings > Health Connect to save the date and time of your records, and whether protection was used, to Health Connect. It is off by default, and the app never reads anything back from Health Connect
+- The delete confirmation now tells you that a deleted record is also removed from Health Connect when sync is on
+</en-US>
+<ja-JP>
+・Health Connect との連携（任意）を追加しました。設定 > Health Connect で有効にすると、記録の日時と、避妊具等の使用有無が Health Connect に保存されます。既定ではオフで、Health Connect から何かを読み込むことはありません
+・記録を削除するときの確認で、同期が有効な場合は Health Connect からも削除されることをお知らせするようにしました
+</ja-JP>
+```
+
+リリース名は `9 (1.0.5)`。
+
+---
+
 ## Play Console 申告の記録（2026-09-24、v0.1.0 提出時）
 
 更新版を出すときに、同じ回答で通るか／変わったかを判断するための控え。

@@ -51,10 +51,10 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 
 - [x] `with-health-connect` の R8 入り release APK をエミュレータで動かす（2026-11-09 に実施。結果は下の節。**App Lock・書き出し/読み込みは再実行していない**）
 - [x] D-54 の Protection 既定値が、Health Connect に PROTECTED として届くか（2026-11-09 に確認。下の節）
-- [ ] **AAB** の Manifest に `android.permission.health.WRITE_SEXUAL_ACTIVITY` が**あること**、ほかの `health.*` が無いこと（いつもと逆の確認）。2026-11-09 に確認したのはローカルの release **APK** で、AAB ではない
-- [ ] 権限の rationale 画面の文言が `public/privacy-policy.html` §4 と一致していること（rationale 画面そのものは、2026-11-09 の確認で開いていない）
+- [x] **AAB** の Manifest に `android.permission.health.WRITE_SEXUAL_ACTIVITY` が**あること**、ほかの `health.*` が無いこと（2026-11-09 に確認。versionCode 9・1.0.5。README「v1.0.5 の Health Connect 対応版ビルド」）
+- [ ] 権限の rationale 画面の文言が `public/privacy-policy.html` §4 と一致していること（AAB に新しい文言が入っていることは確認済み。**rationale 画面そのものを開いての確認は、まだ**）
 - [x] オンボーディングの「Health connection is optional」が HC 版で表示されること（2026-11-09 に確認）
-- [ ] versionCode が 9 以降で、`production` と `production-with-health-connect` の共有が正しく進むこと（`autoIncrement` は手で上げない）
+- [x] versionCode が 9 以降で、`production` と `production-with-health-connect` の共有が正しく進むこと（2026-11-09 に `8 から 9` で確認）
 
 ## 2026-11-09 の確認結果（エミュレータ Filto_API_36、Android 16、release APK）
 

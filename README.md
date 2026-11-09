@@ -4378,3 +4378,20 @@ Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas buil
 - 1.0.3 (7) は旧ホイール（揺れ・固まりが出うる版）。公開済みの 1.0.4 がその修正版で、現在の Play の最新はこの 1.0.4 (8)
 - **iOS には、まだ入っていない。** iOS は 1.0.0 (4) の審査待ちで、この変更は次の iOS ビルドで載る
 
+### v1.0.5 (versionCode 9) の Health Connect 対応版ビルド（2026-11-09 ビルド、提出前）
+
+HC 有効の最初の版（D-55）。`feat/health-connect-release`（`main` へは未マージ、`origin` への push は未実施）から
+`eas build --local -p android --profile production-with-health-connect`（`nice -n 10`。Gradle のタスク合計は約19分）でビルドした。
+
+- `app.json`: `version` 1.0.4→1.0.5、`android.versionCode` 8→9（`autoIncrement` が加算。ログに `Bumping expo.android.versionCode from 8 to 9`）。
+  `production` と `production-with-health-connect` で versionCode が連続して進むことを確認できた
+- AAB の確認: versionCode 9・versionName 1.0.5、4 つの ABI、DEX 1 ファイル 9,856,236 バイト（1.0.4 は 9,855,832）、AAB のサイズは 91,859,367 バイト。
+  権限は 1.0.4 の4つ（`INTERNET`・`USE_BIOMETRIC`・`USE_FINGERPRINT`・`VIBRATE`）に **`android.permission.health.WRITE_SEXUAL_ACTIVITY` の1つだけ**が加わった
+  （ほかの `health.*` は無い）。rationale の Activity と alias（`HEALTH_PERMISSIONS`）、`<queries>` の `com.google.android.apps.healthdata` あり。
+  署名の SHA-256 は 1.0.2〜1.0.4 と同じ（`AF:5D:C2:49:…:C0:10:36`）。rationale の文言（en・ja）に、アンインストールしても記録が残る旨が入っている
+- `mapping.txt.gz` は `docs/_local/mapping/1.0.5-vc9-hc/`、AAB は `docs/_local/release/solo-plus-us-1.0.5-hc.aab`（どちらも gitignore 済み。提出後に AAB を削除する）
+- 動作確認は、同じ構成の R8 入り release APK（エミュレータ、Android 16）まで。**この AAB 自体の実機確認と、削除ダイアログの新しい文言の表示確認は未実施。**
+  内部テストへアップロードして Pixel 11 で確認する。結果と確認していない範囲: [docs/health-connect-release.md](docs/health-connect-release.md)
+- 提出前に必要: Play Console の健康アプリ申告の Health Connect 欄、データセーフティ、掲載文、カテゴリの見直し（同上）
+- リリースノートの下書きは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.5 / versionCode 9）」
+
