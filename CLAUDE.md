@@ -10,6 +10,7 @@
 |---|---|
 | iOS のビルド・TestFlight、UIScene、戻るボタン・UndoSnackbar | `docs/ios-notes.md` |
 | Health Connect の同期・切断・全削除、ビルド分離、`EXPO_PUBLIC_*` | `docs/health-connect-dev-notes.md` |
+| Health Connect 対応版のリリース準備（健康アプリ申告の HC 欄、審査の懸念、データセーフティ・掲載文・カテゴリの見直し） | `docs/health-connect-release.md` |
 | ネイティブモジュール追加、Android のリリースビルド・AAB 確認、R8、ダーク/ライト切替 | `docs/android-build-notes.md` |
 | `schema.ts`/migration を変えた後の実機テスト、adb のタップ無反応 | `docs/device-testing-notes.md` |
 | `t()`・翻訳キー・複数形 | `docs/i18n-notes.md` |
