@@ -31,20 +31,20 @@ Health Connect のデータ型ごとの説明欄に貼る想定。実際の欄�
 en:
 
 ```
-Solo + Us is a private activity log that works offline. If the user explicitly turns on "Sync to Health Connect" in Settings (it is off by default), the app writes one Sexual activity record for each entry the user has logged. A record contains only the date and time of the entry and the optional "protection used" value (protected, unprotected, or unknown). This lets users keep their own log in the other health apps they choose, for example cycle-tracking apps that read this data type from Health Connect, without entering the same entry twice.
+Solo + Us is a private activity log that works offline. If the user explicitly turns on "Sync to Health Connect" in Settings (it is off by default), the app writes one Sexual activity record for each entry the user has logged. A record contains only the date and time of the entry and the optional "protection used" value (protected, unprotected, or unknown). This lets users make their own log available, through Health Connect, to the other apps they have allowed to read this data type, without entering the same entry twice.
 The app only writes. It requests no read permission and never reads anything back from Health Connect. No other detail (context, outcome, mood, duration, or notes) is written. When the user deletes an entry in the app, the app also deletes the corresponding Health Connect record. The user can turn sync off at any time in Settings. The data is not sent to any server or third party and is not used for advertising.
 ```
 
 ja:
 
 ```
-Solo + Us は、端末の中だけで使う私的な記録アプリです。利用者が設定で「Health Connect に同期」を明示的に有効にした場合に限り（既定は無効）、記録した項目ごとに性行為(Sexual activity)のレコードを1件書き込みます。レコードに含まれるのは、記録の日時と、任意項目の「避妊具等の使用有無」(あり・なし・不明)だけです。これにより、利用者が選んだ他のヘルスケアアプリ（例: Health Connect からこのデータ型を読み取る周期管理アプリ）でも、同じ記録を二重に入力せずに使えます。
+Solo + Us は、端末の中だけで使う私的な記録アプリです。利用者が設定で「Health Connect に同期」を明示的に有効にした場合に限り（既定は無効）、記録した項目ごとに性行為(Sexual activity)のレコードを1件書き込みます。レコードに含まれるのは、記録の日時と、任意項目の「避妊具等の使用有無」(あり・なし・不明)だけです。これにより、利用者が読み取りを許可した他のアプリが、Health Connect を通じて同じ記録を使えます（二重に入力する必要がありません）。
 アプリは書き込みのみを行い、読み取り権限は要求せず、Health Connect から何も読み込みません。それ以外の詳細（状況、結果、気分、時間、メモ）は書き込みません。アプリ内で記録を削除すると、対応する Health Connect のレコードも削除します。同期は設定からいつでも無効にできます。データはサーバーや第三者へ送信せず、広告にも使用しません。
 ```
 
 確認が要る点:
 
-- 「周期管理アプリ」の例は、利用者向けの機能として挙げる想定の用途。意図と合っているか、提出前に利用者が確認する
+- **特定の種類のアプリ（周期管理アプリなど）を例に挙げない**（2026-11-09 の判断）。自分のアプリの機能ではない用途を書くと、実態とずれたときに「申告の内容が正確ではない」と見られうる（2026-10-01 の否承認と同種のリスク）。書くのは、アプリ自身の機能（読み取りを許可した他のアプリが Health Connect 経由で記録を使える）と、確認できた事実（Health Connect が Sexual activity を「Cycle tracking」に分類していること）に限る。「例」が必要と Console に言われたら、そのとき足す
 - 「サーバーへ送らない」は、`docs/store-listing.md` のデータセーフティの回答（収集・共有なし）と同じ根拠。Health Connect への書き込みを Data safety でどう申告するかは、下の「見直す項目」参照
 
 ## HC 版を出す前のアプリ側の確認
@@ -75,14 +75,20 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 気づいた点（変更していない）:
 
 - **削除の反映が遅れた。** 削除の約10秒後と約30秒後の確認では Health Connect 側にまだ残っていて、アプリを前面に戻した直後（Last synced 9:39 PM）に消えた。アプリが背景にある間は削除の同期が進まず、前面に戻ると進んだ可能性がある（推測。確認していない）。プライバシーポリシーの「Health Connect に残ることがある」旨の記述と、設定画面の注記（「アプリを閉じると削除は止まり、次に開いたとき再開する」）の範囲内の挙動
-- **記録1件の削除の確認ダイアログは「This will remove the record from this app.」だけで、Health Connect からも削除されることに触れていない。** 同期が ON のときだけ、一言足すかどうかは、利用者の判断（文言の追加は `locales/` の en・ja の両方が要る）
+- **記録1件の削除の確認ダイアログは「This will remove the record from this app.」だけで、Health Connect からも削除されることに触れていなかった。** 2026-11-09 に、Android の HC ビルドだけ「同期が有効な場合は、Health Connect からも削除されます」を足した（`app/activity/[id].tsx` の `confirmDelete`、キー `activityDetail.deleteConfirmMessageHealthConnect`）。ビルドのフラグだけで出し分け、同期の実行時の状態は読まない（`settings/activity-details.tsx` の注記と同じ方式）。型チェック・jest・`check-i18n` は通した。**実機・エミュレータでダイアログを表示しての確認は、まだ**
 
 確認していないこと: App Lock、書き出し・読み込み、rationale 画面（Health Connect の権限画面のポリシーのリンクから開く画面）、Android 12・13（Health Connect が別アプリ）、実機（Pixel 11）、AAB、置換復元後の再同期。
 
 ## HC 版で見直す Play Console の項目
 
 - [ ] **健康アプリ申告**: Health Connect のデータ型の説明(上の下書き)。ステップ1の「性と生殖に関する健康」はそのまま
-- [ ] **データセーフティ**: Health Connect への書き込みをどう申告するかは、公式の2ページ(「Android Health Permissions」「Publish your health app」)に書かれていない。Data safety の「健康情報」の説明ページ(support.google.com/googleplay/android-developer/answer/10787469)で確認する。**現在の回答は「収集・共有なし」**
+- [ ] **データセーフティ（要判断。2026-11-09 に公式ヘルプを調べた結果と、推奨）**。**現在の回答は「収集・共有なし」**（v1.0.x は HC なし）。公式ヘルプ「Provide information for Google Play's Data safety section」（answer/10787469）の記述:
+  - 「収集(collect)」は「アプリから端末の外へデータを送ること」。端末内だけの処理は申告不要。HC への書き込みは端末の外へ出ないので、**収集には当たらない**
+  - 「共有(share)」は「アプリが集めたデータを第三者へ渡すこと」。ただし「**端末上の別のアプリへの転送**」は、端末の外へ送らなくても共有として申告が要る、と明記されている
+  - 共有の除外条件に「利用者が自分で起こした操作で、利用者がデータの共有を当然に予期できる場合、または目立つアプリ内の説明と同意がある場合」がある
+  - **ページには Health Connect への言及が無く、HC への書き込みが「端末上の別のアプリへの転送」に当たるかは、書かれていない。** 除外条件が端末内の転送にも使えるかも、書かれていない
+  - 健康系の区分は「Health info」(病歴や症状など)と「Fitness info」だけ。性的活動や生殖に関する区分は無い
+  - **推奨: 保守側に倒して申告する。** 「Health info」を「共有」「任意(利用者が有効にしたときだけ)」「目的: アプリの機能」で申告する案。理由: ①HC に書いた記録は、読み取りを許可した他のアプリから読める ②2026-10-01 の否承認は、実態より少なく申告していたことが原因だった ③多めに申告して指摘されるより、少なく申告して「不正確」とされる方が重い。弱点: ストアに「データを共有」と表示される（掲載文の「収集・共有なし」の趣旨とずれる）。**Console の実際のフォームの文言を見て最終判断する**（フォームのほうが明確かもしれない）。暗号化・削除要求の設問は、端末の外へ送らない場合に適用されるかが、ページに書かれていない
 - [ ] **ストアの掲載文**: Health Connect の連携を書くなら、書いた機能と送るデータが申告と一致すること。`docs/store-listing.md` の「HC を有効化する版では、★ の項目を必ず見直す」
 - [ ] **カテゴリ**: Lifestyle のままか、Health & Fitness に変えるか（`docs/store-listing.md`「公開前に決めること」）
 - [ ] **プライバシーポリシー**: 公式は、Play のストアページに載せるものと、Health Connect の権限画面から開くものが同一であることを求める。現行の §4 は HC 版を前提に書かれている

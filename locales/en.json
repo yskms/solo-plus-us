@@ -438,6 +438,7 @@
     "couldNotSaveMessage": "Your changes were not saved. Please try again.",
     "deleteConfirmTitle": "Delete this activity?",
     "deleteConfirmMessage": "This will remove the record from this app.",
+    "deleteConfirmMessageHealthConnect": "This will remove the record from this app. If Health Connect sync is on, it will be removed from Health Connect too.",
     "couldNotDelete": "Could not delete"
   },
   "addMoreDetailsSheet": {

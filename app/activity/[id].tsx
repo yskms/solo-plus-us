@@ -55,7 +55,7 @@
  * comment in `lib/datetime.ts` for the concrete scenario.
  */
 import React, { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -73,6 +73,7 @@ import { contextLabel } from '../../lib/labels';
 import { formatCalendarDateTime, formatPickedDateTime } from '../../lib/timeFormat';
 import { getDeviceTimeZoneId, nowAsZonedDigits, resolveOccurredAtEdit } from '../../lib/datetime';
 import { logError } from '../../lib/log';
+import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
 import { ACTIVITY_DETAIL_FIELDS, activityDetailFieldLabel, isFieldVisible, type ActivityDetailField } from '../../lib/activityDetailsFields';
 import type { Activity } from '../../types/Activity';
 import type { TimeFormat } from '../../types/Settings';
@@ -307,7 +308,15 @@ export default function ActivityDetailScreen() {
   };
 
   const confirmDelete = () => {
-    Alert.alert(t('activityDetail.deleteConfirmTitle'), t('activityDetail.deleteConfirmMessage'), [
+    // Health Connect の文言はビルドのフラグだけで出し分ける（`settings/activity-details.tsx` の
+    // 注記と同じ方式）。同期の実行時の状態は読まないので、文言は「同期が有効な場合は」と条件を
+    // 含める。同期が OFF のときも嘘にならない（同期 OFF の間は Health Connect への削除が
+    // 保留になる仕様。`docs/health-connect-release.md`）。
+    const deleteMessage =
+      Platform.OS === 'android' && isHealthConnectBuildEnabled()
+        ? t('activityDetail.deleteConfirmMessageHealthConnect')
+        : t('activityDetail.deleteConfirmMessage');
+    Alert.alert(t('activityDetail.deleteConfirmTitle'), deleteMessage, [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('common.delete'),
