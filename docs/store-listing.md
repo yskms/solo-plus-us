@@ -65,9 +65,9 @@ Today shows this month at a glance, with a solo and partnered breakdown and your
 HEALTH CONNECT SYNC (OPTIONAL)
 Save your log to Health Connect as sexual activity entries, alongside your other health data. Sync is off by default. Turn on Sync to Health Connect in Settings to use it.
 
-Once it is on, new, edited and deleted records are reflected in Health Connect automatically. Only the date, time and whether protection was used are saved, and solo and partnered records are not told apart. Records you made before turning it on are not sent automatically.
+Once it is on, new, edited and deleted records are reflected in Health Connect automatically. Only the date, time and whether protection was used are saved. Solo and partnered records are not distinguished. Records you made before turning it on are not sent automatically, but you can send them from Settings.
 
-Other apps that you allow in Health Connect can read these entries. Solo + Us never reads anything back from Health Connect. Turning sync off, or uninstalling Solo + Us, does not delete entries already in Health Connect. You can delete them there.
+Other apps can read these entries if you allow them to in Health Connect. Solo + Us never reads anything back from Health Connect. Turning sync off, or uninstalling Solo + Us, does not delete entries already in Health Connect. You can delete them there.
 
 BUILT FOR PRIVACY
 - Encrypted local database
@@ -130,9 +130,9 @@ Solo + Us は、性行為と自慰行為を記録するアプリです。パー�
 Health Connect と同期（任意）
 性行為の記録を、ほかの健康データと一緒に Health Connect に保存できます。初期設定ではオフで、設定の「Health Connect と同期」から有効にできます。
 
-有効にすると、記録の追加・編集・削除が Health Connect にも自動で反映されます。保存されるのは日時と避妊具等の使用有無だけで、ソロとパートナーの区別は保存されません。有効にする前の記録は、自動では送られません。
+有効にすると、記録の追加・編集・削除が Health Connect にも自動で反映されます。保存されるのは日時と避妊具等の使用有無だけで、ソロとパートナーの区別は保存されません。有効にする前の記録は、自動では送られませんが、設定からまとめて送れます。
 
-Health Connect へのアクセスを許可した他のアプリは、これらの記録を読み取れます。Solo + Us が Health Connect から情報を読み取ることはありません。同期をオフにしたり、アンインストールしたりしても、Health Connect に保存済みの記録は残ります。削除する場合は、Health Connect 側で操作してください。
+Health Connect でこのデータの読み取りを許可した他のアプリは、これらの記録を読み取れます。Solo + Us が Health Connect から情報を読み取ることはありません。同期をオフにしたり、アンインストールしたりしても、Health Connect に保存済みの記録は残ります。削除する場合は、Health Connect 側で操作してください。
 
 プライバシーのための設計
 ・暗号化されたローカルデータベース
@@ -410,11 +410,12 @@ Health Connect を有効にした最初の版（D-55）。**Console の申告・
   通知・バックグラウンド動作はいずれも非対応（§25）。**v1.0.5 以降の HC 版は、
   Health Connect への任意の書き込み（既定オフ、記録のたびに自動）だけが「同期」に当たる。**
   詳しい説明の「no server to sync with」はサーバーのことなので矛盾しないが、
-  ストアのデータセーフティに「ヘルス情報を共有」と並ぶ。HC 版の掲載文を作るときに
-  言い回しを見直す（「Everything stays on your device」、ja のタグライン「記録は、端末の中だけに。」）
-- **v1.0 では Health Connect 機能を提供せず、健康データ権限も要求しない**
-  （D-55）。将来有効化する際は、掲載情報・Health apps declaration・データ
-  セーフティを同時に更新する
+  ストアのデータセーフティに「ヘルス情報を共有」と並ぶ。**本文の「Everything stays on
+  your device」は 2026-11-10 に見直し済み（外した）。** ja のタグライン「記録は、端末の中
+  だけに。」（フィーチャーグラフィック）は未見直し（上の「HC 版の詳しい説明で気をつけたこと」の「未決」）
+- **【履歴】v1.0.0〜v1.0.4 は Health Connect 機能を提供せず、健康データ権限も要求しなかった**
+  （D-55）。HC を有効にする v1.0.5 では、掲載情報・Health apps declaration・データ
+  セーフティを同時に更新する（状態は上の各節と health-connect-release.md）
 - **本文・翻訳・スクリーンショット・アイコン・フィーチャーグラフィックで
   表現を揃える**——Play はテキストだけでなく画像もメタデータとして審査する
 - **「無料」を強調しすぎない**——アプリ内購入も広告も無いので事実だが、
