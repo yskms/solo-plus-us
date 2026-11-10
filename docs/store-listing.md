@@ -294,23 +294,26 @@ ja-JP:
 記録は端末内の暗号化されたデータベースに保存されます。アカウント登録は不要で、サーバーとの同期もなく、広告もありません。
 ```
 
-### 変更2: 「YOUR DATA IS YOURS」の前に、HC の段落を足す
+### 変更2: 「SEE YOUR PATTERNS」の後、「BUILT FOR PRIVACY」の前に、HC の段落を足す
+
+機能の紹介として、プライバシーの段落より前に置く（2026-11-10 のユーザー指摘。最初の案は「YOUR DATA IS YOURS」の前で、控えめすぎた）。Health Connect に「性行為（Sexual activity）」の記録として入ることを、はっきり書く。理由：①ストアの名前・説明がすでに性行為と自慰行為を名指ししている ②他のアプリから見えるものなので、何として入るかを書くほうが開示として正確 ③健康アプリ申告の「性と生殖に関する健康」と範囲が揃う。
 
 en-US:
 
 ```
-OPTIONAL HEALTH CONNECT SYNC (ANDROID)
-If you want, turn on Sync to Health Connect in Settings. Once it is on, each new, edited or deleted record is reflected in Health Connect on your device automatically. Only the date and time, and whether protection was used, are saved there. Other apps that you allow in Health Connect can read this information. Solo + Us never reads anything back from Health Connect. It is off by default and you can turn it off at any time. Records already saved in Health Connect stay there until you delete them in Health Connect, even if you uninstall Solo + Us.
+HEALTH CONNECT SYNC (ANDROID, OPTIONAL)
+Keep a copy of your log in Health Connect, together with the rest of your health data on your device. Turn on Sync to Health Connect in Settings, and each new, edited or deleted record is reflected there automatically as a sexual activity entry: the date and time, and whether protection was used. Solo and partnered records look the same there. Other apps that you allow in Health Connect can read these entries. Solo + Us never reads anything back from Health Connect. It is off by default and you can turn it off at any time. Entries already saved in Health Connect stay there until you delete them in Health Connect, even if you uninstall Solo + Us.
 ```
 
 ja-JP:
 
 ```
-Health Connect との連携（Android・任意）
-設定で「Health Connect と同期」をオンにすると、以後、新しく記録した内容・編集した内容・削除した内容が、端末内の Health Connect に自動で反映されます。保存されるのは、日時と、避妊具等の使用有無だけです。Health Connect で許可した他のアプリは、この情報を読み取れます。Solo + Us が Health Connect から情報を読み込むことはありません。既定ではオフで、いつでもオフにできます。Health Connect に保存済みの記録は、Solo + Us をアンインストールしても、Health Connect 側で削除するまで残ります。
+Health Connect と同期（Android・任意）
+記録のコピーを、端末内の Health Connect に、ほかの健康データと一緒に残せます。設定で「Health Connect と同期」をオンにすると、以後、新しく記録した内容・編集した内容・削除した内容が、性行為の記録として自動で反映されます。保存されるのは、日時と、避妊具等の使用有無だけです。ソロとパートナーの区別は保存されず、Health Connect 上では同じに見えます。Health Connect で許可した他のアプリは、この記録を読み取れます。Solo + Us が Health Connect から情報を読み込むことはありません。既定ではオフで、いつでもオフにできます。Health Connect に保存済みの記録は、Solo + Us をアンインストールしても、Health Connect 側で削除するまで残ります。
 ```
 
-- 書く機能と送るデータは、健康アプリ申告・データセーフティ・プライバシーポリシー §4・rationale 画面と同じ範囲に絞っている（日時と避妊具等の使用有無だけ、書き込みのみ）。「Sexual activity」などの Health Connect のデータ型名は、掲載文に書かない
+- 書く機能と送るデータは、健康アプリ申告・データセーフティ・プライバシーポリシー §4・rationale 画面と同じ範囲（日時と避妊具等の使用有無だけ、書き込みのみ）。ソロとパートナーの区別が HC に入らないのは仕様（`aboutWhatStaysLocal`）
+- **書かないこと**: 特定のアプリ（周期管理アプリなど）との互換性。書き込みだけで、どのアプリが読むかをこのアプリは知らず、確認もしていない。「避妊」とは書かない（HC の項目は「保護（protection）の使用有無」で、避妊具以外の保護も含みうる。アプリ内の表記は「Protection（避妊具等の使用有無）」）。他社のアプリ名・製品名も出さない
 - 「BUILT FOR PRIVACY」の「No account, no ads, no tracking」と、簡単な説明の「Offline」はそのままで正しい（HC への書き込みは通信を伴わない）
 - **未決**: フィーチャーグラフィックのタグライン（en「Private. Offline. Yours.」、ja「記録は、端末の中だけに。」）は画像素材。ja は「HC を有効にすると端末の外の仕組みにも書ける」点と少しずれる。既定（オフ）では正しいので、今回は変えず、素材を作り直す機会があれば見直す
 
