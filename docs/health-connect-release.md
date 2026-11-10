@@ -115,3 +115,4 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 - Android Developers「Publish your health app on Google Play」: https://developer.android.com/health-and-fitness/health-connect/publish
 - Play Console ヘルプ「Provide information for the Health apps declaration form」: https://support.google.com/googleplay/android-developer/answer/14738291
 - Play Console ヘルプ「Android Health Permissions: Guidance and FAQs」: https://support.google.com/googleplay/android-developer/answer/12991134
+- Play Console ヘルプ「Health Content and Services」(Console の案内に載っていたリンク。HC の欄が出る条件は書かれていない): https://support.google.com/googleplay/android-developer/answer/16679511
