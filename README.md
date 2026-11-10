@@ -4378,9 +4378,9 @@ Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas buil
 - 1.0.3 (7) は旧ホイール（揺れ・固まりが出うる版）。公開済みの 1.0.4 がその修正版で、現在の Play の最新はこの 1.0.4 (8)
 - **iOS には、まだ入っていない。** iOS は 1.0.0 (4) の審査待ちで、この変更は次の iOS ビルドで載る
 
-### v1.0.5 (versionCode 10) の Health Connect 対応版ビルド（2026-11-10 ビルド、提出前）
+### v1.0.5 (versionCode 10) の Health Connect 対応版ビルド（2026-11-10 ビルド、同日審査に提出。結果は未着）
 
-HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（`main` へは未マージ、`origin` への push は未実施）から
+HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `main` へ `--ff-only` でマージ・push 済み）から
 `eas build --local -p android --profile production-with-health-connect`（`nice -n 10`）でビルドした。
 **2026-11-09 に作った versionCode 9 の AAB は、同期をオンにする前の同意ダイアログと、過去の記録の送信案内
 （`docs/health-connect-release.md`）を含まないため、これに置き換えた**（9 は内部テストにだけ上げた版で、本番へは出していない）。
@@ -4390,10 +4390,10 @@ HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（`main` へは未
   AAB のサイズは 91,861,385 バイト。権限は 1.0.4 の4つに **`android.permission.health.WRITE_SEXUAL_ACTIVITY` の1つだけ**が加わった
   （ほかの `health.*` は無い）。署名の SHA-256 は 1.0.2〜1.0.4・9 と同じ（`AF:5D:C2:49:…:C0:10:36`）。
   JS バンドルに新しい文言（`enableConsentTitle`・`offerExistingMessage_one`・`aboutAutomatic` など）が入っている
-- `mapping.txt.gz` は `docs/_local/mapping/1.0.5-vc10-hc/`、AAB は `docs/_local/release/solo-plus-us-1.0.5-vc10-hc.aab`（どちらも gitignore 済み。提出後に AAB を削除する。
-  versionCode 9 の AAB `solo-plus-us-1.0.5-hc.aab` は不要になったので、削除してよい）
+- `mapping.txt.gz` は `docs/_local/mapping/1.0.5-vc10-hc/`（gitignore 済み）。AAB（SHA-256 `a5b12ac0…771177a7e`）は提出後に削除した。
+  versionCode 9 の AAB も削除した（2026-11-10）
 - 動作確認は、同じコード（R8 入り release APK、エミュレータ Android 16、en と ja）で、同意ダイアログ・過去の記録の案内・HC への送信まで確認済み。
   **この AAB 自体の実機確認は未実施。** 内部テストへアップロードして確認する。結果と確認していない範囲: [docs/health-connect-release.md](docs/health-connect-release.md)
-- 提出前に必要: Play Console のデータセーフティ（共有ありで入力、保存の確認）、掲載文（詳しい説明とフィーチャーグラフィック）、カテゴリ、
-  健康アプリ申告の Health Connect 欄（同上）
+- 審査に提出した内容（2026-11-10）: 製品版 10 (1.0.5)、詳しい説明（en/ja）、フィーチャーグラフィック（en/ja）、データセーフティ（「健康に関する情報」を共有で申告）。
+  カテゴリは Lifestyle のまま。健康アプリ申告の Health Connect 欄は、Console に出ないため未記入。審査の結果は未着で、届いたら記録する（`docs/health-connect-release.md`）
 - リリースノートの下書きは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.5 / versionCode 10）」
