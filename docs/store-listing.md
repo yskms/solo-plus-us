@@ -274,6 +274,46 @@ Play Console のプレビューで確認する。詳細は README「Android R8 �
 
 ---
 
+## 詳しい説明の差分（v1.0.5 / Health Connect 対応版の下書き、2026-11-10）
+
+**審査に送る前に、Play Console の「詳しい説明」に反映する。** 上の v1.0.x の本文から、次の2か所だけを変える。変更前の本文は、HC なし版の記録としてそのまま残す。
+
+**理由：「Everything stays on your device」は、HC を有効にした利用者には当てはまらない。** Health Connect も端末内の仕組みだが、読み取りを許可した他のアプリから参照できるので、「Solo + Us の中だけに保存される」と誤解されうる（2026-11-10 のレビュー指摘）。ストアのデータセーフティに「ヘルス情報を共有」が並ぶため、本文と矛盾して見えないようにする。
+
+### 変更1: 冒頭の2段落目（「Everything stays on your device」を外す）
+
+en-US:
+
+```
+Your records are stored on your device in an encrypted database. There is no account to create, no server to sync with, and no advertising.
+```
+
+ja-JP:
+
+```
+記録は端末内の暗号化されたデータベースに保存されます。アカウント登録は不要で、サーバーとの同期もなく、広告もありません。
+```
+
+### 変更2: 「YOUR DATA IS YOURS」の前に、HC の段落を足す
+
+en-US:
+
+```
+OPTIONAL HEALTH CONNECT SYNC (ANDROID)
+If you want, turn on Sync to Health Connect in Settings. Once it is on, each new, edited or deleted record is reflected in Health Connect on your device automatically. Only the date and time, and whether protection was used, are saved there. Other apps that you allow in Health Connect can read this information. Solo + Us never reads anything back from Health Connect. It is off by default and you can turn it off at any time. Records already saved in Health Connect stay there until you delete them in Health Connect, even if you uninstall Solo + Us.
+```
+
+ja-JP:
+
+```
+Health Connect との連携（Android・任意）
+設定で「Health Connect と同期」をオンにすると、以後、新しく記録した内容・編集した内容・削除した内容が、端末内の Health Connect に自動で反映されます。保存されるのは、日時と、避妊具等の使用有無だけです。Health Connect で許可した他のアプリは、この情報を読み取れます。Solo + Us が Health Connect から情報を読み込むことはありません。既定ではオフで、いつでもオフにできます。Health Connect に保存済みの記録は、Solo + Us をアンインストールしても、Health Connect 側で削除するまで残ります。
+```
+
+- 書く機能と送るデータは、健康アプリ申告・データセーフティ・プライバシーポリシー §4・rationale 画面と同じ範囲に絞っている（日時と避妊具等の使用有無だけ、書き込みのみ）。「Sexual activity」などの Health Connect のデータ型名は、掲載文に書かない
+- 「BUILT FOR PRIVACY」の「No account, no ads, no tracking」と、簡単な説明の「Offline」はそのままで正しい（HC への書き込みは通信を伴わない）
+- **未決**: フィーチャーグラフィックのタグライン（en「Private. Offline. Yours.」、ja「記録は、端末の中だけに。」）は画像素材。ja は「HC を有効にすると端末の外の仕組みにも書ける」点と少しずれる。既定（オフ）では正しいので、今回は変えず、素材を作り直す機会があれば見直す
+
 ## リリースノート（v1.0.5 / versionCode 9、Health Connect 対応版の下書き）
 
 Health Connect を有効にした最初の版（D-55）。**Console の申告・データセーフティ・掲載文の最終確認が済むまでは下書き**
