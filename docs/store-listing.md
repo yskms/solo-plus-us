@@ -61,7 +61,7 @@ Details are always optional and never asked for while recording. Turn on just th
 SEE YOUR PATTERNS
 Today shows this month at a glance, with a solo and partnered breakdown and your most recent entries. Calendar gives you a month view and the entries for any day. Summary shows your totals, the solo/partnered split, and your average interval between entries.
 
-HEALTH CONNECT SYNC (ANDROID, OPTIONAL)
+HEALTH CONNECT SYNC (OPTIONAL)
 Keep a copy of your log in Health Connect, together with the rest of your health data on your device. Turn on Sync to Health Connect in Settings, and each new, edited or deleted record is reflected there automatically as a sexual activity entry: the date and time, and whether protection was used. Solo and partnered records look the same there. Other apps that you allow in Health Connect can read these entries. Solo + Us never reads anything back from Health Connect. It is off by default and you can turn it off at any time. Entries already saved in Health Connect stay there until you delete them in Health Connect, even if you uninstall Solo + Us.
 
 BUILT FOR PRIVACY
@@ -122,7 +122,7 @@ Solo + Us は、性行為と自慰行為を記録するアプリです。パー�
 記録を振り返る
 「今日」では今月の件数と、ソロ / パートナーとの内訳、直近の記録をひと目で確認できます。「カレンダー」では月表示と、その日の記録の一覧が見られます。「サマリー」では合計、内訳、記録と記録の平均間隔が分かります。
 
-Health Connect と同期（Android・任意）
+Health Connect と同期（任意）
 記録のコピーを、端末内の Health Connect に、ほかの健康データと一緒に残せます。設定で「Health Connect と同期」をオンにすると、以後、新しく記録した内容・編集した内容・削除した内容が、性行為の記録として自動で反映されます。保存されるのは、日時と、避妊具等の使用有無だけです。ソロとパートナーの区別は保存されず、Health Connect 上では同じに見えます。Health Connect で許可した他のアプリは、この記録を読み取れます。Solo + Us が Health Connect から情報を読み込むことはありません。既定ではオフで、いつでもオフにできます。Health Connect に保存済みの記録は、Solo + Us をアンインストールしても、Health Connect 側で削除するまで残ります。
 
 プライバシーのための設計
@@ -302,7 +302,7 @@ Health Connect を有効にした最初の版（D-55）。**Console の申告・
 
 ```
 <en-US>
-- Added optional Health Connect sync (Android). Turn it on in Settings > Health Connect to save the date and time of your records, and whether protection was used, to Health Connect. It is off by default, and the app never reads anything back from Health Connect
+- Added optional Health Connect sync. Turn it on in Settings > Health Connect to save the date and time of your records, and whether protection was used, to Health Connect. It is off by default, and the app never reads anything back from Health Connect
 - The delete confirmation now tells you that a deleted record is also removed from Health Connect when sync is on
 </en-US>
 <ja-JP>
