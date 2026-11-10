@@ -65,7 +65,7 @@ Today shows this month at a glance, with a solo and partnered breakdown and your
 HEALTH CONNECT SYNC (OPTIONAL)
 Save your log to Health Connect as sexual activity entries, alongside your other health data. Sync is off by default. Turn on Sync to Health Connect in Settings to use it.
 
-Once it is on, new, edited and deleted records are reflected in Health Connect automatically. Only the date, time and whether protection was used are saved. Solo and partnered records are not distinguished. Records you made before turning it on are not sent automatically, but you can send them from Settings.
+Once it is on, new, edited and deleted records are reflected in Health Connect automatically. Only the date, time and whether protection was used are saved. Solo and partnered records are not distinguished. You can also choose to send the records you made before turning it on.
 
 Other apps can read these entries if you allow them to in Health Connect. Solo + Us never reads anything back from Health Connect. Turning sync off, or uninstalling Solo + Us, does not delete entries already in Health Connect. You can delete them there.
 
@@ -130,7 +130,7 @@ Solo + Us は、性行為と自慰行為を記録するアプリです。パー�
 Health Connect と同期（任意）
 性行為の記録を、ほかの健康データと一緒に Health Connect に保存できます。初期設定ではオフで、設定の「Health Connect と同期」から有効にできます。
 
-有効にすると、記録の追加・編集・削除が Health Connect にも自動で反映されます。保存されるのは日時と避妊具等の使用有無だけで、ソロとパートナーの区別は保存されません。有効にする前の記録は、自動では送られませんが、設定からまとめて送れます。
+有効にすると、記録の追加・編集・削除が Health Connect にも自動で反映されます。保存されるのは日時と避妊具等の使用有無だけで、ソロとパートナーの区別は保存されません。有効にする前の記録も、送るかどうかを選べます。
 
 Health Connect でこのデータの読み取りを許可した他のアプリは、これらの記録を読み取れます。Solo + Us が Health Connect から情報を読み取ることはありません。同期をオフにしたり、アンインストールしたりしても、Health Connect に保存済みの記録は残ります。削除する場合は、Health Connect 側で操作してください。
 
@@ -304,7 +304,7 @@ Play Console のプレビューで確認する。詳細は README「Android R8 �
 - 「BUILT FOR PRIVACY」の「No account, no ads, no tracking」と、簡単な説明の「Offline」はそのままで正しい（HC への書き込みは通信を伴わない）
 - **HC の段落は、利点 → 保存される範囲と注意点 → 他のアプリが読めることと残り方、の順にした**（2026-11-10 のレビュー。最初の案は技術文書のように長かった）。重要な開示（性行為の記録として入る、他のアプリが読める、アンインストールしても残る）は残した。「有効にする前の記録は自動では送られない」を足した（有効化時に過去の記録を送る処理は無い。送るのは設定の「Sync everything to Health Connect」の明示操作のとき）。見出しと本文は、アプリ内の名前（「Sync to Health Connect」/「Health Connect と同期」）に揃えた。設定で見つけられるようにするため。レビューの「連携」への言い換えと、設定名を落とす案は採らなかった
 - **英語の「sexual activity」は残した**（レビューの修正案は「activity records」とぼかしていた）。何として入るかは開示の中心なので、ぼかさない
-- **未決**: フィーチャーグラフィックのタグライン（en「Private. Offline. Yours.」、ja「記録は、端末の中だけに。」）は画像素材。ja は「HC を有効にすると端末の外の仕組みにも書ける」点と少しずれる。既定（オフ）では正しいので、今回は変えず、素材を作り直す機会があれば見直す（2026-11-10 のレビューは「保存場所を断定しない表現」への変更を提案。例は「自分だけの記録を、安心して。」。HC のバックアップや移行まで含めると端末内だけとは保証できない、という理由は、こちらでは未確認）
+- **フィーチャーグラフィックのタグラインは、2026-11-10 に差し替えた**（ユーザーの指摘: 「記録は、端末の中だけに。」は HC を有効にした利用者に当てはまらず、何のアプリかも伝わらなかった。性行為と明示して審査を通っているので、グラフィックでも明示する）。新しい文面（2行。1行目は太め、2行目は細め）: en「Track sex and self-pleasure. / Optional Health Connect sync.」、ja「性行為・自慰行為を記録する。 / Health Connect との同期にも対応。」。ロゴ・背景・「Solo + Us」はそのまま、タグライン部分だけを描き直した（背景の縦グラデーションで塗り、Helvetica Neue / ヒラギノ角ゴシックで描画）。**画像内の性的な語句は、本文と別に審査されうる**ので、審査結果を記録し、指摘が出たら戻す。「Offline」「Private」は画像から外れたが、簡単な説明と BUILT FOR PRIVACY に残っている。差し替えた画像は Console の「フィーチャー グラフィック」にアップロードして、1.0.5 のリリースと同じ送信に載せる
 
 ## リリースノート（v1.0.5 / versionCode 9、Health Connect 対応版の下書き）
 
@@ -412,7 +412,7 @@ Health Connect を有効にした最初の版（D-55）。**Console の申告・
   詳しい説明の「no server to sync with」はサーバーのことなので矛盾しないが、
   ストアのデータセーフティに「ヘルス情報を共有」と並ぶ。**本文の「Everything stays on
   your device」は 2026-11-10 に見直し済み（外した）。** ja のタグライン「記録は、端末の中
-  だけに。」（フィーチャーグラフィック）は未見直し（上の「HC 版の詳しい説明で気をつけたこと」の「未決」）
+  だけに。」（フィーチャーグラフィック）は 2026-11-10 に差し替え済み（上の「HC 版の詳しい説明で気をつけたこと」）
 - **【履歴】v1.0.0〜v1.0.4 は Health Connect 機能を提供せず、健康データ権限も要求しなかった**
   （D-55）。HC を有効にする v1.0.5 では、掲載情報・Health apps declaration・データ
   セーフティを同時に更新する（状態は上の各節と health-connect-release.md）
@@ -463,9 +463,10 @@ Health Connect を有効にした最初の版（D-55）。**Console の申告・
 - **スクリーンショットの内容**：詳細項目の設定画面（「記録の項目」）には
   個別の項目名が表示されるため、初回掲載では使わない。載せる場合は、露骨な
   項目名が画面内に入らない構図にすること（レビュー指摘、2026-09-23）
-- **フィーチャーグラフィック**：en-US は英語のタグライン
-  （`Private. Offline. Yours.`）、ja-JP は日本語のタグライン
-  （「記録は、端末の中だけに。」）を入れた言語別素材を使用する
+- **フィーチャーグラフィック**：言語別素材を使用する。2026-11-10 から、en-US は
+  「Track sex and self-pleasure. / Optional Health Connect sync.」、ja-JP は
+  「性行為・自慰行為を記録する。 / Health Connect との同期にも対応。」
+  （v1.0.0〜v1.0.4 は en「Private. Offline. Yours.」、ja「記録は、端末の中だけに。」）
 - **データセーフティ**：HC なし版は収集・共有なしで申告できる想定。Export/Import は
   利用者自身の操作によるファイル出力で、アプリからの送信ではない。**HC 版は
   「ヘルス情報」を共有ありで申告する方針（[health-connect-release.md](health-connect-release.md)）**

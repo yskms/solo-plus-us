@@ -122,6 +122,15 @@ iOS ではモジュールが「どのメソッドを呼んでも `throw` する 
 
 経緯（§10.5 違反）: `docs/health-connect-dev-notes.md`
 
+### HC 同期をオンにする前の確認ダイアログ（`app/settings/health-connect.tsx` の `confirmEnableConsent`）は外さない・順序を変えない
+
+同期のスイッチをオンにすると、**Health Connect の権限要求より前に**、書く内容・以後は記録のたびに自動で書くこと・他のアプリが読めること・残り方を示す確認ダイアログを出す。Play のユーザーデータポリシー（Prominent Disclosure & Consent）が、権限要求を直前のアプリ内の開示と対にすることを求めるため。データセーフティで「ヘルス情報を共有」と申告し、共有の免除の根拠にもしている。
+
+- 「簡素化」のためにこの確認を外す、権限要求の後ろへ動かす、枠外タップ・戻るボタンを同意として扱う、のいずれもしない
+- 有効化の後に出す「過去の記録も送りますか？」（`offerExistingRecords`）は別物。「あとで」でも以後の自動同期は有効のまま。件数は有効化の**後**でないと 0 になる（`countPendingResync` が `healthConnect.enabled` を見る）ので、順序を入れ替えない
+
+経緯・確認結果: `docs/health-connect-release.md`
+
 ### package.json にあるのに未リンクなネイティブモジュール（Gradle デーモンのキャッシュ）
 
 新しい（native code を持つ）Expo モジュールを `package.json` に追加した／未使用だったモジュールを初めて import したときは、通常のビルドが成功してもリンクされていないことがある（Gradle デーモンが autolinking の解決結果を古いまま使い回すため）。疑わしければ `cd android && ./gradlew --stop` してから再ビルドする。リンクの確認に `android/build/generated/autolinking/autolinking.json` は使えない（別物）。確認手順・経緯: `docs/android-build-notes.md`
