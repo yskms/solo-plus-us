@@ -534,7 +534,62 @@ function HealthConnectSettingsScreenInner() {
     ]);
   };
 
+  /**
+   * 同期をオンにする直前の開示と同意（2026-11-10、Play のユーザーデータ
+   * ポリシーの「Prominent Disclosure & Consent」に沿わせるため）。
+   * **Health Connect の権限要求（`requestWritePermission`）より前に出す**
+   * ——ポリシーは、権限要求を「直前のアプリ内の開示」と対にすることを求める。
+   * 書く内容、以後は記録のたびに自動で書くこと、他のアプリが読めること、
+   * 残り方を、ストアの掲載文・プライバシーポリシー §4・rationale 画面と同じ
+   * 範囲で書く。**「キャンセル」と、枠外タップ・戻るボタンでの閉じ方は、
+   * 同意として扱わない**（ポリシー: 開示から離れる操作を同意とみなさない）。
+   * この確認を外す・権限要求の後ろへ動かさない（詳細: docs/health-connect-release.md）。
+   */
+  const confirmEnableConsent = () =>
+    new Promise<boolean>((resolve) => {
+      Alert.alert(
+        t('settings.healthConnect.enableConsentTitle'),
+        t('settings.healthConnect.enableConsentMessage'),
+        [
+          { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: t('settings.healthConnect.enableConsentTurnOn'), onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+
+  /**
+   * 有効にした直後に、過去の記録も送るかを聞く。HC を有効にしても過去の
+   * 記録は自動では送られない（同期ジョブは追加・編集・削除のときにだけ
+   * 作られる）ため、この案内が無いと、設定の「Sync everything to Health
+   * Connect」を自分で探すしかなかった。「あとで」でも、以後の記録の自動同期
+   * は有効のまま（送るかどうかは過去分だけの選択）。対象が 0 件なら出さない。
+   * 件数は `countPendingResync`（有効化の後でないと 0 になる。
+   * `getActiveProviders` が `healthConnect.enabled` を見るため）で数える。
+   */
+  const offerExistingRecords = async () => {
+    let pendingCount: number;
+    try {
+      pendingCount = await countPendingResync(db);
+    } catch (error) {
+      logError('countPendingResync (after enabling) failed', error);
+      return; // 案内を出せないだけ。同期自体は有効で、設定から後でも送れる
+    }
+    if (pendingCount === 0) return;
+    Alert.alert(
+      t('settings.healthConnect.offerExistingTitle'),
+      t('settings.healthConnect.offerExistingMessage', { count: pendingCount }),
+      [
+        { text: t('settings.healthConnect.offerExistingLater'), style: 'cancel' },
+        { text: t('settings.healthConnect.offerExistingSend'), onPress: performResyncEverything },
+      ],
+    );
+  };
+
   const handleEnable = async () => {
+    // 権限要求より前に、開示と同意を取る（上の `confirmEnableConsent`）。
+    if (!(await confirmEnableConsent())) return;
+    let enabledNow = false;
     setToggleAction('enable');
     try {
       const isAvailable = await HealthConnectService.isAvailable();
@@ -550,6 +605,7 @@ function HealthConnectSettingsScreenInner() {
       }
       await setSetting(db, 'healthConnect.enabled', true);
       enabledRef.current = true;
+      enabledNow = true;
       if (mountedRef.current) {
         setEnabled(true);
         setAvailable(true);
@@ -562,6 +618,8 @@ function HealthConnectSettingsScreenInner() {
     } finally {
       if (mountedRef.current) setToggleAction(null);
     }
+    // 「Connecting…」の表示を終えてから、過去の記録の案内を出す。
+    if (enabledNow && mountedRef.current) await offerExistingRecords();
   };
 
   const disconnect = async () => {
@@ -727,6 +785,7 @@ function HealthConnectSettingsScreenInner() {
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.healthConnect.aboutSectionLabel')}</Text>
           <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.aboutWhatIsSynced')}</Text>
           <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.aboutWhatStaysLocal')}</Text>
+          <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.healthConnect.aboutAutomatic')}</Text>
         </View>
 
         <View style={styles.section}>
