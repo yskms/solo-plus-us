@@ -124,6 +124,22 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 - [x] **カテゴリ**（Lifestyle のまま提出した。2026-11-10）: Lifestyle のままか、Health & Fitness に変えるか（`docs/store-listing.md`「公開前に決めること」）
 - [x] **プライバシーポリシー**（2026-11-10 までに公開済みを確認）: 公式は、Play のストアページに載せるものと、Health Connect の権限画面から開くものが同一であることを求める。現行の §4 は HC 版を前提に書かれている
 
+## 次のアプリ更新で入れること（積み残し）
+
+### 日本語の「Health Connect」を、カタカナの「ヘルスコネクト」に一括で統一する（2026-11-13、ユーザーの判断。更新の予定が無ければ急がない）
+
+公式の日本語名は「ヘルスコネクト」（Android ヘルプ）。ストアの掲載文（簡単な説明、詳しい説明の HC の段落、フィーチャーグラフィック）は、2026-11-13 に日本語をカタカナへ変えて審査に出した。**アプリの画面・権限画面の説明・プライバシーポリシーの日本語は、まだ英語表記の「Health Connect」のまま**で、どちらも同じ機能を指しているので不整合ではない（掲載文は、設定のスイッチの名前だけ、アプリの画面と同じ「Health Connect と同期」を引用している）。
+
+統一するときの範囲（2026-11-13 に数えた）:
+
+- `locales/ja.json`: 約40行（`settings.healthConnect.*`、設定一覧の行、データ削除・書き出しの案内、記録の削除確認、オンボーディングの「Health Connect との連携は任意」など）。**スイッチの名前 `syncToggleLabel`「Health Connect と同期」は、掲載文の引用と一緒に直す**
+- `plugins/withHealthConnectPermissionsRationale.js` の `RATIONALE_TEXT_JA`（権限画面の説明。`public/privacy-policy.html` §4 と用語を揃える、と同ファイルのコメントにある）
+- `public/privacy-policy.html` の `#doc-ja`（約16行。GitHub Pages へのデプロイが要る。Play のストアに載せるポリシーと、Health Connect の権限画面から開くポリシーは同一であること、が公式の要件）
+- `docs/store-listing.md` の日本語の HC の段落の引用「Health Connect と同期」→「ヘルスコネクトと同期」（掲載情報の更新も要る）
+- **英語は変えない**（英語の公式名は Health Connect）。日本語でも「Health Connect」を併記するのは見出しだけでよい
+- **一部だけカタカナにしない**（混在を避ける）。それまでに新しく日本語の文言を足すときも、既存の「Health Connect」に揃える。統一は、この作業でまとめて行う
+- 確認: `npm run check-i18n`、`tsc`、`jest`。複数形キー（`_other`）は触らなければ影響しない。実機（日本語表示）で、同期をオンにする確認ダイアログと設定画面の文言を目視する
+
 ## 出典
 
 - Android Developers「Declare access to Health Connect data types」: https://developer.android.com/health-and-fitness/guides/health-connect/publish/declare-access

@@ -207,6 +207,7 @@ HTML コメントはそのまま配信されて誰でもソースで読めるの
 - 複数形は `count` + `_one`/`_other`。`en.json` は両方が必要。`ja.json` は `_other` 付きが規約（接尾辞なしでも解決できるので必須ではない）
 - **Hermes には `Intl.PluralRules` が無い。** `lib/i18n/index.ts` がポリフィルを実行時ガード付き `require` で読み込んでいる（静的 `import` にしない）。**複数形キーを足したら、実機で count=1 のケースを目視確認する**（`tsc`/`jest` では検出できない）
 - `services/importValidation.ts` の検証メッセージ（約25種類）は意図的に未翻訳
+- **日本語の「Health Connect」は、次のアプリ更新で、カタカナ「ヘルスコネクト」に一括で統一する予定**（公式の日本語名。ストアの掲載文は 2026-11-13 にカタカナ化済み）。**それまで、日本語の文言の HC 表記は既存の「Health Connect」に揃え、一部だけカタカナにしない**（混在を避ける）。範囲と注意: `docs/health-connect-release.md`「次のアプリ更新で入れること」
 
 理由・経緯: `docs/i18n-notes.md`
 
