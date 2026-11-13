@@ -4378,7 +4378,7 @@ Play の 1.0.1 (5) の審査通過を受け、`feat/android-r8` から `eas buil
 - 1.0.3 (7) は旧ホイール（揺れ・固まりが出うる版）。公開済みの 1.0.4 がその修正版で、現在の Play の最新はこの 1.0.4 (8)
 - **iOS には、まだ入っていない。** iOS は 1.0.0 (4) の審査待ちで、この変更は次の iOS ビルドで載る
 
-### v1.0.5 (versionCode 10) の Health Connect 対応版ビルド（2026-11-10 ビルド、同日審査に提出。結果は未着）
+### v1.0.5 (versionCode 10) の Health Connect 対応版ビルド（2026-11-10 ビルド・審査提出、2026-11-13 までに Android で公開済み。ユーザーの報告）
 
 HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `main` へ `--ff-only` でマージ・push 済み）から
 `eas build --local -p android --profile production-with-health-connect`（`nice -n 10`）でビルドした。
@@ -4395,5 +4395,5 @@ HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `
 - 動作確認は、同じコード（R8 入り release APK、エミュレータ Android 16、en と ja）で、同意ダイアログ・過去の記録の案内・HC への送信まで確認済み。
   **この AAB 自体の実機確認は未実施。** 内部テストへアップロードして確認する。結果と確認していない範囲: [docs/health-connect-release.md](docs/health-connect-release.md)
 - 審査に提出した内容（2026-11-10）: 製品版 10 (1.0.5)、詳しい説明（en/ja）、フィーチャーグラフィック（en/ja）、データセーフティ（「健康に関する情報」を共有で申告）。
-  カテゴリは Lifestyle のまま。健康アプリ申告の Health Connect 欄は、Console に出ないため未記入。審査の結果は未着で、届いたら記録する（`docs/health-connect-release.md`）
+  カテゴリは Lifestyle のまま。健康アプリ申告の Health Connect 欄は、Console に出ないため未記入。審査は通り、公開された（承認の日付と、Google から HC の申告を求められたかは未確認。`docs/health-connect-release.md`）
 - リリースノートの下書きは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.5 / versionCode 10）」
