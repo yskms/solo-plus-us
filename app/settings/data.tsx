@@ -30,7 +30,10 @@ import { validateExportFile } from '../../services/importValidation';
 import { performReplaceImport, performAppendImport } from '../../services/ImportService';
 import { queueResync } from '../../services/HealthSyncResyncService';
 import { getSetting } from '../../services/SettingsRepository';
+import { recordBackupReminderHandled, recordJsonExport } from '../../services/BackupStateService';
 import * as SyncCoordinator from '../../services/SyncCoordinator';
+import { useBackupState } from '../../hooks/useBackupState';
+import { formatUtcIsoAsCalendarDate } from '../../lib/timeFormat';
 import { countAllActivities } from '../../repositories/ActivityRepository';
 import { SafetyExportFailedError } from '../../lib/errors';
 import { logError } from '../../lib/log';
@@ -105,6 +108,21 @@ export default function DataSettingsScreen() {
   const { bump } = useDataRevision();
   const [step, setStep] = useState<Step>({ kind: 'menu' });
   const [exporting, setExporting] = useState<'json' | 'csv' | null>(null);
+  const { state: backup, reload: reloadBackup } = useBackupState();
+  const lastExportedOn = backup?.lastExportedAt ? formatUtcIsoAsCalendarDate(t, backup.lastExportedAt) : null;
+
+  /**
+   * D-58: a restore means the person just used their backup, so the Home
+   * "export before you switch phones" card waits a full interval from now. A
+   * failure here must not be reported as an import failure: the import is done.
+   */
+  const markReminderHandledAfterImport = async () => {
+    try {
+      await recordBackupReminderHandled(db);
+    } catch (error) {
+      logError('recordBackupReminderHandled failed', error);
+    }
+  };
 
   const handleExport = async (format: 'json' | 'csv') => {
     setExporting(format);
@@ -120,6 +138,18 @@ export default function DataSettingsScreen() {
       const mimeType = format === 'json' ? 'application/json' : 'text/csv';
       const uti = format === 'json' ? 'public.json' : 'public.comma-separated-values-text';
       await shareExportFile(fileName, contents, mimeType, uti);
+      if (format === 'json') {
+        // D-58: stamped when the share sheet closes without an error. The sheet cannot
+        // say whether the file was saved or the sheet was cancelled, so this means "an
+        // export was started". Failing to stamp must not read as a failed export: the
+        // file was already handed to the share sheet.
+        try {
+          await recordJsonExport(db);
+          await reloadBackup();
+        } catch (stampError) {
+          logError('recordJsonExport failed', stampError);
+        }
+      }
     } catch (error) {
       logError(`Export (${format}) failed`, error);
       Alert.alert(t('settings.data.couldNotExport'), t('common.pleaseTryAgain'));
@@ -175,6 +205,7 @@ export default function DataSettingsScreen() {
     try {
       const result = await performAppendImport(db, file);
       bump();
+      await markReminderHandledAfterImport();
       setStep({ kind: 'menu' });
       const added = t('settings.data.appendImportAdded', { count: result.importedCount });
       const skipped = result.skippedCount > 0 ? t('settings.data.appendImportSkipped', { count: result.skippedCount }) : '';
@@ -220,6 +251,7 @@ export default function DataSettingsScreen() {
       return;
     }
     bump();
+    await markReminderHandledAfterImport();
 
     // §13.1/§13.6: re-sync to Health Connect is opt-in only — the replace
     // above never queues sync jobs itself (exportImport.integration.test.ts
@@ -313,6 +345,11 @@ export default function DataSettingsScreen() {
                   {exporting === 'csv' && <ActivityIndicator color={colors.textSecondary} />}
                 </Pressable>
               </View>
+              {backup !== null && (
+                <Text style={[styles.caption, { color: colors.textTertiary }]}>
+                  {lastExportedOn ? t('settings.data.lastExport', { date: lastExportedOn }) : t('settings.data.lastExportNever')}
+                </Text>
+              )}
             </View>
 
             <View style={styles.section}>

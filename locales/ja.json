@@ -20,6 +20,7 @@
     "time12h": "{{period}}{{hour}}:{{minute}}",
     "time24h": "{{hour}}:{{minute}}",
     "monthDay": "{{month}}{{day}}日",
+    "calendarDate": "{{year}}年{{month}}{{day}}日",
     "calendarDateTime": "{{year}}年{{month}}{{day}}日 {{time}}"
   },
   "settings": {
@@ -42,6 +43,8 @@
       "healthConnect": "Health Connect",
       "data": "データ",
       "exportImport": "エクスポートとインポート",
+      "exportNever": "まだエクスポートしていません。機種変更のとき、記録は自動では引き継がれないため、変更の前にエクスポートしてください。",
+      "exportLast": "最後のエクスポート: {{date}}",
       "deleteData": "データを削除",
       "tracking": "トラッキング",
       "activityDetails": "記録の項目",
@@ -105,6 +108,8 @@
     "data": {
       "exportSectionLabel": "エクスポート",
       "exportCaption": "Solo + Us に記録したすべてのデータをエクスポートします。",
+      "lastExportNever": "まだ JSON をエクスポートしていません。",
+      "lastExport": "最後の JSON エクスポート: {{date}}",
       "deviceChangeNotice": "機種変更のとき、記録は新しい端末へ自動では引き継がれません（暗号化の鍵がこの端末から出ないため）。変更の前にここで JSON をエクスポートし、新しい端末でインポートしてください。",
       "exportPlaintextNotice": "これらのファイルは暗号化されません。ファイルにアクセスできる人は誰でも内容を読めるため、共有や保管には注意してください。",
       "exportJson": "JSON をエクスポート",
@@ -369,6 +374,12 @@
     "activities_other": "件",
     "lastActivity": "直近の記録",
     "recent": "最近の記録",
+    "backupReminder": {
+      "title": "機種変更の前に、エクスポートを",
+      "body": "記録は、機種変更で新しい端末へ自動では引き継がれません。変更の前に JSON をエクスポートしておくと、新しい端末でインポートして復元できます。",
+      "openExport": "エクスポートを開く",
+      "dismiss": "閉じる"
+    },
     "recordActivityA11y": "記録する"
   },
   "components": {

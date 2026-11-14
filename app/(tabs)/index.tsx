@@ -15,6 +15,10 @@ import { useTheme, spacing } from '../../constants/theme';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useDataRevision } from '../../contexts/DataRevision';
 import { countActivitiesByDateRange, findRecentActivities, type ActivityCounts } from '../../repositories/ActivityRepository';
+import { loadBackupState, recordBackupReminderHandled } from '../../services/BackupStateService';
+import { shouldShowBackupReminder } from '../../lib/backupReminder';
+import { logError } from '../../lib/log';
+import { BackupReminderCard } from '../../components/BackupReminderCard';
 import { formatRelativeLocalDate } from '../../lib/relativeDate';
 import { contextLabel } from '../../lib/labels';
 import { MetricCard } from '../../components/MetricCard';
@@ -56,6 +60,7 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
   const [counts, setCounts] = useState<ActivityCounts>({ total: 0, solo: 0, partnered: 0 });
   const [recent, setRecent] = useState<Activity[]>([]);
   const [lastActivity, setLastActivity] = useState<Activity | null>(null);
+  const [showBackupReminder, setShowBackupReminder] = useState(false);
 
   const reload = useCallback(async () => {
     const today = todayLocalDate();
@@ -67,7 +72,30 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
     setCounts(monthCounts);
     setRecent(recentActivities);
     setLastActivity(recentActivities[0] ?? null);
+
+    // D-58. A failure here must not break the rest of Today: the card is a nudge.
+    try {
+      setShowBackupReminder(shouldShowBackupReminder({ nowMs: Date.now(), ...(await loadBackupState(db)) }));
+    } catch (error) {
+      logError('Backup reminder check failed', error);
+    }
   }, [db]);
+
+  // Both buttons count as "handled": either way the card waits a full interval
+  // (lib/backupReminder.ts) before it comes back.
+  const handleReminderHandled = useCallback(async () => {
+    setShowBackupReminder(false);
+    try {
+      await recordBackupReminderHandled(db);
+    } catch (error) {
+      logError('recordBackupReminderHandled failed', error);
+    }
+  }, [db]);
+
+  const handleOpenExport = useCallback(() => {
+    void handleReminderHandled();
+    router.push('/settings/data');
+  }, [handleReminderHandled]);
 
   // A single effect for both reasons to reload (becoming the active pager
   // page, and Undo's revision bump — contexts/DataRevision.tsx, which runs
@@ -98,6 +126,8 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
           </Pressable>
         </View>
         <Text style={[styles.dateLine, { color: colors.textSecondary }]}>{weekdayHeader(t)}</Text>
+
+        {showBackupReminder && <BackupReminderCard onOpenExport={handleOpenExport} onDismiss={handleReminderHandled} />}
 
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('today.thisMonth')}</Text>

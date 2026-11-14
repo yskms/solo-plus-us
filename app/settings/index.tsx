@@ -61,6 +61,8 @@ import Constants from 'expo-constants';
 import { useTranslation } from 'react-i18next';
 import { useTheme, spacing, minTouchTarget } from '../../constants/theme';
 import { isHealthConnectBuildEnabled } from '../../lib/healthConnectBuild';
+import { formatUtcIsoAsCalendarDate } from '../../lib/timeFormat';
+import { useBackupState } from '../../hooks/useBackupState';
 
 interface Row {
   label: string;
@@ -111,6 +113,13 @@ const appVersion = Application.nativeApplicationVersion ?? Constants.expoConfig?
 export default function SettingsIndexScreen() {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  // D-58: the people who most need the "records don't move to a new phone" note
+  // are the ones who have never exported, so DATA says so here, not only inside
+  // Export & Import. Shown nothing until the first read finishes, so a slow read
+  // never flashes a wrong "you haven't exported".
+  const { state: backup } = useBackupState();
+  const exportedOn = backup?.lastExportedAt ? formatUtcIsoAsCalendarDate(t, backup.lastExportedAt) : null;
+  const exportNote = backup === null ? null : exportedOn ? t('settings.index.exportLast', { date: exportedOn }) : t('settings.index.exportNever');
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -137,6 +146,9 @@ export default function SettingsIndexScreen() {
             { label: t('settings.index.deleteData'), onPress: () => router.push('/settings/delete-data') },
           ]}
         />
+        {exportNote !== null && (
+          <Text style={[styles.footnote, { color: exportedOn ? colors.textTertiary : colors.textSecondary }]}>{exportNote}</Text>
+        )}
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.index.tracking')}</Text>
         <SettingsGroup rows={[{ label: t('settings.index.activityDetails'), onPress: () => router.push('/settings/activity-details') }]} />
@@ -168,6 +180,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.sm },
   sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: spacing.xs },
   group: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  footnote: { fontSize: 12, paddingHorizontal: spacing.xs, lineHeight: 17 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -62,6 +62,15 @@ export interface SettingsMap {
   'healthConnect.enabled': boolean;
   /** null = never synced. Reset on replace-restore (D-42) — see ImportService. */
   'healthConnect.lastSyncedAt': string | null;
+
+  /**
+   * D-58: when this device last opened the share sheet for a JSON export (UTC ISO; null = never).
+   * It cannot mean "the file was saved": the share sheet does not report that back (§12.4).
+   * Device-owned: not exported, kept on replace-restore.
+   */
+  'backup.lastExportedAt': string | null;
+  /** D-58: when the Home "export before you switch phones" card was last dismissed or followed (UTC ISO; null = never). Device-owned. */
+  'backup.reminderDismissedAt': string | null;
 }
 
 export type SettingKey = keyof SettingsMap;
@@ -90,6 +99,8 @@ export const STATIC_DEFAULTS: Pick<
   | 'privacy.blockScreenshots'
   | 'healthConnect.enabled'
   | 'healthConnect.lastSyncedAt'
+  | 'backup.lastExportedAt'
+  | 'backup.reminderDismissedAt'
 > = {
   'activityDetails.orgasm': true,
   'activityDetails.ejaculation': false,
@@ -112,6 +123,9 @@ export const STATIC_DEFAULTS: Pick<
 
   'healthConnect.enabled': false,
   'healthConnect.lastSyncedAt': null,
+
+  'backup.lastExportedAt': null,
+  'backup.reminderDismissedAt': null,
 };
 
 /**
@@ -146,6 +160,8 @@ export const DEVICE_OWNED_SETTING_KEYS: readonly SettingKey[] = [
   'appLock.timing',
   'privacy.blockScreenshots',
   'healthConnect.enabled',
+  'backup.lastExportedAt',
+  'backup.reminderDismissedAt',
 ] as const;
 
 export const SYNC_DERIVED_SETTING_KEYS: readonly SettingKey[] = [

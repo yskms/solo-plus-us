@@ -1,5 +1,5 @@
 import i18n from '../i18n';
-import { formatCalendarDateTime, formatLocalTime } from '../timeFormat';
+import { formatCalendarDate, formatCalendarDateTime, formatLocalTime, formatUtcIsoAsCalendarDate } from '../timeFormat';
 import { ValidationError } from '../errors';
 
 const en = i18n.getFixedT('en');
@@ -51,5 +51,25 @@ describe('formatCalendarDateTime', () => {
 
   it('orders year-month-day and appends 日 in Japanese', () => {
     expect(formatCalendarDateTime(ja, 2026, 8, 14, '23:42', '24h')).toBe('2026年9月14日 23:42');
+  });
+});
+
+describe('formatCalendarDate', () => {
+  it('formats month/day/year with no time, in both languages', () => {
+    expect(formatCalendarDate(en, 2026, 10, 14)).toBe('Nov 14, 2026');
+    expect(formatCalendarDate(ja, 2026, 10, 14)).toBe('2026年11月14日');
+  });
+});
+
+describe('formatUtcIsoAsCalendarDate', () => {
+  it('shows a stored UTC instant as a date', () => {
+    // Midday UTC is the same calendar date in every time zone from UTC-11 to UTC+11.
+    expect(formatUtcIsoAsCalendarDate(en, '2026-11-14T12:00:00Z')).toBe('Nov 14, 2026');
+    expect(formatUtcIsoAsCalendarDate(ja, '2026-11-14T12:00:00Z')).toBe('2026年11月14日');
+  });
+
+  it('returns null for a value that is not a UTC ISO time, instead of throwing', () => {
+    expect(formatUtcIsoAsCalendarDate(en, 'not a date')).toBeNull();
+    expect(formatUtcIsoAsCalendarDate(en, '')).toBeNull();
   });
 });

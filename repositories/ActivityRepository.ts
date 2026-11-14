@@ -405,6 +405,17 @@ export async function countAllActivities(executor: SqlExecutor): Promise<Activit
   return counts;
 }
 
+/**
+ * D-58: when the oldest record was created (UTC ISO), or `null` when there are
+ * none. `created_at`, not `occurred_at_utc`: a record backdated through the
+ * calendar says nothing about how long the person has been using the app.
+ */
+export async function getOldestActivityCreatedAt(executor: SqlExecutor): Promise<string | null> {
+  const result = await executor.execute('SELECT MIN(created_at) as oldest FROM activities');
+  const row = result.rows?.[0] as { oldest: string | null } | undefined;
+  return row?.oldest ?? null;
+}
+
 export interface ActivityTimeSpan {
   oldestOccurredAtUtc: string;
   newestOccurredAtUtc: string;

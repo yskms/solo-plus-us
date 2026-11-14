@@ -20,6 +20,7 @@
     "time12h": "{{hour}}:{{minute}} {{period}}",
     "time24h": "{{hour}}:{{minute}}",
     "monthDay": "{{month}} {{day}}",
+    "calendarDate": "{{month}} {{day}}, {{year}}",
     "calendarDateTime": "{{month}} {{day}}, {{year}} · {{time}}"
   },
   "settings": {
@@ -42,6 +43,8 @@
       "healthConnect": "Health Connect",
       "data": "DATA",
       "exportImport": "Export & Import",
+      "exportNever": "You haven't exported yet. Your records are not carried over to a new phone automatically, so export before you switch.",
+      "exportLast": "Last export: {{date}}",
       "deleteData": "Delete Data",
       "tracking": "TRACKING",
       "activityDetails": "Activity Details",
@@ -105,6 +108,8 @@
     "data": {
       "exportSectionLabel": "EXPORT",
       "exportCaption": "Export everything you've recorded in Solo + Us.",
+      "lastExportNever": "You haven't exported JSON yet.",
+      "lastExport": "Last JSON export: {{date}}",
       "deviceChangeNotice": "Your records are not carried over to a new phone automatically, because the encryption key never leaves this device. Before you switch phones, export JSON here and import it on the new phone.",
       "exportPlaintextNotice": "These files are not encrypted. Anyone with access to them can read everything in them — share and store them carefully.",
       "exportJson": "Export JSON",
@@ -390,6 +395,12 @@
     "activities_other": "activities",
     "lastActivity": "LAST ACTIVITY",
     "recent": "RECENT",
+    "backupReminder": {
+      "title": "Before you switch phones, export",
+      "body": "Your records are not carried over to a new phone automatically. Export a JSON backup before you switch, and import it on the new phone.",
+      "openExport": "Open Export",
+      "dismiss": "Close"
+    },
     "recordActivityA11y": "Record activity"
   },
   "components": {

@@ -13,7 +13,7 @@
  * orders these differently (e.g. the period comes before the time).
  */
 import type { TFunction } from 'i18next';
-import { isValidLocalTime } from './datetime';
+import { deriveLocalDateTime, getDeviceTimeZoneId, isValidLocalTime, parseStrictUtcIso, resolveOffsetMinutesForZone } from './datetime';
 import { ValidationError } from './errors';
 import type { TimeFormat } from '../types/Settings';
 
@@ -36,6 +36,28 @@ export function formatCalendarDateTime(t: TFunction, year: number, month0: numbe
   const months = t('common.months', { returnObjects: true }) as unknown as string[];
   const time = formatLocalTime(t, localTime, format);
   return t('dateFormat.calendarDateTime', { month: months[month0], day, year, time });
+}
+
+/** "Mon D, YYYY" with no time (D-58's "last export" line). */
+export function formatCalendarDate(t: TFunction, year: number, month0: number, day: number): string {
+  const months = t('common.months', { returnObjects: true }) as unknown as string[];
+  return t('dateFormat.calendarDate', { month: months[month0], day, year });
+}
+
+/**
+ * A stored UTC instant shown as a calendar date in this device's current time
+ * zone. Returns `null` for a value that is not a valid UTC ISO string, so a
+ * corrupt setting shows as "never" instead of crashing the screen.
+ */
+export function formatUtcIsoAsCalendarDate(t: TFunction, utcIso: string): string | null {
+  try {
+    const instant = parseStrictUtcIso(utcIso);
+    const offset = resolveOffsetMinutesForZone(getDeviceTimeZoneId(), instant);
+    const [year, month, day] = deriveLocalDateTime(instant, offset).localDate.split('-').map(Number);
+    return formatCalendarDate(t, year, month - 1, day);
+  } catch {
+    return null;
+  }
 }
 
 /** Same display as `formatCalendarDateTime`, but from a raw local `Date` (a date/time picker's in-progress value, not yet persisted as `occurredLocalDate`/`occurredLocalTime`) — used by both `app/record.tsx` and `app/activity/[id].tsx`'s pickers. */

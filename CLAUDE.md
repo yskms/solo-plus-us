@@ -131,6 +131,10 @@ iOS ではモジュールが「どのメソッドを呼んでも `throw` する 
 
 経緯・確認結果: `docs/health-connect-release.md`
 
+### 起動時・自動で出す案内（Home のカードなど）は、`Alert.alert` や `<Modal>` にしない
+
+`Alert.alert` はシステムのダイアログで、App Lock のオーバーレイの上に出て、コードから閉じられない。コールドスタートはロック状態で Home は下に載っているので、マウント時に出すと、ロック画面の上に出る。`<Modal>` も別ウィンドウで同じ。自動で出すものは、画面内の普通の View（`components/BackupReminderCard.tsx`）にする。利用者の操作で出す確認の `Alert`（削除の確認など）は対象外。理由・経緯: D-58
+
 ### package.json にあるのに未リンクなネイティブモジュール（Gradle デーモンのキャッシュ）
 
 新しい（native code を持つ）Expo モジュールを `package.json` に追加した／未使用だったモジュールを初めて import したときは、通常のビルドが成功してもリンクされていないことがある（Gradle デーモンが autolinking の解決結果を古いまま使い回すため）。疑わしければ `cd android && ./gradlew --stop` してから再ビルドする。リンクの確認に `android/build/generated/autolinking/autolinking.json` は使えない（別物）。確認手順・経緯: `docs/android-build-notes.md`
