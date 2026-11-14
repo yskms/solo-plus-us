@@ -280,6 +280,8 @@ export default function DataSettingsScreen() {
             <View style={styles.section}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('settings.data.exportSectionLabel')}</Text>
               <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.exportCaption')}</Text>
+              {/* D-07: the DB and its key are kept out of OS backup and phone-to-phone transfer, so a new phone starts empty. Say so where the way out (export, then import) is. */}
+              <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.deviceChangeNotice')}</Text>
               {/* §12.4: "共有先で平文になることを画面上で明示する" — shown here, before either export button is tapped. */}
               <Text style={[styles.caption, { color: colors.textTertiary }]}>{t('settings.data.exportPlaintextNotice')}</Text>
               <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>

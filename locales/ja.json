@@ -105,6 +105,7 @@
     "data": {
       "exportSectionLabel": "エクスポート",
       "exportCaption": "Solo + Us に記録したすべてのデータをエクスポートします。",
+      "deviceChangeNotice": "機種変更のとき、記録は新しい端末へ自動では引き継がれません（暗号化の鍵がこの端末から出ないため）。変更の前にここで JSON をエクスポートし、新しい端末でインポートしてください。",
       "exportPlaintextNotice": "これらのファイルは暗号化されません。ファイルにアクセスできる人は誰でも内容を読めるため、共有や保管には注意してください。",
       "exportJson": "JSON をエクスポート",
       "exportJsonSubLabel": "完全なバックアップ",

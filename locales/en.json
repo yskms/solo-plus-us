@@ -105,6 +105,7 @@
     "data": {
       "exportSectionLabel": "EXPORT",
       "exportCaption": "Export everything you've recorded in Solo + Us.",
+      "deviceChangeNotice": "Your records are not carried over to a new phone automatically, because the encryption key never leaves this device. Before you switch phones, export JSON here and import it on the new phone.",
       "exportPlaintextNotice": "These files are not encrypted. Anyone with access to them can read everything in them — share and store them carefully.",
       "exportJson": "Export JSON",
       "exportJsonSubLabel": "Complete backup",

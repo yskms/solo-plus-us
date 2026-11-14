@@ -48,6 +48,8 @@ Private sex and self-pleasure log. Optional Health Connect sync, no account.
 ### 詳しい説明（4000文字以内）
 
 **2026-10-31 に、冒頭の1文と詳細項目の列挙（orgasm を追加）を変更した。同日、Play Console に入力して審査に送信し、2026-11-04 に完了した（利用者の報告）。**
+
+**2026-11-14 に、下の「YOUR DATA IS YOURS」の段落の末尾へ、機種変更の案内を2文足した（下書き。Play Console には未反映で、バックアップ除外の修正版のアップデートと一緒に反映する）。アプリ側は、書き出し画面に同じ趣旨の案内を足した（`settings.data.deviceChangeNotice`）。**
 変更前の冒頭は「Solo + Us is a private log for your intimate life — solo and partnered alike.」。
 
 **【2026-11-10 更新・v1.0.5 の HC 版の文面。状態: 2026-11-10 に Console へ反映・審査に送信し、2026-11-13 までに公開（ユーザーの報告）】下のコードブロックを、そのまま貼る。** 2026-10-31 版からの変更は2か所だけ：①冒頭の2段落目から「Everything stays on your device」を外した ②「HEALTH CONNECT SYNC」の段落を「SEE YOUR PATTERNS」の後に足した。変更の理由は、下の「HC 版の詳しい説明で気をつけたこと」。
@@ -81,7 +83,7 @@ BUILT FOR PRIVACY
 - No account, no ads, no tracking
 
 YOUR DATA IS YOURS
-Export a full JSON backup at any time, or a CSV for your own analysis. Import a backup to restore your records, either adding only new entries or replacing everything. Your data stays portable and under your control.
+Export a full JSON backup at any time, or a CSV for your own analysis. Import a backup to restore your records, either adding only new entries or replacing everything. Your data stays portable and under your control. Your records do not carry over to a new phone automatically, because the encryption key never leaves your device. Before you switch phones, export a JSON backup and import it on the new one.
 
 Available in English and Japanese.
 ```
@@ -117,6 +119,8 @@ Solo + Us: 性行為・自慰行為の記録
 ### 詳しい説明（4000文字以内）
 
 **2026-10-31 に、冒頭の1文と詳細項目の列挙（オーガズムを追加）を変更した。同日、Play Console に入力して審査に送信し、2026-11-04 に完了した（利用者の報告）。**
+
+**2026-11-14 に、下の「データはあなたのもの」の段落の末尾へ、機種変更の案内を2文足した（下書き。Play Console には未反映で、バックアップ除外の修正版のアップデートと一緒に反映する）。**
 変更前の冒頭は「Solo + Us は、ひとりの時間もふたりの時間も記録できる、自分だけの記録アプリです。」。
 
 **【2026-11-13 更新・v1.0.5 の HC 版の文面。状態: 2026-11-10 の版は公開済み。下のコードブロックは、それを「ヘルスコネクト」のカタカナ表記に直した差し替え文面。2026-11-13 に Console へ反映し、審査に提出済み（ユーザーの報告。結果は未着）。フィーチャーグラフィック（日英。文末の句読点なし）も同じ提出】下のコードブロックを、そのまま貼る。** 2026-11-10 の版からの変更は、HC の段落の「Health Connect」をカタカナの「ヘルスコネクト」にしたこと（見出しだけ「（Health Connect）」を併記。設定のスイッチの名前は、アプリの画面と同じ「Health Connect と同期」のまま引用している）。公式の日本語名も「ヘルスコネクト」（Android ヘルプ）。
@@ -150,7 +154,7 @@ Solo + Us は、性行為と自慰行為を記録するアプリです。パー�
 ・アカウント登録なし、広告なし、トラッキングなし
 
 データはあなたのもの
-いつでも JSON で完全なバックアップを書き出せます。分析用に CSV で書き出すこともできます。バックアップからの復元にも対応しており、新しい記録だけを追加するか、すべて置き換えるかを選べます。データはいつでも持ち出せ、あなたの手元で管理できます。
+いつでも JSON で完全なバックアップを書き出せます。分析用に CSV で書き出すこともできます。バックアップからの復元にも対応しており、新しい記録だけを追加するか、すべて置き換えるかを選べます。データはいつでも持ち出せ、あなたの手元で管理できます。暗号化の鍵は端末の外に出ないため、機種変更をしても記録は自動では引き継がれません。変更の前に JSON のバックアップを書き出し、新しい端末で読み込んでください。
 
 日本語と英語に対応しています。
 ```
