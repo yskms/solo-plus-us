@@ -25,7 +25,17 @@ const appJson = require('../../app.json') as {
 
 // Written out on purpose, NOT derived from the plugin: a test that compares the
 // plugin with its own list passes when a domain is removed from that list.
-const REQUIRED_DOMAINS = ['root', 'file', 'database', 'sharedpref', 'external'];
+const REQUIRED_DOMAINS = [
+  'root',
+  'file',
+  'database',
+  'sharedpref',
+  'external',
+  'device_root',
+  'device_file',
+  'device_database',
+  'device_sharedpref',
+];
 
 function section(tag: 'cloud-backup' | 'device-transfer'): string {
   const match = plugin.RULES_XML.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
@@ -34,7 +44,7 @@ function section(tag: 'cloud-backup' | 'device-transfer'): string {
 }
 
 describe('Android backup exclusion rules (XML)', () => {
-  it.each(['cloud-backup', 'device-transfer'] as const)('%s excludes all five domains, including file (DB) and sharedpref (SecureStore)', (tag) => {
+  it.each(['cloud-backup', 'device-transfer'] as const)('%s excludes all nine domains, including file (DB) and sharedpref (SecureStore)', (tag) => {
     const body = section(tag);
     for (const domain of REQUIRED_DOMAINS) {
       expect(body).toContain(`<exclude domain="${domain}" path="." />`);

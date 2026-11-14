@@ -226,7 +226,7 @@ iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOv
 
 ### Android のバックアップ・端末間移行の除外（`plugins/withAndroidNoBackup.js`）は、領域を個別に列挙する
 
-`root`・`file`・`database`・`sharedpref`・`external` は別々の領域で、`<exclude domain="root" />` だけでは DB（`files/`）も SecureStore の鍵（`shared_prefs/`）も除外されない。Android 12 以降は `allowBackup="false"` が端末間移行で無視されるので（AOSP）、止めているのはこの規則だけ。
+`root`・`file`・`database`・`sharedpref`・`external`（とデバイス保護ストレージの `device_*` 4つ）は別々の領域で、`<exclude domain="root" />` だけでは DB（`files/`）も SecureStore の鍵（`shared_prefs/`）も除外されない。Android 12 以降は `allowBackup="false"` が端末間移行で無視されるので（AOSP）、止めているのはこの規則だけ。
 
 - **`root` だけに戻さない・領域を減らさない**（`test/__tests__/androidBackupRules.test.ts` が守る）
 - expo-secure-store のプラグインは `configureAndroidBackup: false`（`app.json`）のまま。規則は自前の1つにまとめている

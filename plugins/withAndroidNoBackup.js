@@ -29,13 +29,17 @@
  * the DB and the key's SharedPreferences were not excluded from D2D. Do not
  * simplify this back to `root`.
  *
- * The listed domains are the ones Auto Backup includes by default for the
- * credential-protected storage. They are all excluded, not just the two the
- * app uses today, so that a library that starts keeping state somewhere else
- * is not carried to another device silently; nothing in this app needs to be
- * restored by the OS (restoring is done from a JSON backup, D-09). The
- * device-protected `device_*` domains are not listed because the app does not
- * use device-protected storage.
+ * The listed domains are all the ones Auto Backup includes by default: the
+ * credential-protected storage (`root`, `file`, `database`, `sharedpref`,
+ * `external`) and the device-protected storage (`device_root`, `device_file`,
+ * `device_database`, `device_sharedpref`). `BackupAgent#fullBackup` walks both
+ * with the same rules. They are all excluded, not just the two the app uses
+ * today (`file` and `sharedpref`), so that a library that starts keeping state
+ * somewhere else, device-protected storage included, is not carried to another
+ * device silently; nothing in this app needs to be restored by the OS
+ * (restoring is done from a JSON backup, D-09). An earlier revision left the
+ * `device_*` domains out because the app does not use device-protected
+ * storage, which contradicted this reasoning.
  *
  * expo-secure-store ships its own backup rules (it excludes only the
  * `SecureStore` preferences file). They are not used here: app.json passes
@@ -65,7 +69,17 @@ const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins'
 const RULES_FILE_NAME = 'solo_plus_us_no_backup_rules.xml';
 
 /** Exported for `test/__tests__/androidBackupRules.test.ts`. */
-const EXCLUDED_DOMAINS = ['root', 'file', 'database', 'sharedpref', 'external'];
+const EXCLUDED_DOMAINS = [
+  'root',
+  'file',
+  'database',
+  'sharedpref',
+  'external',
+  'device_root',
+  'device_file',
+  'device_database',
+  'device_sharedpref',
+];
 
 const excludeLines = EXCLUDED_DOMAINS.map((domain) => `        <exclude domain="${domain}" path="." />`).join('\n');
 

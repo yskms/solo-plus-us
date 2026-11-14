@@ -274,9 +274,13 @@ targetSdk 31 以上で既定で有効（このアプリは 36）。Android 12〜
 また、独自の `dataExtractionRules` に置き換えた時点で、上の「SecureStore は自動除外」
 （expo-secure-store のプラグインが入れる規則）も効かなくなっていた。
 
-対応：`plugins/withAndroidNoBackup.js` で、5つの領域をすべて、クラウドバックアップと端末間移行の両方から
-除外する。`app.json` では expo-secure-store のプラグインに `configureAndroidBackup: false` を渡す。
-`test/__tests__/androidBackupRules.test.ts` で、5領域が両方の節にあること、Manifest の3属性が付くことを確かめる。
+対応：`plugins/withAndroidNoBackup.js` で、9つの領域（`root`・`file`・`database`・`sharedpref`・`external` と、
+デバイス保護ストレージの `device_*` 4つ）をすべて、クラウドバックアップと端末間移行の両方から除外する。
+（最初の修正は5領域で、`device_*` は「使っていない」ので外していた。「別の場所に状態を置くライブラリが増えても
+黙って移らないように」という理由と食い違うので、レビュー指摘で追加した。`BackupAgent#fullBackup` は
+デバイス保護ストレージも同じ規則で走査する。）`app.json` では expo-secure-store のプラグインに
+`configureAndroidBackup: false` を渡す。
+`test/__tests__/androidBackupRules.test.ts` で、9領域が両方の節にあること、Manifest の3属性が付くことを確かめる。
 確認したのは、生成された Manifest とルール XML、マージ後の Manifest、AOSP のソースによる領域の意味と
 `allowBackup` の扱いまで。lint の検査器もソースを読んだが、lint 自体は実行していない。
 **実際の端末間移行は試していない。** 出荷する設定のままのビルドで試せる（`allowBackup` が無視されるため、
