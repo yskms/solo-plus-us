@@ -240,6 +240,7 @@ iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOv
 
 - **`versionCode` は手で上げない。** `production` の `autoIncrement: true` がビルド時に +1 する。手で上げると二重に上がる（1.0.1 で 4 → 5 の実例）。ビルド後は `app.json` の差分をコミットして AAB と揃える。iOS の `buildNumber` は別管理
 - `eas` は PATH に無いので `npx --yes eas-cli@25.3.0 build --local …` で実行する
+- **`expo prebuild` は、`--clean` を付けなくても既定で clean**（`android/` を作り直し、ビルドキャッシュが消えてフルリビルドになる）。残したまま plugin や `app.json` の変更だけ反映するなら `--no-clean`（詳細: `docs/android-build-notes.md`）
 - **リリース前に、AAB の Manifest に `android.permission.health.*` が無いことを毎回確認する**（手順: `docs/android-build-notes.md`）
 
 ### Android R8（難読化・最適化・縮小）——`plugins/withAndroidR8.js` は外さない・簡略化しない

@@ -63,7 +63,7 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 
 ## 2026-11-09 の確認結果（エミュレータ Filto_API_36、Android 16、release APK）
 
-方法: `EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=1 npx expo prebuild -p android --no-install`（`--clean` なしと指定したが、`android/` は作り直された）→ 同じ環境変数を付けて `cd android && nice -n 10 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`（7分44秒）。debug 署名、versionCode 8・versionName 1.0.4（`app.json` は未変更）。**環境変数は JS バンドルのインライン展開にも要るので、gradle の実行にも付ける。**
+方法: `EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=1 npx expo prebuild -p android --no-install`（`--clean` なしと指定したが、`android/` は作り直された。原因は、`expo prebuild` が既定で clean のため。残すなら `--no-clean`。`docs/android-build-notes.md`）→ 同じ環境変数を付けて `cd android && nice -n 10 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`（7分44秒）。debug 署名、versionCode 8・versionName 1.0.4（`app.json` は未変更）。**環境変数は JS バンドルのインライン展開にも要るので、gradle の実行にも付ける。**
 
 確認できたこと:
 

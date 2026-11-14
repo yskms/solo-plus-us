@@ -1,9 +1,9 @@
 # Android のネイティブビルド・リリース・R8 の詳細
 
-- 読むタイミング: ネイティブモジュールを追加した／初めて import したとき、Android のリリースビルド（`eas build --local`）と AAB の確認、R8 の設定や検証、AGP/RN/Expo の更新、ダーク/ライト切替や遷移中の帯を触るとき、`expo prebuild --clean` を実行しようとするとき
+- 読むタイミング: ネイティブモジュールを追加した／初めて import したとき、Android のリリースビルド（`eas build --local`）と AAB の確認、R8 の設定や検証、AGP/RN/Expo の更新、ダーク/ライト切替や遷移中の帯を触るとき、`expo prebuild` を実行しようとするとき（既定で clean）
 - 元の場所: `CLAUDE.md` の「package.json にあるのに未リンクなネイティブモジュール（Gradle デーモンのキャッシュ）」「Android のダーク/ライト切替まわりの落とし穴」「Android リリースビルド（`eas build --local`）の注意」「Android R8（難読化・最適化・縮小）」の4節（最後の節の見出しは、後ろに「`plugins/withAndroidR8.js` は外さない・簡略化しない」と続く）（2026-11-03 に移動）。区切り線より下は原文のまま。ただし、各節が兄弟の節になるよう、見出しの `#` の数だけそろえた（見出しの文言は変えていない）
 - 注記（参照元）: `docs/health-connect-dev-notes.md` の「リリースビルド分離」の節が「本ファイル…の節」として参照しているのは、この文書の最初の節（package.json にあるのに未リンクなネイティブモジュール）
-- 注記（追加した節）: 末尾の「`expo prebuild --clean` の影響と、実行前の確認」は、2026-11-04 に新しく書いた節で、CLAUDE.md からの移動ではない（CLAUDE.md には載せていない）
+- 注記（追加した節）: 末尾の「`expo prebuild` は既定で clean（`android/` を作り直す）。残すなら `--no-clean`」は、2026-11-04 に「`expo prebuild --clean` の影響と、実行前の確認」として新しく書いた節（2026-11-14 に見出しを改めた）で、CLAUDE.md からの移動ではない（CLAUDE.md には載せていない）
 - 注記（EAS の実行許可）: 「Android リリースビルド」の節の `eas build --local` の手順は、実行が許可されたあとの手順。実行許可の基準は `CLAUDE.md` の「ローカル iOS ビルドは M4 MacBook Air 移行後にブロック解除済み」の節の「EAS の実行許可」に従う
 
 ---
@@ -112,16 +112,16 @@ R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範
 1. `npx expo prebuild --platform android --no-install` のあと、`android/app/src/main/res/xml/solo_plus_us_no_backup_rules.xml` に9つの領域があること
 2. `cd android && nice -n 10 ./gradlew :app:processReleaseManifest :app:mergeReleaseResources` のあと、`android/app/build/intermediates/merged_manifests/release/` の Manifest に、`allowBackup="false"`・`fullBackupContent="false"`・`dataExtractionRules="@xml/solo_plus_us_no_backup_rules"` があり、`secure_store_*` の参照が無いこと。確認したら `./gradlew --stop`
 3. **実際の端末間移行は、まだ試していない。** Android 公式「Test backup and restore」の手順（Play 対応のエミュレータで `bmgr` の D2D transport（`com.google.android.gms/.backup.migrate.service.D2dTransport`）を選び、`bmgr backupnow <package>`）で試せる。**出荷する設定（`allowBackup="false"`）のままのビルドで試す。** 試験用に `allowBackup="true"` へ変える必要は無い（AOSP は端末間移行で `allowBackup` を無視する。上記）。transport が端末間移行を示すフラグ（`FLAG_DEVICE_TO_DEVICE_TRANSFER`）を返せば、`UserBackupManagerService#getBackupDestinationFromTransport` が `DEVICE_TRANSFER` の判定を使う（AOSP のソースで確認）。D2dTransport 自体は Google Play 開発者サービスの一部でソースが無く、そのフラグを返すことは確認できていない。比較のため、`root` だけの旧設定のビルドでデータが出ることも確かめられると、試験として強い。`bmgr init` は transport の保存データを初期化するので、実記録のある Pixel 11 では実行しない
-4. **lint は、まだ実行していない。** 規則の XML を検査する lint（`FullBackupContent` と同じ検査器、重大度 FATAL）の AOSP ソースを読むと、`path="."`（`//`・`..`・`/` を含まない）と、`<include>` が無いこと、5つの領域名は、いずれも指摘にならない。実行して確かめるなら `cd android && nice -n 10 ./gradlew :app:lintVitalRelease`（コンパイルを伴い、`android/` を作り直した直後はフルビルドになる）。AAB のビルドで走るかは未確認（走れば FATAL なので、規則が不正なときはビルドが落ちる）
+4. **lint（確認済み、2026-11-14）。** 規則の XML は、lint（`FullBackupContent` と同じ検査器、重大度 FATAL）が検査する。`cd android && nice -n 10 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` で `:app:lintVitalRelease` が走り、9領域の規則で `BUILD SUCCESSFUL`（フルビルドで 6分7秒）。バックアップ規則に関する指摘は無かった。`bundleRelease`（AAB）でも走るかは未確認（`assembleRelease` が走らせる）。ビルド後の APK の中身は、リソースのパスが短縮されている（`res/AX.xml` のような名前）ので、`aapt2 dump resources` で `xml/solo_plus_us_no_backup_rules` の実パスを引いてから、`aapt2 dump xmltree --file <実パス>` で読む。9領域が `cloud-backup`・`device-transfer` の両方に入っていた
 
-## `expo prebuild --clean` の影響と、実行前の確認
+## `expo prebuild` は既定で clean（`android/` を作り直す）。残すなら `--no-clean`
 
-**2026-11-14 の観察：** `--clean` なしの `npx expo prebuild --platform android --no-install` でも、`Clearing android` と表示され、`android/` が作り直された（`android/app/build` などのビルドキャッシュと、前回の APK も消えた）。**したがって、下の「まず `--clean` なしを試す」は、キャッシュを残す保証にならない。**
+**この Expo CLI では、`--clean` を付けなくても clean が既定。** `expo prebuild` の引数処理が `clean: !args['--no-clean']` で、ヘルプにも `--no-clean  Apply changes to the existing native folders instead of recreating them` とある（`node_modules/expo/node_modules/@expo/cli/build/src/prebuild/index.js`）。つまり、`npx expo prebuild` も `npm run prebuild`（`expo prebuild`）も、`android/`（と `ios/`）を削除して作り直し、`Clearing android` と表示される。`android/app/build` などのビルドキャッシュも、前回の APK も消える。**`android/` を残したまま plugin や `app.json` の変更だけを反映したいときは `--no-clean` を付ける。**
 
-- **仕組み（Expo CLI のソースで確認）：** `--clean` なしでも、`android/` が「malformed」と判定されると（アプリの `build.gradle`・プロジェクトの `build.gradle`・`AndroidManifest.xml`・`MainApplication` のどれかが見つからないとき。`clearNativeFolder.js` の `hasRequiredAndroidFilesAsync`）、`promptToClearMalformedNativeProjectsAsync` が `android/` を消す。**非対話の実行（Claude の Bash など）では、確認なしで消す**
-- **未確認：** このときなぜ「malformed」と判定されたかは分かっていない（再生成後の `android/` は4つとも揃っている）。再現するかは、次に `--clean` なしで prebuild したときに見る。キャッシュを残したいときは、実行前に `android/` の4ファイルがあることを確かめ、対話のターミナルで実行すると、消す前に確認が出る
+- **経緯：** 2026-11-14 に、`--clean` なしで `android/` が作り直されることに気づいた（`docs/health-connect-release.md` と README にも、原因不明の同じ観察が残っている）。当初「`android/` の必須ファイルが見つからず malformed と判定された」と推測して書いたが、誤りだった。判定関数（`hasRequiredAndroidFilesAsync`）を実行中の `android/` に当てると、malformed ではなかった。`--no-clean` を付けると、`Clearing android` は出ず `reusing /android` と表示され、`android/app/build`（854MB）・`android/.gradle`・前回の APK が残った（2026-11-14 に確認。規則 XML などの生成物は更新される）
+- 対話のターミナルで実行しても、clean の分岐では確認は出ない（確認が出るのは、`--no-clean` で malformed と判定されたときだけ）
 
-`android/` と `ios/` は `expo prebuild` の生成物で、どちらも gitignore 対象（`.gitignore` の `/android`・`/ios`）。`npm run prebuild` は `--clean` なしの `expo prebuild`。`--clean` を付けると、既存の `android/` と `ios/` を削除してから、`app.json`・`app.config.js`・`plugins/*.js` とテンプレートで作り直す（`--platform` で片方だけにもできる）。
+`android/` と `ios/` は `expo prebuild` の生成物で、どちらも gitignore 対象（`.gitignore` の `/android`・`/ios`）。既定（clean）では、既存の `android/` と `ios/` を削除してから、`app.json`・`app.config.js`・`plugins/*.js` とテンプレートで作り直す（`--platform` で片方だけにもできる）。
 
 - **端末に入っているアプリやそのデータには影響しない。** 影響するのは、この Mac のディスク上の生成物だけ
 - **gitignore 対象なので、削除したものは git から戻せない。** 生成物に直接加えた変更や、手で置いたファイルは失われる。このプロジェクトでは、修正を `plugins/*.js`・`app.json` 側に入れる方針（`ios/` を直接編集しても次の prebuild で消える）。2026-11-04 に調べた範囲では、`android/`・`ios/` に、再生成できないファイル（`local.properties`、`google-services.json`、リリース用の keystore や証明書、`credentials.json`、`xcuserdata`）は無かった。ただし、生成ファイルの中の細かい手編集までは、この確認では分からない
@@ -131,7 +131,7 @@ R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範
 
 実行前の確認：
 
-1. `--clean` が本当に必要か。plugin や `app.json` の変更を反映したいだけなら、まず `--clean` なしの `npm run prebuild` を試す（ただし上のとおり、`--clean` なしでも `android/` が消えることがある。ビルドキャッシュを残したいときは、先に4ファイルが揃っていることを確かめる）
+1. 作り直しが本当に必要か。plugin や `app.json` の変更を反映したいだけなら、`--no-clean` を付ける（付けないと、既定の clean でキャッシュが消える）
 2. `android/`・`ios/` に、手で入れた変更や置いたファイルが無いか。疑わしいときは、先に `android/`・`ios/` を別の場所へコピーしておき、実行後に差分を取る
 3. ほかのビルド（`./gradlew`・`xcodebuild`）が動いていないか
 4. 実行後はフルリビルドになる。時間と発熱を見込む
