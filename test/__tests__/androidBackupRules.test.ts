@@ -66,7 +66,14 @@ describe('Android backup exclusion rules (manifest attributes)', () => {
     expect(attributes['android:dataExtractionRules']).toBe(`@xml/${plugin.RULES_FILE_NAME.replace(/\.xml$/, '')}`);
   });
 
-  it('overwrites values another plugin set earlier', () => {
+  // This only covers our own function. It does NOT cover a plugin whose mod runs
+  // after ours: Expo runs mods in reverse registration order, so expo-secure-store
+  // (registered earlier in app.json) runs AFTER this plugin. What keeps it from
+  // changing the result is its own design (with `configureAndroidBackup: false` it
+  // only removes attributes equal to its own rule paths; with `true` it refuses to
+  // overwrite other values) plus the app.json test below. The final guarantee is
+  // the merged-manifest check in docs/android-build-notes.md.
+  it('replaces values that are already on the element', () => {
     const attributes = plugin.applyNoBackupAttributes({
       'android:allowBackup': 'true',
       'android:fullBackupContent': '@xml/other_plugin_backup_rules',
