@@ -29,11 +29,11 @@
  * the DB and the key's SharedPreferences were not excluded from D2D. Do not
  * simplify this back to `root`.
  *
- * The listed domains are all the ones Auto Backup includes by default: the
- * credential-protected storage (`root`, `file`, `database`, `sharedpref`,
- * `external`) and the device-protected storage (`device_root`, `device_file`,
- * `device_database`, `device_sharedpref`). `BackupAgent#fullBackup` walks both
- * with the same rules. They are all excluded, not just the two the app uses
+ * The listed domains are every domain the rules can name for the app's own
+ * data: the credential-protected storage (`root`, `file`, `database`,
+ * `sharedpref`, `external`) and the device-protected storage (`device_root`,
+ * `device_file`, `device_database`, `device_sharedpref`).
+ * `BackupAgent#fullBackup` walks both with the same rules. They are all excluded, not just the two the app uses
  * today (`file` and `sharedpref`), so that a library that starts keeping state
  * somewhere else, device-protected storage included, is not carried to another
  * device silently; nothing in this app needs to be restored by the OS
