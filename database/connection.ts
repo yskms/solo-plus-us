@@ -59,6 +59,11 @@ export function getDbDirectory(): Directory {
  * installs whose directory was created before this existed. Scoped to this
  * subdirectory only — `services/SafetyExportService.ts` relies on the rest
  * of Documents staying backed up.
+ *
+ * Android has no per-directory call here. This directory is under
+ * `Paths.document`, which is `files/` there (the `file` backup domain), and
+ * `plugins/withAndroidNoBackup.js` excludes that domain from cloud backup and
+ * device-to-device transfer.
  */
 function ensureDbDirectory(): Directory {
   const dir = getDbDirectory();

@@ -249,6 +249,24 @@ Android は `allowBackup=false`、iOS は DB ファイルに `isExcludedFromBack
 端末紛失＝全データ喪失となるため、**Export / Import が唯一の復旧手段**になる。
 この時点で D-09 / D-10 / D-13（Export の v1.0 必須化・無料化）が自動的に決まる。
 
+**追記（2026-11-14、記事の下書きのレビューで発見）**
+
+Android の `dataExtractionRules` を `<exclude domain="root" />` だけにしていたのは誤りだった。
+`root`・`file`・`database`・`sharedpref`・`external` は別々の領域で、`root` が指すのは
+データディレクトリ直下のファイルだけ（AOSP の `BackupAgent#fullBackup` は、`root` の走査から
+`files/`・`databases/`・`shared_prefs/` を外し、それぞれを別の領域として処理する）。
+DB は `Paths.document`（Android では `files/`、`file` 領域）、SecureStore は
+`shared_prefs/SecureStore.xml`（`sharedpref` 領域）にあるため、どちらも端末間移行から外れていなかった。
+`allowBackup="false"` だけで止まる端末では実害が出ないが、公式ドキュメントのとおり、Android 12 以降の
+一部の端末ではそれだけでは端末間移行が止まらない。また、独自の `dataExtractionRules` に置き換えた時点で、
+上の「SecureStore は自動除外」（expo-secure-store のプラグインが入れる規則）も効かなくなっていた。
+
+対応：`plugins/withAndroidNoBackup.js` で、5つの領域をすべて、クラウドバックアップと端末間移行の両方から
+除外する。`app.json` では expo-secure-store のプラグインに `configureAndroidBackup: false` を渡す。
+`test/__tests__/androidBackupRules.test.ts` で、`file`・`sharedpref` を含むことを確かめる。
+確認したのは、生成された Manifest とルール XML、マージ後の Manifest、AOSP のソースによる領域の意味まで。
+**実際の端末間移行は試していない。**
+
 ---
 
 ## D-08 独自 PIN を実装せず OS のデバイス認証に委譲する

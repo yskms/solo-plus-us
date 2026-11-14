@@ -188,7 +188,8 @@ test/__tests__/                   schema・ActivityRepository・ActivityService�
 ### 直近のレビューで見つかり、修正したもの
 
 1. **Android 12+ の端末間転送**（D-07 違反）：`allowBackup=false` だけでは D2D 転送を防げないため、
-   `dataExtractionRules` で明示的に無効化
+   `dataExtractionRules` で明示的に無効化（2026-11-14 追記：このときの `root` だけの指定は DB に効いていなかった。
+   5つの領域を列挙する形に直した。D-07 の追記と `docs/android-build-notes.md` 参照）
 2. **鍵の誤生成**：DB ファイルが既にあるのに鍵が読めない場合、新しい鍵を生成せず
    `DatabaseKeyUnavailableError` を投げるよう変更（既存 DB の鍵を上書きする事故を防止）
 3. **Migration 復元の安全性とダウングレード検出**：復元前に接続を閉じ `-wal`/`-shm` も削除。

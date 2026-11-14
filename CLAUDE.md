@@ -11,7 +11,7 @@
 | iOS のビルド・TestFlight、UIScene、戻るボタン・UndoSnackbar | `docs/ios-notes.md` |
 | Health Connect の同期・切断・全削除、ビルド分離、`EXPO_PUBLIC_*` | `docs/health-connect-dev-notes.md` |
 | Health Connect 対応版のリリース準備（健康アプリ申告の HC 欄、審査の懸念、データセーフティ・掲載文・カテゴリの見直し） | `docs/health-connect-release.md` |
-| ネイティブモジュール追加、Android のリリースビルド・AAB 確認、R8、ダーク/ライト切替 | `docs/android-build-notes.md` |
+| ネイティブモジュール追加、Android のリリースビルド・AAB 確認、R8、バックアップ除外、ダーク/ライト切替 | `docs/android-build-notes.md` |
 | `schema.ts`/migration を変えた後の実機テスト、adb のタップ無反応 | `docs/device-testing-notes.md` |
 | `t()`・翻訳キー・複数形 | `docs/i18n-notes.md` |
 | ストア掲載・紹介ページの文面、審査対応 | `docs/store-listing.md`、`docs/app-store-listing.md` |
@@ -223,6 +223,10 @@ iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOv
 `components/UndoSnackbar.tsx` はルート直下（`(tabs)` の外）に描画されるため、`contexts/TabBarHeight.tsx` で
 共有したタブバーの実測高さの分だけ底上げしている。`(tabs)` 以外の画面でトーストが高めに出るのは、
 既知の制約としてレビューで許容済み（`contexts/TabBarHeight.tsx` の doc comment 参照）。原文（確認日 2026-09-30 を含む）: `docs/ios-notes.md`
+
+### Android のバックアップ・端末間移行の除外（`plugins/withAndroidNoBackup.js`）は、領域を個別に列挙する
+
+`<exclude domain="root" />` だけでは、`files/`（DB。`Paths.document`）と `shared_prefs/`（SecureStore の鍵）は除外されない（`root`・`file`・`database`・`sharedpref`・`external` は別々の領域）。2026-11-14 まで `root` だけで、DB が端末間移行から外れていなかった。**`root` だけに戻さない・領域を減らさない。** expo-secure-store のプラグインは `configureAndroidBackup: false`（`app.json`）で、規則は自前の1つにまとめている。`keychainAccessible` は iOS 専用で、Android の鍵の保護には効かない。実際の端末間移行は未確認。理由・確認手順: `docs/android-build-notes.md`、D-07 の追記
 
 ### Android リリースビルド（`eas build --local`）の注意
 

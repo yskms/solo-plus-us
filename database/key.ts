@@ -1,9 +1,13 @@
 /**
  * 基本設計 v0.11 §8.2 (D-06) — the database encryption key.
  *
- * Generated once, stored in Keychain/Keystore, `WHEN_UNLOCKED_THIS_DEVICE_ONLY`
- * (D-07: never synced to another device via iCloud Keychain — the DB it
- * unlocks never leaves this device either).
+ * Generated once and stored with expo-secure-store. On iOS that is the
+ * Keychain with `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (D-07: never synced to another
+ * device via iCloud Keychain, and the DB it unlocks never leaves this device
+ * either). `keychainAccessible` is iOS-only: on Android it is ignored, and the
+ * value is kept in SharedPreferences (`shared_prefs/SecureStore.xml`),
+ * encrypted with an Android Keystore key. What keeps the Android key and DB
+ * out of backups is `plugins/withAndroidNoBackup.js` (D-07), not this option.
  *
  * Deliberately NOT stored with `requireAuthentication: true`. That option
  * ties the value to the device's current biometric enrollment; adding or
