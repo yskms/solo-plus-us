@@ -99,22 +99,27 @@ R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範
 
 `dataExtractionRules` の `domain` は、`root`・`file`・`database`・`sharedpref`・`external` が**別々の領域**。`root` が指すのはデータディレクトリ直下のファイルだけで、`files/`・`databases/`・`shared_prefs/` は含まない（AOSP の `BackupAgent#fullBackup` は、`root` の走査からこの3つを外し、それぞれを別の領域として処理する。Android 公式の説明も別の値として並べている）。
 
-- **経緯：** 2026-11-14 まで `<exclude domain="root" />` だけで、DB（`Paths.document` は Android では `files/`、`file` 領域）も SecureStore（`shared_prefs/SecureStore.xml`、`sharedpref` 領域）も、端末間移行から外れていなかった。記事の下書きのレビューで指摘され、AOSP のソースで確かめて直した（D-07 の追記）。鍵は Keystore にあって移らないので、実害は「DB があるのに鍵が読めず、復旧画面に入る」程度の見込み
+- **経緯：** 2026-11-14 まで `<exclude domain="root" />` だけで、DB（`Paths.document` は Android では `files/`、`file` 領域）も SecureStore（`shared_prefs/SecureStore.xml`、`sharedpref` 領域）も、端末間移行から外れていなかった。記事の下書きのレビューで指摘され、AOSP のソースで確かめて直した（D-07 の追記）。Android 12 以降では `allowBackup="false"` が端末間移行で無視される（下の「`allowBackup="false"` は…」）ので、Pixel を含む Android 12 以降の端末で、出荷済みの版（1.0.5 まで）は、機種変更の端末間移行で DB と鍵の暗号文が新しい端末へ移りうる状態だった。鍵は Keystore にあって移らないので、結果は「DB があるのに鍵が読めず、復旧画面に入る」見込み（SecureStore のソースでは、鍵が無いときは `null` を返してエントリを消し、`getOrCreateDatabaseKey` が `DatabaseKeyUnavailableError` を投げる。実機では未確認）。既に移行したユーザーは、この復旧画面で受け止める
 - **今の規則：** 5つの領域すべてを、`cloud-backup` と `device-transfer` の両方から除外する（`path="."`）。2つしか使っていなくても全部入れるのは、別の場所に状態を置くライブラリが増えても、黙って移らないようにするため。`device_*`（デバイス保護ストレージ）は使っていないので入れない
-- **`root` だけに戻さない・領域を減らさない。** 「全部 `root` で足りるはず」と簡略化したくなるが、効かない。`test/__tests__/androidBackupRules.test.ts` が `file`・`sharedpref` を含むことを確かめる
+- **`root` だけに戻さない・領域を減らさない。** 「全部 `root` で足りるはず」と簡略化したくなるが、効かない。`test/__tests__/androidBackupRules.test.ts` が、5領域（テスト側に固定で書いてある）が `cloud-backup`・`device-transfer` の両方にあること、Manifest の3属性（`allowBackup`・`fullBackupContent`・`dataExtractionRules`）が付くこと、`app.json` の `configureAndroidBackup: false` を確かめる。領域を減らす・属性を外すと落ちることは、壊して確認した（2026-11-14）
 - **expo-secure-store のプラグインは `configureAndroidBackup: false`**（`app.json`）。既定では、プラグインが SecureStore だけを除外する自前の規則を入れるが、このアプリは `dataExtractionRules` を自前の1つに置き換えるため、そちらは使われない（Expo のドキュメントも、独自の規則を使うときは `sharedpref` の `SecureStore` を自分で除外するよう案内している）
 - **`keychainAccessible`（`WHEN_UNLOCKED_THIS_DEVICE_ONLY`）は iOS 専用。** Android では無視され、「この端末だけ」にしているのは Keystore の鍵が取り出せないことと、上の除外
-- Android 11 以下は `allowBackup="false"` と `fullBackupContent="false"` で止まる想定（公式の注意書きは、Android 12 以降をターゲットにするアプリの一部の端末について）
+- **`allowBackup="false"` は、Android 12 以降の端末間移行を止めない。** AOSP の `BackupEligibilityRules#isAppBackupAllowed` は、端末間移行（`DEVICE_TRANSFER`）では、システムアプリ以外について、compat change `IGNORE_ALLOW_BACKUP_IN_D2D` が有効なら `allowBackup` の値にかかわらず許可する。この変更は targetSdk 31 以上で既定で有効（このアプリは 36）。Android 12・13・14・15 のタグと main のソースで確認した（2026-11-14）。`@Overridable` なのでメーカーが変えている可能性はあるが、公式の「一部のメーカーの端末」という書き方より、AOSP の既定のほうが広い。Pixel でも止まらない前提で扱う。端末間移行を止めているのは `dataExtractionRules` だけなので、`allowBackup="false"` があるからと規則を省かない
+- Android 11 以下は `allowBackup="false"` と `fullBackupContent="false"` で止まる想定
 
 確認の手順と、確認した範囲（2026-11-14）：
 
 1. `npx expo prebuild --platform android --no-install` のあと、`android/app/src/main/res/xml/solo_plus_us_no_backup_rules.xml` に5つの領域があること
 2. `cd android && nice -n 10 ./gradlew :app:processReleaseManifest :app:mergeReleaseResources` のあと、`android/app/build/intermediates/merged_manifests/release/` の Manifest に、`allowBackup="false"`・`fullBackupContent="false"`・`dataExtractionRules="@xml/solo_plus_us_no_backup_rules"` があり、`secure_store_*` の参照が無いこと。確認したら `./gradlew --stop`
-3. **実際の端末間移行は、まだ試していない。** Android 公式「Test backup and restore」の手順（Play 対応のエミュレータで `bmgr` の D2D transport を選び、`bmgr backupnow <package>`）で試せる。ただし、AOSP や Pixel では `allowBackup="false"` の時点で対象外になるので、規則だけを試すには `allowBackup="true"` にした試験用ビルドが要る。`bmgr init` は transport の保存データを初期化するので、実記録のある Pixel 11 では実行しない
+3. **実際の端末間移行は、まだ試していない。** Android 公式「Test backup and restore」の手順（Play 対応のエミュレータで `bmgr` の D2D transport（`com.google.android.gms/.backup.migrate.service.D2dTransport`）を選び、`bmgr backupnow <package>`）で試せる。**出荷する設定（`allowBackup="false"`）のままのビルドで試す。** 試験用に `allowBackup="true"` へ変える必要は無い（AOSP は端末間移行で `allowBackup` を無視する。上記）。transport が端末間移行を示すフラグ（`FLAG_DEVICE_TO_DEVICE_TRANSFER`）を返せば、`UserBackupManagerService#getBackupDestinationFromTransport` が `DEVICE_TRANSFER` の判定を使う（AOSP のソースで確認）。D2dTransport 自体は Google Play 開発者サービスの一部でソースが無く、そのフラグを返すことは確認できていない。比較のため、`root` だけの旧設定のビルドでデータが出ることも確かめられると、試験として強い。`bmgr init` は transport の保存データを初期化するので、実記録のある Pixel 11 では実行しない
+4. **lint は、まだ実行していない。** 規則の XML を検査する lint（`FullBackupContent` と同じ検査器、重大度 FATAL）の AOSP ソースを読むと、`path="."`（`//`・`..`・`/` を含まない）と、`<include>` が無いこと、5つの領域名は、いずれも指摘にならない。実行して確かめるなら `cd android && nice -n 10 ./gradlew :app:lintVitalRelease`（コンパイルを伴い、`android/` を作り直した直後はフルビルドになる）。AAB のビルドで走るかは未確認（走れば FATAL なので、規則が不正なときはビルドが落ちる）
 
 ## `expo prebuild --clean` の影響と、実行前の確認
 
-**2026-11-14 の観察：** `--clean` なしの `npx expo prebuild --platform android --no-install` でも、`Clearing android` と表示され、`android/` が作り直された（`android/app/build` などのビルドキャッシュと、前回の APK も消えた）。下の「まず `--clean` なしを試す」は、キャッシュを残す手段にならない場合がある。
+**2026-11-14 の観察：** `--clean` なしの `npx expo prebuild --platform android --no-install` でも、`Clearing android` と表示され、`android/` が作り直された（`android/app/build` などのビルドキャッシュと、前回の APK も消えた）。**したがって、下の「まず `--clean` なしを試す」は、キャッシュを残す保証にならない。**
+
+- **仕組み（Expo CLI のソースで確認）：** `--clean` なしでも、`android/` が「malformed」と判定されると（アプリの `build.gradle`・プロジェクトの `build.gradle`・`AndroidManifest.xml`・`MainApplication` のどれかが見つからないとき。`clearNativeFolder.js` の `hasRequiredAndroidFilesAsync`）、`promptToClearMalformedNativeProjectsAsync` が `android/` を消す。**非対話の実行（Claude の Bash など）では、確認なしで消す**
+- **未確認：** このときなぜ「malformed」と判定されたかは分かっていない（再生成後の `android/` は4つとも揃っている）。再現するかは、次に `--clean` なしで prebuild したときに見る。キャッシュを残したいときは、実行前に `android/` の4ファイルがあることを確かめ、対話のターミナルで実行すると、消す前に確認が出る
 
 `android/` と `ios/` は `expo prebuild` の生成物で、どちらも gitignore 対象（`.gitignore` の `/android`・`/ios`）。`npm run prebuild` は `--clean` なしの `expo prebuild`。`--clean` を付けると、既存の `android/` と `ios/` を削除してから、`app.json`・`app.config.js`・`plugins/*.js` とテンプレートで作り直す（`--platform` で片方だけにもできる）。
 
@@ -126,7 +131,7 @@ R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範
 
 実行前の確認：
 
-1. `--clean` が本当に必要か。plugin や `app.json` の変更を反映したいだけなら、まず `--clean` なしの `npm run prebuild` を試す
+1. `--clean` が本当に必要か。plugin や `app.json` の変更を反映したいだけなら、まず `--clean` なしの `npm run prebuild` を試す（ただし上のとおり、`--clean` なしでも `android/` が消えることがある。ビルドキャッシュを残したいときは、先に4ファイルが揃っていることを確かめる）
 2. `android/`・`ios/` に、手で入れた変更や置いたファイルが無いか。疑わしいときは、先に `android/`・`ios/` を別の場所へコピーしておき、実行後に差分を取る
 3. ほかのビルド（`./gradlew`・`xcodebuild`）が動いていないか
 4. 実行後はフルリビルドになる。時間と発熱を見込む

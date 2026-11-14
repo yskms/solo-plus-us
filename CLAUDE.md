@@ -226,7 +226,13 @@ iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOv
 
 ### Android のバックアップ・端末間移行の除外（`plugins/withAndroidNoBackup.js`）は、領域を個別に列挙する
 
-`<exclude domain="root" />` だけでは、`files/`（DB。`Paths.document`）と `shared_prefs/`（SecureStore の鍵）は除外されない（`root`・`file`・`database`・`sharedpref`・`external` は別々の領域）。2026-11-14 まで `root` だけで、DB が端末間移行から外れていなかった。**`root` だけに戻さない・領域を減らさない。** expo-secure-store のプラグインは `configureAndroidBackup: false`（`app.json`）で、規則は自前の1つにまとめている。`keychainAccessible` は iOS 専用で、Android の鍵の保護には効かない。実際の端末間移行は未確認。理由・確認手順: `docs/android-build-notes.md`、D-07 の追記
+`root`・`file`・`database`・`sharedpref`・`external` は別々の領域で、`<exclude domain="root" />` だけでは DB（`files/`）も SecureStore の鍵（`shared_prefs/`）も除外されない。Android 12 以降は `allowBackup="false"` が端末間移行で無視されるので（AOSP）、止めているのはこの規則だけ。
+
+- **`root` だけに戻さない・領域を減らさない**（`test/__tests__/androidBackupRules.test.ts` が守る）
+- expo-secure-store のプラグインは `configureAndroidBackup: false`（`app.json`）のまま。規則は自前の1つにまとめている
+- `keychainAccessible` は iOS 専用。Android の鍵の保護には効かない
+
+経緯・確認手順・未確認の範囲（実際の端末間移行は未実施）: `docs/android-build-notes.md`、D-07 の追記
 
 ### Android リリースビルド（`eas build --local`）の注意
 

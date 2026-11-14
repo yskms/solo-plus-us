@@ -230,6 +230,7 @@ iOS の Keychain 値は同一 Bundle ID の再インストール後も残る場�
 **決定**
 
 Android は `allowBackup=false`、iOS は DB ファイルに `isExcludedFromBackup` を設定する。
+（Android は `allowBackup=false` だけでは足りず、`dataExtractionRules` で領域ごとの除外が要った。下の 2026-11-14 の追記を参照）
 
 **理由**
 
@@ -242,7 +243,9 @@ Android は `allowBackup=false`、iOS は DB ファイルに `isExcludedFromBack
 1. SecureStore 内の鍵がバックアップされないこと
 2. SQLCipher DB 本体もバックアップ／端末転送の対象外であること
 
-（SecureStore は Android 側で自動除外されるが、アプリ DB 全体の除外はこれとは別問題）
+（SecureStore は Android 側で自動除外されるが、アプリ DB 全体の除外はこれとは別問題。
+ただし、この「自動除外」は、expo-secure-store のプラグインが入れる規則によるもので、自前の
+`dataExtractionRules` に置き換えた時点で効かなくなっていた。下の 2026-11-14 の追記を参照）
 
 **帰結**
 
@@ -257,15 +260,27 @@ Android の `dataExtractionRules` を `<exclude domain="root" />` だけにし�
 `files/`・`databases/`・`shared_prefs/` を外し、それぞれを別の領域として処理する）。
 DB は `Paths.document`（Android では `files/`、`file` 領域）、SecureStore は
 `shared_prefs/SecureStore.xml`（`sharedpref` 領域）にあるため、どちらも端末間移行から外れていなかった。
-`allowBackup="false"` だけで止まる端末では実害が出ないが、公式ドキュメントのとおり、Android 12 以降の
-一部の端末ではそれだけでは端末間移行が止まらない。また、独自の `dataExtractionRules` に置き換えた時点で、
-上の「SecureStore は自動除外」（expo-secure-store のプラグインが入れる規則）も効かなくなっていた。
+**`allowBackup="false"` は、Android 12 以降の端末間移行を止めない。** AOSP の
+`BackupEligibilityRules#isAppBackupAllowed` は、端末間移行では、システムアプリ以外について、
+compat change `IGNORE_ALLOW_BACKUP_IN_D2D` が有効なら `allowBackup` を無視する。この変更は
+targetSdk 31 以上で既定で有効（このアプリは 36）。Android 12〜15 のタグと main のソースで確認した。
+公式ドキュメントは「一部のメーカーの端末」と書くが、AOSP の既定は、Pixel を含む Android 12 以降の端末が対象。
+したがって、`root` だけの指定だった出荷済みの版（1.0.5 まで）は、機種変更の端末間移行で、
+暗号化された DB と、鍵の暗号文（SharedPreferences）が新しい端末へ移りうる状態だった。
+鍵は Keystore にあって移らないので、結果は「DB があるのに鍵が読めない」で、復旧画面に入る見込み
+（ソース上は、SecureStore が鍵なしで `null` を返し、`DatabaseKeyUnavailableError` になる。実機では未確認）。
+鍵が無いので、新しい端末で記録の内容が読まれる経路は想定していない。ただし、D-07 の意図（DB を
+端末間移行に出さない）は満たしていなかった。
+また、独自の `dataExtractionRules` に置き換えた時点で、上の「SecureStore は自動除外」
+（expo-secure-store のプラグインが入れる規則）も効かなくなっていた。
 
 対応：`plugins/withAndroidNoBackup.js` で、5つの領域をすべて、クラウドバックアップと端末間移行の両方から
 除外する。`app.json` では expo-secure-store のプラグインに `configureAndroidBackup: false` を渡す。
-`test/__tests__/androidBackupRules.test.ts` で、`file`・`sharedpref` を含むことを確かめる。
-確認したのは、生成された Manifest とルール XML、マージ後の Manifest、AOSP のソースによる領域の意味まで。
-**実際の端末間移行は試していない。**
+`test/__tests__/androidBackupRules.test.ts` で、5領域が両方の節にあること、Manifest の3属性が付くことを確かめる。
+確認したのは、生成された Manifest とルール XML、マージ後の Manifest、AOSP のソースによる領域の意味と
+`allowBackup` の扱いまで。lint の検査器もソースを読んだが、lint 自体は実行していない。
+**実際の端末間移行は試していない。** 出荷する設定のままのビルドで試せる（`allowBackup` が無視されるため、
+試験用に `true` へ変える必要は無い）。手順: `docs/android-build-notes.md`。
 
 ---
 

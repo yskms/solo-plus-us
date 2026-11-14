@@ -2,11 +2,17 @@
  * 基本設計 v0.11 §8.6 (D-07) - excludes the app's data from Android backup
  * and device-to-device transfer.
  *
- * `android:allowBackup="false"` stops cloud backup. But the Android docs say
- * that for apps targeting Android 12+ on some manufacturers' devices it does
- * not stop device-to-device (D2D) transfer. Android 12 introduced
+ * `android:allowBackup="false"` stops cloud backup, but it does NOT stop
+ * device-to-device (D2D) transfer on Android 12+. AOSP's
+ * `BackupEligibilityRules#isAppBackupAllowed` returns true for a non-system
+ * app during D2D whenever the compat change `IGNORE_ALLOW_BACKUP_IN_D2D` is
+ * enabled, whatever `allowBackup` says, and that change is enabled by default
+ * for apps whose targetSdk is 31 (Android 12) or higher. This app targets 36.
+ * (Checked in the android-12.0.0_r1, -13, -14 and -15 tags and in main. The
+ * change is `@Overridable`, so a manufacturer could differ; the Android docs
+ * word this as "some manufacturers' devices".) Android 12 introduced
  * `android:dataExtractionRules` to control cloud backup and D2D transfer
- * separately, so the rules below are the part that covers D2D.
+ * separately, so the rules below are what actually stops D2D.
  * `android:fullBackupContent="false"` covers Android 11 and lower, where
  * `allowBackup="false"` is enough on its own.
  *
@@ -43,7 +49,10 @@
  * is the state §8.6 exists to prevent.
  *
  * Checked: the generated manifest and rules XML, and the AOSP source for the
- * domain semantics. NOT checked: an actual D2D transfer on a device.
+ * domain semantics and the `allowBackup` handling in D2D. The lint detector
+ * for these rules (`FullBackupContentDetector`, severity FATAL) accepts
+ * `path="."` and no `<include>` by its source, but lint itself has not been
+ * run on this project. NOT checked: an actual D2D transfer on a device.
  *
  * This is one half of §8.6 ("検証対象は2つある"). The other half, actively
  * excluding the DB file from iCloud backup on iOS via
@@ -77,13 +86,23 @@ ${excludeLines}
 </data-extraction-rules>
 `;
 
+/**
+ * Sets the three backup attributes on the `<application>` element's attribute
+ * map. Split out from the mod so that `test/__tests__/androidBackupRules.test.ts`
+ * can check it without running Expo's mod pipeline.
+ */
+const applyNoBackupAttributes = (applicationAttributes) => {
+  applicationAttributes['android:allowBackup'] = 'false';
+  applicationAttributes['android:fullBackupContent'] = 'false';
+  applicationAttributes['android:dataExtractionRules'] = `@xml/${RULES_FILE_NAME.replace(/\.xml$/, '')}`;
+  return applicationAttributes;
+};
+
 const withAndroidNoBackupManifest = (config) => {
   return withAndroidManifest(config, (config) => {
     const application = config.modResults.manifest.application?.[0];
     if (application) {
-      application.$['android:allowBackup'] = 'false';
-      application.$['android:fullBackupContent'] = 'false';
-      application.$['android:dataExtractionRules'] = `@xml/${RULES_FILE_NAME.replace(/\.xml$/, '')}`;
+      applyNoBackupAttributes(application.$);
     }
     return config;
   });
@@ -110,3 +129,5 @@ const withAndroidNoBackup = (config) => {
 module.exports = withAndroidNoBackup;
 module.exports.EXCLUDED_DOMAINS = EXCLUDED_DOMAINS;
 module.exports.RULES_XML = RULES_XML;
+module.exports.RULES_FILE_NAME = RULES_FILE_NAME;
+module.exports.applyNoBackupAttributes = applyNoBackupAttributes;
