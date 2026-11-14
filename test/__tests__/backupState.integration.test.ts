@@ -5,6 +5,7 @@
  */
 import { createTestDb, type TestDb } from '../support/sqliteTestDb';
 import * as ActivityRepository from '../../repositories/ActivityRepository';
+import { deleteAllActivities } from '../../services/ActivityService';
 import { buildExportPayload, serializeExportFile } from '../../services/ExportService';
 import { performReplaceImport } from '../../services/ImportService';
 import { validateExportFile } from '../../services/importValidation';
@@ -81,5 +82,17 @@ describe('backup.* settings are device-owned', () => {
 
     expect(await getSetting(otherDb, 'backup.lastExportedAt')).toBe('2026-01-01T00:00:00Z');
     expect(await getSetting(otherDb, 'backup.reminderDismissedAt')).toBe('2026-02-02T00:00:00Z');
+  });
+
+  it('survive delete-all (D-58: kept on purpose; the reminder floors its baseline at the oldest record instead)', async () => {
+    await addActivity(db);
+    await setSetting(db, 'backup.lastExportedAt', '2026-01-01T00:00:00Z');
+    await setSetting(db, 'backup.reminderDismissedAt', '2026-02-02T00:00:00Z');
+
+    await deleteAllActivities(db);
+
+    expect(await getSetting(db, 'backup.lastExportedAt')).toBe('2026-01-01T00:00:00Z');
+    expect(await getSetting(db, 'backup.reminderDismissedAt')).toBe('2026-02-02T00:00:00Z');
+    expect((await loadBackupState(db)).oldestRecordCreatedAt).toBeNull();
   });
 });

@@ -115,11 +115,21 @@ export default function SettingsIndexScreen() {
   const { t } = useTranslation();
   // D-58: the people who most need the "records don't move to a new phone" note
   // are the ones who have never exported, so DATA says so here, not only inside
-  // Export & Import. Shown nothing until the first read finishes, so a slow read
-  // never flashes a wrong "you haven't exported".
+  // Export & Import. Shown nothing until the first read finishes (so a slow read
+  // never flashes a wrong "you haven't exported"), and nothing while there are no
+  // records and no export (there is nothing to export yet). Only JSON is counted
+  // (CSV cannot restore), so both strings say JSON. The date line reuses the
+  // Export screen's string so the two screens cannot drift apart.
   const { state: backup } = useBackupState();
   const exportedOn = backup?.lastExportedAt ? formatUtcIsoAsCalendarDate(t, backup.lastExportedAt) : null;
-  const exportNote = backup === null ? null : exportedOn ? t('settings.index.exportLast', { date: exportedOn }) : t('settings.index.exportNever');
+  const exportNote =
+    backup === null
+      ? null
+      : exportedOn
+        ? t('settings.data.lastExport', { date: exportedOn })
+        : backup.oldestRecordCreatedAt === null
+          ? null
+          : t('settings.index.exportNever');
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>

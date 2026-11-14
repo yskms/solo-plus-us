@@ -5,12 +5,14 @@
  * Pure on purpose (no DB, no clock): the caller passes `now` and the three
  * timestamps, so the rule is testable and the screen only decides how to draw.
  *
- * The rule: show it when the user has records and the last "backup-ish" event
- * is at least `BACKUP_REMINDER_INTERVAL_DAYS` old. That event is the latest of
- * the last JSON export and the last time the card was dismissed or followed;
- * when neither ever happened, the oldest record's creation time stands in, so
- * a new user is not nagged on day one but a long-time user who never exported
- * sees it right away.
+ * The rule: show it when the user has records and the baseline is at least
+ * `BACKUP_REMINDER_INTERVAL_DAYS` old. The baseline is the latest of three
+ * times: the last JSON export, the last time the card was dismissed or
+ * followed, and the oldest record's creation time. The last one is a floor:
+ * nothing on this device needed a backup before its oldest record existed. So a
+ * new user is not nagged on day one, a long-time user who never exported sees
+ * the card right away, and someone who deleted everything and started again is
+ * counted from the first new record, not from an export of the deleted data.
  */
 
 export const BACKUP_REMINDER_INTERVAL_DAYS = 180;
@@ -38,12 +40,13 @@ export function shouldShowBackupReminder(input: BackupReminderInput): boolean {
   const oldest = toMs(input.oldestRecordCreatedAt);
   if (oldest === null) return false; // no records: nothing to back up yet
 
-  // An event dated in the future (the clock was wrong when it was saved) is
+  // A time dated in the future (the clock was wrong when it was saved) is
   // ignored, so it cannot hide the card until that date finally arrives.
-  const events = [toMs(input.lastExportedAt), toMs(input.reminderDismissedAt)].filter(
+  const times = [oldest, toMs(input.lastExportedAt), toMs(input.reminderDismissedAt)].filter(
     (ms): ms is number => ms !== null && ms <= input.nowMs,
   );
-  const baseline = events.length > 0 ? Math.max(...events) : oldest;
+  if (times.length === 0) return false;
+  const baseline = Math.max(...times);
 
   return input.nowMs - baseline >= BACKUP_REMINDER_INTERVAL_DAYS * MS_PER_DAY;
 }

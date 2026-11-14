@@ -25,6 +25,14 @@ describe('shouldShowBackupReminder', () => {
     expect(shouldShowBackupReminder({ ...base, oldestRecordCreatedAt: daysAgo(180) })).toBe(true);
   });
 
+  it('counts from the oldest record when it is newer than the last export (everything was deleted and started again)', () => {
+    // Exported 300 days ago, then deleted all and recorded again 3 days ago.
+    expect(shouldShowBackupReminder({ ...base, lastExportedAt: daysAgo(300), oldestRecordCreatedAt: daysAgo(3) })).toBe(false);
+    expect(shouldShowBackupReminder({ ...base, lastExportedAt: daysAgo(300), oldestRecordCreatedAt: daysAgo(179) })).toBe(false);
+    expect(shouldShowBackupReminder({ ...base, lastExportedAt: daysAgo(300), oldestRecordCreatedAt: daysAgo(180) })).toBe(true);
+    expect(shouldShowBackupReminder({ ...base, reminderDismissedAt: daysAgo(300), oldestRecordCreatedAt: daysAgo(3) })).toBe(false);
+  });
+
   it('waits 180 days after the last export', () => {
     expect(shouldShowBackupReminder({ ...base, lastExportedAt: daysAgo(10) })).toBe(false);
     expect(shouldShowBackupReminder({ ...base, lastExportedAt: daysAgo(179) })).toBe(false);
@@ -51,5 +59,11 @@ describe('shouldShowBackupReminder', () => {
     const future = new Date(NOW + 400 * DAY).toISOString();
     expect(shouldShowBackupReminder({ ...base, lastExportedAt: future })).toBe(true);
     expect(shouldShowBackupReminder({ ...base, reminderDismissedAt: future })).toBe(true);
+  });
+
+  it('ignores a future-dated oldest record when an older event gives a usable baseline', () => {
+    const future = new Date(NOW + 400 * DAY).toISOString();
+    expect(shouldShowBackupReminder({ ...base, oldestRecordCreatedAt: future, lastExportedAt: daysAgo(300) })).toBe(true);
+    expect(shouldShowBackupReminder({ ...base, oldestRecordCreatedAt: future })).toBe(false);
   });
 });

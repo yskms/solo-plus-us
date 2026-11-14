@@ -4,7 +4,7 @@
  * the single most important control in the app — the Record FAB
  * (§7.1 "基本記録は2タップ以内を目標とする").
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -61,6 +61,7 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
   const [recent, setRecent] = useState<Activity[]>([]);
   const [lastActivity, setLastActivity] = useState<Activity | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
+  const reminderHandledRef = useRef(false);
 
   const reload = useCallback(async () => {
     const today = todayLocalDate();
@@ -74,8 +75,13 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
     setLastActivity(recentActivities[0] ?? null);
 
     // D-58. A failure here must not break the rest of Today: the card is a nudge.
+    // `reminderHandledRef` wins over what this read finds: a reload that began
+    // before "Close" was tapped may read the not-yet-written state, and must not
+    // bring the card back. Staying hidden for the rest of this mount is the same
+    // answer the 180 day rule gives anyway.
     try {
-      setShowBackupReminder(shouldShowBackupReminder({ nowMs: Date.now(), ...(await loadBackupState(db)) }));
+      const show = shouldShowBackupReminder({ nowMs: Date.now(), ...(await loadBackupState(db)) });
+      setShowBackupReminder(show && !reminderHandledRef.current);
     } catch (error) {
       logError('Backup reminder check failed', error);
     }
@@ -84,6 +90,7 @@ export default function TodayScreen({ isActive }: { isActive: boolean }) {
   // Both buttons count as "handled": either way the card waits a full interval
   // (lib/backupReminder.ts) before it comes back.
   const handleReminderHandled = useCallback(async () => {
+    reminderHandledRef.current = true;
     setShowBackupReminder(false);
     try {
       await recordBackupReminderHandled(db);
