@@ -66,6 +66,7 @@
         }
       ],
       "./plugins/withAndroidNoBackup.js",
+      "./plugins/withAndroidPortraitNotRequired.js",
       "./plugins/withoutScreenCaptureDetectionPermissions.js",
       "./plugins/withAndroidNightColors.js",
       "./plugins/withAndroidR8.js",
