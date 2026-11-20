@@ -4399,7 +4399,7 @@ HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `
   カテゴリは Lifestyle のまま。健康アプリ申告の Health Connect 欄は、Console に出ないため未記入。審査は通り、公開された（承認の日付と、Google から HC の申告を求められたかは未確認。`docs/health-connect-release.md`）
 - リリースノートの下書きは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.5 / versionCode 10）」
 
-### v1.0.6 (versionCode 12) の修正版ビルド（2026-11-20 ビルド。Play への提出は未確認）
+### v1.0.6 (versionCode 12) の修正版ビルド（2026-11-20 ビルドし、同日に審査へ提出。ユーザーの報告で、Console のエラーは出なかった。結果は未着）
 
 端末間移行からの DB・鍵の除外（D-07 の追記、9領域）と、機種変更の案内（D-58）を入れた修正版。`chore/release-1.0.6` から
 `eas build --local -p android --profile production-with-health-connect`（`nice -n 10`）でビルドした（公開中の 1.0.5 が HC 版なので、`production` ではなくこちら）。
@@ -4412,6 +4412,6 @@ HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `
   **`aapt2 dump badging` が `uses-feature-not-required: name='android.hardware.screen.portrait'` を示し、`uses-implied-feature` の screen.portrait は消えた**。
   JS バンドルに `backup.lastExportedAt`・`backup.reminderDismissedAt`・`deviceChangeNotice` が入っている（11 で確認。JS は同じ）
 - ビルドの `bundleRelease` でも `:app:lintVitalRelease` が走って成功した（ログで確認）
-- `mapping.txt.gz` は `docs/_local/mapping/1.0.6-vc12-hc/`（gitignore 済み）。AAB（`docs/_local/release/solo-plus-us-1.0.6-vc12.aab`、SHA-256 `2b508315…345510`）は、Play へ上げたら削除する
-- 掲載文の「機種変更の案内」2文は、リリースと一緒に Console へ反映する（下書き: [docs/store-listing.md](docs/store-listing.md)）
+- `mapping.txt.gz` は `docs/_local/mapping/1.0.6-vc12-hc/`（gitignore 済み）。AAB（SHA-256 `2b508315…345510`）は、審査に出したので 2026-11-20 に削除した
+- 掲載文の「機種変更の案内」2文は、リリースと一緒に Console へ反映する予定だった（下書き: [docs/store-listing.md](docs/store-listing.md)）。**同じ送信に入れたかは未確認**
 - **この AAB 自体の実機確認、実際の端末間移行は、未実施**
