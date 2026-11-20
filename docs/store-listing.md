@@ -378,6 +378,29 @@ Health Connect を有効にした最初の版（D-55）。**Console の申告・
 
 ---
 
+## リリースノート（v1.0.6 / versionCode 11、機種変更の案内と端末間移行の除外。2026-11-20 にビルド、Play への提出は未確認）
+
+端末間移行からの DB・鍵の除外（D-07 の追記）と、機種変更の案内（D-58）の版。各言語 500 文字以内（en 463、ja 238）。
+Health Connect は触れない（この版で変わらない）。**詳しい説明の末尾へ機種変更の案内の2文を足す変更（上の 2026-11-14 の下書き）は、この版と同じ日に Console へ反映する。**
+「端末間移行の除外」は、利用者には「新しい端末へコピーされない」とだけ書く（実際の端末間移行は未確認で、「起動できなくなっていた」とまでは言えないため）。
+
+```
+<en-US>
+- Added a note that your records are not carried over to a new phone automatically, because the encryption key never leaves your device. Before you switch phones, export JSON from Settings > Export & Import, then import it on the new phone
+- Settings and the Export screen now show the date of your last JSON export. Home shows a reminder card about every six months, and you can close it
+- On Android, setting up a new phone no longer copies the app's data to it
+</en-US>
+<ja-JP>
+・機種変更しても、記録は新しい端末へ自動では引き継がれません（暗号化の鍵が端末から出ないため）。その案内を追加しました。変更の前に、設定 > エクスポートとインポート で JSON をエクスポートし、新しい端末でインポートしてください
+・設定とエクスポート画面に、最後に JSON をエクスポートした日を表示します。ホームには、半年に一度ほど案内のカードを表示します（閉じられます）
+・Android の機種変更で、アプリのデータが新しい端末へコピーされないように修正しました
+</ja-JP>
+```
+
+リリース名は `11 (1.0.6)`。
+
+---
+
 ## Play Console 申告の記録（2026-09-24、v0.1.0 提出時）
 
 更新版を出すときに、同じ回答で通るか／変わったかを判断するための控え。
