@@ -4413,5 +4413,5 @@ HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `
   JS バンドルに `backup.lastExportedAt`・`backup.reminderDismissedAt`・`deviceChangeNotice` が入っている（11 で確認。JS は同じ）
 - ビルドの `bundleRelease` でも `:app:lintVitalRelease` が走って成功した（ログで確認）
 - `mapping.txt.gz` は `docs/_local/mapping/1.0.6-vc12-hc/`（gitignore 済み）。AAB（SHA-256 `2b508315…345510`）は、審査に出したので 2026-11-20 に削除した
-- 掲載文の「機種変更の案内」2文は、リリースと一緒に Console へ反映する予定だった（下書き: [docs/store-listing.md](docs/store-listing.md)）。**同じ送信に入れたかは未確認**
+- 掲載文の「機種変更の案内」2文は、同じ送信で Console へ反映した（2026-11-20、ユーザーの報告。文面: [docs/store-listing.md](docs/store-listing.md)）
 - **この AAB 自体の実機確認、実際の端末間移行は、未実施**
