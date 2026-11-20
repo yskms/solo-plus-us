@@ -247,6 +247,10 @@ iOS の戻るボタン（通常表示・長押しの履歴メニュー・VoiceOv
 - **`expo prebuild` は、`--clean` を付けなくても既定で clean**（`android/` を作り直し、ビルドキャッシュが消えてフルリビルドになる）。残したまま plugin や `app.json` の変更だけ反映するなら `--no-clean`（詳細: `docs/android-build-notes.md`）
 - **リリース前に、AAB の Manifest に `android.permission.health.*` が無いことを毎回確認する**（手順: `docs/android-build-notes.md`）
 
+### 縦向き固定が補う必須の機能（`plugins/withAndroidPortraitNotRequired.js`）は外さない
+
+`orientation: portrait` により、Android が `android.hardware.screen.portrait` を**必須の機能**として補い、Play Console がリリースの審査送信を止める（v1.0.6 で発生、2026-11-20）。plugin が `required="false"` で明示して外している。**plugin を外さない、`required` を `true` にしない、向きの固定を外して解決しようとしない**（画面は縦向き前提）。リリース前に、AAB で `uses-feature-not-required` になっていることを確認する。経緯・確認手順: `docs/android-build-notes.md`
+
 ### Android R8（難読化・最適化・縮小）——`plugins/withAndroidR8.js` は外さない・簡略化しない
 
 2027年2月から、Play は DEX が 10MB 超のアプリに難読化・最適化・縮小の各率 25% 以上を求める。plugin なしの DEX は約 46MB、ありで約 9.9MB（10MB に近い。依存を足して超えると各率が要件の対象になる）。理由は `plugins/withAndroidR8.js` 冒頭のコメント、実測は README「Android R8 の有効化」。外さないもの：

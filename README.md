@@ -4399,17 +4399,19 @@ HC 有効の最初の版（D-55）。`feat/hc-enable-consent`（2026-11-10 に `
   カテゴリは Lifestyle のまま。健康アプリ申告の Health Connect 欄は、Console に出ないため未記入。審査は通り、公開された（承認の日付と、Google から HC の申告を求められたかは未確認。`docs/health-connect-release.md`）
 - リリースノートの下書きは [docs/store-listing.md](docs/store-listing.md)「リリースノート（v1.0.5 / versionCode 10）」
 
-### v1.0.6 (versionCode 11) の修正版ビルド（2026-11-20 ビルド。Play への提出は未確認）
+### v1.0.6 (versionCode 12) の修正版ビルド（2026-11-20 ビルド。Play への提出は未確認）
 
 端末間移行からの DB・鍵の除外（D-07 の追記、9領域）と、機種変更の案内（D-58）を入れた修正版。`chore/release-1.0.6` から
 `eas build --local -p android --profile production-with-health-connect`（`nice -n 10`）でビルドした（公開中の 1.0.5 が HC 版なので、`production` ではなくこちら）。
 
-- `app.json`: `version` 1.0.5→1.0.6、`android.versionCode` 10→11（`autoIncrement` が加算）
-- AAB の確認（2026-11-20）: versionCode 11・versionName 1.0.6・targetSdk 36、4 つの ABI、DEX 1 ファイル 9,856,236 バイト（1.0.5 と同じ）、AAB は 91,866,000 バイト。
+- **versionCode 11 の AAB は使わなかった。** Console のリリース画面で「必須のハードウェア機能の申告により、アプリの配信が制限されています（`android.hardware.screen.portrait`）」が出て、審査に送信できなかった。縦向き固定から必須として補われる機能を、`plugins/withAndroidPortraitNotRequired.js` で `required="false"` にして作り直したのが 12（`docs/android-build-notes.md`「縦向き固定と `android.hardware.screen.portrait`」）。11 の AAB と mapping は削除した
+- `app.json`: `version` 1.0.5→1.0.6、`android.versionCode` 10→12（`autoIncrement` が 11、12 と加算）
+- AAB の確認（2026-11-20）: versionCode 12・versionName 1.0.6・targetSdk 36、4 つの ABI、DEX 1 ファイル 9,856,236 バイト（1.0.5 と同じ）、AAB は 91,866,035 バイト。
   権限は 1.0.5 と同じ（**`android.permission.health.WRITE_SEXUAL_ACTIVITY` の1つだけ**）。署名の SHA-256 は 1.0.5 と同じ（`AF:5D:C2:49:…:C0:10:36`）。
   Manifest に `allowBackup="false"`・`fullBackupContent="false"`・`dataExtractionRules`（自前の規則）があり、規則 XML は 9 領域を `cloud-backup`・`device-transfer` の両方で除外している。
-  JS バンドルに `backup.lastExportedAt`・`backup.reminderDismissedAt`・`deviceChangeNotice` が入っている
+  **`aapt2 dump badging` が `uses-feature-not-required: name='android.hardware.screen.portrait'` を示し、`uses-implied-feature` の screen.portrait は消えた**。
+  JS バンドルに `backup.lastExportedAt`・`backup.reminderDismissedAt`・`deviceChangeNotice` が入っている（11 で確認。JS は同じ）
 - ビルドの `bundleRelease` でも `:app:lintVitalRelease` が走って成功した（ログで確認）
-- `mapping.txt.gz` は `docs/_local/mapping/1.0.6-vc11-hc/`（gitignore 済み）。AAB（SHA-256 `fac9572c…995c82e`）は `docs/_local/release/` に置いてあり、Play へ上げたら削除する
+- `mapping.txt.gz` は `docs/_local/mapping/1.0.6-vc12-hc/`（gitignore 済み）。AAB（`docs/_local/release/solo-plus-us-1.0.6-vc12.aab`、SHA-256 `2b508315…345510`）は、Play へ上げたら削除する
 - 掲載文の「機種変更の案内」2文は、リリースと一緒に Console へ反映する（下書き: [docs/store-listing.md](docs/store-listing.md)）
 - **この AAB 自体の実機確認、実際の端末間移行は、未実施**

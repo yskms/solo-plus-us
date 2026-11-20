@@ -64,6 +64,7 @@ Day/Night モード、ステータスバー）にあることが多く、`values
   binary` → `aapt2 dump badging` で versionCode・versionName・権限を見る
   （`~/Library/Android/sdk/build-tools/*/aapt2`）。健康データ権限
   （`android.permission.health.*`）が無いことを毎回確認する。
+  あわせて、`aapt2 dump badging` に `uses-feature-not-required: name='android.hardware.screen.portrait'` が出て、`uses-implied-feature` の screen.portrait が無いことも確認する（下の「縦向き固定と…」）。
 - ビルドログの `expo doctor` の「Patch version mismatches」は警告で、ビルドは
   止まらず成功する（既存の状態）。
 
@@ -94,6 +95,15 @@ R8 を有効にすると約 9.9MB（各率 80% 台）。実測・確認した範
   `EXPO_PUBLIC_HEALTH_CONNECT_ENABLED=1` を `expo prebuild` と `./gradlew assembleRelease` の両方に付ける。
   結果と、確認しなかった範囲は `docs/health-connect-release.md`）
 - DEX は 10MB に近い（9.86MB）。依存を足して 10MB を超えると、率（各 25% 以上）が要件の対象になる
+
+## 縦向き固定と `android.hardware.screen.portrait`（`plugins/withAndroidPortraitNotRequired.js` は外さない）
+
+`app.json` の `orientation: portrait` で、Activity に `screenOrientation="portrait"` が付く。Android は、向きを指定した Activity があると、その向きを**必須の機能とみなす**（公式の uses-feature の説明）。aapt が `android.hardware.screen.portrait` を補い（`aapt2 dump badging` に `uses-implied-feature: ... reason='one or more activities have specified a portrait orientation'`）、Play は縦向きを持たない端末（デスクトップ、Android XR など）を配信対象から外す。
+
+- **経緯（2026-11-20）：** v1.0.6 の AAB（versionCode 11）を Console のリリース画面に出したら、「必須のハードウェア機能の申告により、アプリの配信が制限されています」（`android.hardware.screen.portrait`、電話・タブレット・Desktop・Android XR に影響）が出て、**審査に送信できなかった**。向きの設定は 1.0.5 以前から同じで、これまでの送信では止まらなかった（Console の検査が新しくなった可能性があるが、未確認）
+- **今の対処：** plugin が `<uses-feature android:name="android.hardware.screen.portrait" android:required="false" />` を足す。公式の対処（向きを指定していても、必須でなければ、同じ機能を `required="false"` で明示して、補われた必須を無効にする）。**縦向き固定は変えていない**ので、スマートフォンでの見え方は同じ。縦向きを持たない端末でも、アプリは縦向きの画面で開く
+- **外さない・戻さない：** plugin を外す、`required` を `true` にする、のどちらも、次のリリースで同じ警告が出て、審査に送信できなくなる。向きの固定（`orientation`）を外して解決しようとしない（画面は縦向き前提）。`test/__tests__/androidPortraitNotRequired.test.ts` が、宣言の内容と `app.json` の登録、`orientation` が `portrait` のままであることを守る
+- **確認：** AAB の `aapt2 dump badging`（手順は「Android リリースビルド」の節）に `uses-feature-not-required: name='android.hardware.screen.portrait'` が出て、`uses-implied-feature` の screen.portrait が無いこと。`android/` を消さずに最終の Manifest だけ見るなら、`expo config --type introspect --json` の `uses-feature`。**リリース前の確認項目に加える**
 
 ## Android のバックアップ・端末間移行の除外（`plugins/withAndroidNoBackup.js`）は、領域を個別に列挙する
 
