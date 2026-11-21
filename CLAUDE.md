@@ -195,17 +195,25 @@ HTML コメントはそのまま配信されて誰でもソースで読めるの
   写さない。** 手順と理由は `docs/app-store-listing.md` の「紹介ページの URL を分ける」
 - 申告したコンテンツレーティング（「詳しい記述を伴わない性行為への言及」）より踏み込んだ
   表現（描写・画像）は書かない
-- Android 用の日本語ページ（`/ja/`）は作ってよい。App Store のリンクと、JSON-LD の
-  `operatingSystem` の `"iOS, Android"` は、iOS が公開されてから `/ios/` に足す（ルートには足さない）
+- Android 用の日本語ページは `public/ja/index.html`（2026-11-21 に作成）。App Store のリンクと、JSON-LD の
+  `operatingSystem` の `"iOS, Android"` は、iOS が公開されてから `/ios/` に足す（ルートと `/ja/` には足さない）
 - og・JSON-LD の description は meta description と同じ文にしておく（両ページとも、片方だけ
   直さない）
-- **ルート（Android 用）は EN / 日本語の切替式**（Filto の紹介ページと同じ作り。`/ja/` は作っていない）。
-  表示言語は `?lang=` > 前回の選択 > ブラウザの言語の順で決める。localStorage のキー
-  `solo-plus-us-lang` は、`yskms.github.io` の全リポジトリが同じオリジンで localStorage を共有するため
-  （Filto は `filto-lang`）、他ページと被らない名前にしてある。変えない。プライバシーポリシーは
-  併記のまま（切替式だと「英語しか無い」と誤解されたため）。EN / JA は両方が DOM にあり、使わない側は
-  `display: none` なので、`p:last-child` のような「最後の子」の指定は効かない（余白は個別に付ける）
-- ルートの画像（`public/assets/images/`）は、`assets/store-screenshots/` を縮小した webp のコピー。
+- **ルートは英語、`/ja/` は日本語の、別々の静的ページ**（EN / 日本語のボタンは、もう一方へのリンク）。
+  **JS で言語を切り替える作りにしない。** クローラーは言語を `en` 扱いにして localStorage も持たないので、
+  日本語が `display: none` のままになり、検索で評価されない（一度そう作り、レビューで指摘されて分けた）。
+  retracks など他のアプリの `/ja/` と同じ規約で、両ページに `hreflang`（`en`・`ja`・`x-default`＝ルート）を
+  入れ、canonical は各ページ自身にする。title・meta・og・JSON-LD の description は、ページ内で同じ文。
+  **ブラウザの言語による自動リダイレクトはしない**（Google が非推奨。日本語のブラウザには、ルートに
+  「日本語版はこちら」のリンクを出すだけ）。CSS は `public/assets/site.css` で共通。文面は両ページで同期する。
+  URL を足したら、ハブ（`yskms.github.io`）の sitemap も見直す（別リポジトリ。公開は solo-plus-us が先）
+- **文面は Play の詳しい説明（HC 版）に合わせる。「Everything stays on your device」「端末の中だけに
+  保存」は使わない。** HC に書いた記録は、許可した他のアプリが読めるので、データセーフティの「ヘルス情報を
+  共有」と食い違う（旧ページのリード文を流用して一度入れ、レビューで指摘された）。「暗号化されたローカル
+  データベース」「アカウントなし」「サーバーとの同期なし」の言い方にする。HC の説明（任意、保存する範囲、
+  他のアプリが読めること）も載せている。日本語の HC は、ページも掲載文に揃えてカタカナ「ヘルスコネクト」
+  （アプリ内の表記の統一は別。`docs/health-connect-release.md`）
+- 両ページの画像（`public/assets/images/`）は、`assets/store-screenshots/` を縮小した webp のコピー。
   ストアのスクリーンショットを差し替えたら作り直す（コマンド: `docs/store-listing.md`
   「掲載情報のその他の項目」）
 - Google Play のバッジは `/ios/` にも載せたままでよい（ユーザーが許容済み。理由と、外す条件は

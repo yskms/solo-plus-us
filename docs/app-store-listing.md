@@ -364,7 +364,8 @@ canonical・og:url は `/ios/`）→ ② ユーザーが App Store Connect の�
   `docs/store-listing.md` の Play の掲載文と揃える）。①②が済むまで、ルートの title・
   description・本文は変えない
 - Android 用の日本語ページ（`/ja/`）は、作ってよい（以前の「iOS が決着するまで作らない」
-  は、ルートが iOS のサポート URL を兼ねていたための制約だった。未作成）
+  は、ルートが iOS のサポート URL を兼ねていたための制約だった。2026-11-21 に `public/ja/index.html`
+  として作成した。ルートは英語、`/ja/` は日本語の静的ページ）
 - App Store のリンクは `/ios/` に、iOS が公開されてから足す。ルートには足さない
 - sitemap と、ハブ（`yskms.github.io`）からのリンクは、新しいページを足す前に必ず見直す
   （yskms-marketing の `docs/site-plan.md`）。ハブのカードの説明は、2026-10-31 に、ルートの文面に

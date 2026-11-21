@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-lang="en">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,9 @@
 <meta name="theme-color" content="#F8F7FA" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0F1413" media="(prefers-color-scheme: dark)">
 <link rel="canonical" href="https://yskms.github.io/solo-plus-us/">
+<link rel="alternate" hreflang="en" href="https://yskms.github.io/solo-plus-us/">
+<link rel="alternate" hreflang="ja" href="https://yskms.github.io/solo-plus-us/ja/">
+<link rel="alternate" hreflang="x-default" href="https://yskms.github.io/solo-plus-us/">
 <link rel="icon" type="image/png" href="./icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Solo + Us">
@@ -16,6 +19,7 @@
 <meta property="og:description" content="Solo + Us is a private, offline sex and self-pleasure log for Android. Encrypted on your device, no account, no ads.">
 <meta property="og:image" content="https://yskms.github.io/solo-plus-us/icon.png">
 <meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ja_JP">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Solo + Us: Sex Tracker - Private sex and self-pleasure log">
 <meta name="twitter:description" content="Solo + Us is a private, offline sex and self-pleasure log for Android. Encrypted on your device, no account, no ads.">
@@ -38,446 +42,36 @@
 }
 </script>
 <!--
-  ストア掲載情報の「ウェブサイト」欄から開かれる、Android 用の紹介ページ。
+  ストア掲載情報の「ウェブサイト」欄から開かれる、Android 用の英語の紹介ページ。日本語は ja/index.html。
   文面やリンクを変える前に、CLAUDE.md の「紹介ページ」の節と docs/store-listing.md を読むこと。
-  配色はアプリのテーマ（constants/theme.ts の solo / partnered）に合わせた値で、自動では同期されない。
-  privacy-policy.html の配色とは別。
+  CSS は assets/site.css（両ページ共通）。配色はアプリのテーマ（constants/theme.ts の solo / partnered）に
+  合わせた値で、自動では同期されない。privacy-policy.html の配色とは別。
 -->
-<script>
-  // 表示言語の決定（描画前に実行してちらつきを防ぐ）。優先順位: ?lang= > 前回の選択 > ブラウザの言語
-  (function () {
-    var lang = null;
-    function valid(v) { return v === 'ja' || v === 'en'; }
-    try {
-      var q = new URLSearchParams(location.search).get('lang');
-      if (valid(q)) lang = q;
-    } catch (e) {}
-    if (!lang) {
-      try {
-        var saved = localStorage.getItem('solo-plus-us-lang');
-        if (valid(saved)) lang = saved;
-      } catch (e) {}
-    }
-    if (!lang) {
-      var nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
-      lang = /^ja/i.test(nav) ? 'ja' : 'en';
-    }
-    document.documentElement.setAttribute('data-lang', lang);
-    document.documentElement.setAttribute('lang', lang);
-  })();
-</script>
-<style>
-  :root {
-    color-scheme: light;
-    --bg: #F8F7FA;
-    --glow-1: rgb(46 125 107 / 14%);
-    --glow-2: rgb(244 166 153 / 30%);
-    --surface: rgb(255 255 255 / 72%);
-    --surface-strong: #FFFFFF;
-    --text: #1F2937;
-    --muted: #566170;
-    --border: rgb(31 41 55 / 10%);
-    --border-hover: rgb(31 41 55 / 22%);
-    --solo: #2E7D6B;
-    --partnered: #F4A699;
-    --on-solo: #FFFFFF;
-    --link: #2E7D6B;
-    --gradient: linear-gradient(90deg, #2E7D6B 15%, #C9655A 100%);
-    --icon-bg: linear-gradient(135deg, rgb(46 125 107 / 14%), rgb(244 166 153 / 30%));
-    --icon-border: rgb(31 41 55 / 8%);
-    --icon-stroke: #2E7D6B;
-    --shadow: 0 24px 60px rgb(31 41 55 / 16%);
-    --shadow-soft: 0 8px 24px rgb(31 41 55 / 8%);
-    --switch-bg: rgb(248 247 250 / 80%);
-    --frame: #1F2937;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      --bg: #0F1413;
-      --glow-1: rgb(79 168 144 / 22%);
-      --glow-2: rgb(238 160 160 / 11%);
-      --surface: rgb(255 255 255 / 4%);
-      --surface-strong: rgb(255 255 255 / 8%);
-      --text: #F2F4F3;
-      --muted: #A8B3AF;
-      --border: rgb(255 255 255 / 10%);
-      --border-hover: rgb(255 255 255 / 22%);
-      --solo: #4FA890;
-      --partnered: #F0B2A6;
-      --on-solo: #0F1413;
-      --link: #6CC4AB;
-      --gradient: linear-gradient(90deg, #4FA890 10%, #F0B2A6 100%);
-      --icon-bg: linear-gradient(135deg, rgb(79 168 144 / 20%), rgb(240 178 166 / 20%));
-      --icon-border: rgb(255 255 255 / 12%);
-      --icon-stroke: #6CC4AB;
-      --shadow: 0 24px 64px rgb(0 0 0 / 45%);
-      --shadow-soft: 0 8px 24px rgb(0 0 0 / 30%);
-      --switch-bg: rgb(15 20 19 / 78%);
-      --frame: #070B0A;
-    }
-  }
-
-  * { box-sizing: border-box; }
-
-  html[data-lang="en"] [data-i18n="ja"] { display: none !important; }
-  html[data-lang="ja"] [data-i18n="en"] { display: none !important; }
-
-  html { background: var(--bg); }
-  body {
-    margin: 0;
-    background:
-      radial-gradient(circle at 12% -12%, var(--glow-1) 0, transparent 42rem),
-      radial-gradient(circle at 92% 4%, var(--glow-2) 0, transparent 38rem),
-      var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, sans-serif;
-    line-height: 1.7;
-    -webkit-font-smoothing: antialiased;
-  }
-  main { width: min(980px, calc(100% - 40px)); margin: 0 auto; }
-  a { color: var(--link); }
-  img { max-width: 100%; display: block; }
-  section { padding: 64px 0; }
-
-  h1, h2, h3 { line-height: 1.3; margin: 0; text-wrap: balance; }
-  /* 狭い幅で日本語の見出し（13字）が1行に収まるよう、vw で縮める。広い幅は 3rem で頭打ち */
-  h1 { font-size: clamp(1.4rem, 6.4vw, 3rem); letter-spacing: -0.01em; }
-  h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: 12px; }
-  h3 { font-size: 1.1rem; margin-bottom: 8px; }
-  /*
-   * 段落の余白は、上側に必要な所だけ個別に付ける。EN/JA の両方が DOM にあり、使わない言語は
-   * display: none なので、`p:last-child { margin-bottom: 0 }` は効かない（最後の子が非表示側の p になる）。
-   */
-  p { margin: 0; }
-  /* 日本語は、句の切れ目で折り返す（対応していないブラウザでは、通常の折り返し） */
-  html[data-lang="ja"] body { word-break: auto-phrase; line-break: strict; }
-  /* 日本語の見出しは、句の切れ目でだけ折り返す（句の中では折り返さない） */
-  .ph { display: inline-block; }
-  .nw { white-space: nowrap; }
-  .accent {
-    background: var(--gradient);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  /* ---------- Language switch ---------- */
-  .lang-switch {
-    position: fixed;
-    top: 18px;
-    right: 18px;
-    z-index: 50;
-    display: inline-flex;
-    padding: 3px;
-    gap: 2px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--switch-bg);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-  .lang-btn {
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 7px 13px;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-  .lang-btn[aria-pressed="true"] { background: var(--solo); color: var(--on-solo); }
-  .lang-btn:focus-visible { outline: 2px solid var(--solo); outline-offset: 2px; }
-
-  /* ---------- Hero ---------- */
-  .eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0 0 20px;
-    padding: 6px 14px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    color: var(--muted);
-    font-size: 0.85rem;
-    letter-spacing: 0.02em;
-  }
-  .dots { display: inline-flex; gap: 4px; }
-  .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--solo); }
-  .dots i + i { background: var(--partnered); }
-
-  .hero {
-    padding: 72px 0 32px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 240px;
-    gap: 48px;
-    align-items: center;
-  }
-  .lead { font-size: 1.1rem; max-width: 46ch; margin-top: 20px; }
-  .hero-art img {
-    width: 240px;
-    height: 240px;
-    border-radius: 54px;
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow);
-    margin: 0 auto;
-  }
-  .store-badges {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 14px;
-    margin-top: 24px;
-  }
-  .store-badges a { display: inline-flex; line-height: 0; transition: opacity 0.15s ease; }
-  .store-badges a:hover { opacity: 0.82; }
-  .store-badges img { width: auto; }
-  .store-badges img.badge-google { height: 65px; }
-  .store-badges img.badge-google-ja { height: 57px; }
-  .hero-note { margin-top: 12px; color: var(--muted); font-size: 0.88rem; }
-
-  /* ---------- Trust strip ---------- */
-  .trust { padding: 24px 0 8px; }
-  .trust ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
-  }
-  .trust li {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 18px 20px;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: var(--surface);
-  }
-  .trust strong { display: block; font-size: 1rem; line-height: 1.4; }
-  .trust span.sub { display: block; color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
-
-  .icon-box {
-    flex: none;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--icon-bg);
-    border: 1px solid var(--icon-border);
-  }
-  .icon-box svg {
-    width: 22px;
-    height: 22px;
-    fill: none;
-    stroke: var(--icon-stroke);
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  /* ---------- Phone frame ---------- */
-  .phone {
-    padding: 9px;
-    background: var(--frame);
-    border-radius: 36px;
-    box-shadow: var(--shadow), inset 0 0 0 1px rgb(255 255 255 / 14%);
-  }
-  .phone img {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 540 / 1212;
-    border-radius: 28px;
-    background: #F8F7FA;
-  }
-
-  /* ---------- Showcase ---------- */
-  .showcase {
-    position: relative;
-    overflow: hidden;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 240px;
-    gap: 56px;
-    align-items: center;
-    padding: 48px 48px 48px 44px;
-    border: 1px solid var(--border);
-    border-radius: 28px;
-    background: var(--surface);
-  }
-  .showcase::before {
-    content: "";
-    position: absolute;
-    inset: auto -8% -40% auto;
-    width: 60%;
-    aspect-ratio: 1;
-    background: radial-gradient(circle, var(--glow-2) 0, transparent 68%);
-    pointer-events: none;
-  }
-  .showcase > * { position: relative; }
-  .showcase h2 { margin-bottom: 16px; }
-  .showcase p { color: var(--muted); }
-  .showcase .phone { justify-self: center; width: 240px; }
-
-  /* ---------- Section heads ---------- */
-  .section-head { max-width: 56ch; margin-bottom: 36px; }
-  .section-head p { color: var(--muted); }
-
-  /* ---------- Feature grid ---------- */
-  .features {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 20px;
-  }
-  .feature-card {
-    padding: 28px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
-  }
-  .feature-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--border-hover);
-    background: var(--surface-strong);
-    box-shadow: var(--shadow-soft);
-  }
-  .feature-card .icon-box { margin-bottom: 16px; }
-  .feature-card p { color: var(--muted); font-size: 0.96rem; }
-
-  /* ---------- Gallery ---------- */
-  .gallery {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 32px;
-    align-items: start;
-  }
-  .gallery figure { margin: 0; text-align: center; }
-  .gallery .phone { max-width: 250px; margin: 0 auto; }
-  .gallery figcaption { margin-top: 20px; }
-  .gallery figcaption strong { display: block; font-size: 1rem; }
-  .gallery figcaption span { display: block; margin-top: 2px; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
-
-  /* ---------- Chips ---------- */
-  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
-  .chip {
-    padding: 8px 16px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    color: var(--muted);
-    font-size: 0.88rem;
-  }
-
-  /* ---------- Final CTA ---------- */
-  .cta {
-    position: relative;
-    overflow: hidden;
-    text-align: center;
-    padding: 56px 40px;
-    border: 1px solid var(--border);
-    border-radius: 28px;
-    background:
-      radial-gradient(circle at 15% 0, var(--glow-1) 0, transparent 22rem),
-      radial-gradient(circle at 88% 100%, var(--glow-2) 0, transparent 22rem),
-      var(--surface);
-  }
-  .cta p { color: var(--muted); }
-  .cta .store-badges { justify-content: center; margin-top: 24px; }
-
-  /* ---------- Footer ---------- */
-  footer {
-    padding: 40px 0 64px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 24px;
-    color: var(--muted);
-    font-size: 0.9rem;
-  }
-  footer .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; }
-  footer .brand img { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border); }
-  footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-  footer nav a { color: var(--muted); text-decoration: none; }
-  footer nav a:hover { color: var(--text); text-decoration: underline; }
-  footer .copyright { width: 100%; margin-top: 8px; font-size: 0.82rem; opacity: 0.85; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .feature-card, .lang-btn, .store-badges a { transition: none; }
-    .feature-card:hover { transform: none; }
-  }
-
-  @media (max-width: 760px) {
-    section { padding: 48px 0; }
-    .lang-switch { top: 14px; right: 14px; }
-
-    .hero { padding-top: 72px; grid-template-columns: minmax(0, 1fr); gap: 24px; text-align: center; }
-    /* 狭い幅では、アイコンを先頭に 96px で置く。HTML では文章の後ろにある */
-    .hero-art { order: -1; }
-    .hero-art img { width: 96px; height: 96px; border-radius: 22px; box-shadow: var(--shadow-soft); }
-    .lead { max-width: none; margin-left: auto; margin-right: auto; }
-    .store-badges { justify-content: center; }
-
-    .trust ul { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-
-    .showcase { grid-template-columns: minmax(0, 1fr); gap: 32px; padding: 32px 24px; text-align: center; }
-    .showcase .phone { order: -1; width: 220px; }
-
-    .features { grid-template-columns: minmax(0, 1fr); }
-
-    /* 3枚を縦に積むと長いので、横に並べて、この帯の中だけスクロールさせる */
-    .gallery {
-      display: flex;
-      gap: 16px;
-      overflow-x: auto;
-      margin: 0 -20px;
-      padding: 4px 20px 16px;
-    }
-    .gallery figure { flex: 0 0 210px; }
-
-    .cta { padding: 40px 24px; }
-    footer { flex-direction: column; }
-  }
-</style>
+<link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-<div class="lang-switch" role="group" aria-label="Language / 言語">
-  <button type="button" class="lang-btn" data-lang-btn="en" aria-pressed="true">EN</button>
-  <button type="button" class="lang-btn" data-lang-btn="ja" aria-pressed="false">日本語</button>
-</div>
+<a class="ja-hint" href="./ja/" hreflang="ja" lang="ja" hidden>日本語版はこちら</a>
+<nav class="lang-switch" aria-label="Language / 言語">
+  <a class="lang-btn" href="./" hreflang="en" lang="en" aria-current="page">EN</a>
+  <a class="lang-btn" href="./ja/" hreflang="ja" lang="ja">日本語</a>
+</nav>
 
 <main>
   <header class="hero">
     <div class="hero-copy">
-      <span class="eyebrow" data-i18n="en"><span class="dots" aria-hidden="true"><i></i><i></i></span>Private log · Android</span>
-      <span class="eyebrow" data-i18n="ja" lang="ja"><span class="dots" aria-hidden="true"><i></i><i></i></span>プライベートな記録アプリ · Android</span>
+      <span class="eyebrow"><span class="dots" aria-hidden="true"><i></i><i></i></span>Solo + Us · Private log for Android</span>
 
-      <h1 data-i18n="en">A private log for <span class="ph accent">sex and <span class="nw">self-pleasure.</span></span></h1>
-      <h1 data-i18n="ja" lang="ja"><span class="ph">性行為・自慰行為の</span><span class="ph">記録を、</span><span class="ph accent">自分だけのものに。</span></h1>
+      <h1>A private log for <span class="ph accent">sex and <span class="nw">self-pleasure.</span></span></h1>
 
-      <p class="lead" data-i18n="en">Solo + Us is a private log for sex and self-pleasure, whether you are on your own or with a partner. Everything stays on your device - no account, no server to sync with, and no advertising.</p>
-      <p class="lead" data-i18n="ja" lang="ja">Solo + Us は、性行為と自慰行為を記録するアプリです。パートナーとの時間も、ひとりの時間も、自分だけの記録として残せます。データはすべて端末の中に保存され、アカウント登録もサーバーとの同期も広告もありません。</p>
+      <p class="lead">Solo + Us is a private log for sex and self-pleasure, whether you are on your own or with a partner. Your records are stored on your device in an encrypted database. There is no account to create, no server to sync with, and no advertising.</p>
 
-      <nav class="store-badges" aria-label="Get the app">
-        <a data-i18n="en" href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus&amp;hl=en">
+      <nav class="store-badges" aria-label="Get Solo + Us">
+        <a href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus">
           <img class="badge-google" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play">
-        </a>
-        <a data-i18n="ja" lang="ja" href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus&amp;hl=ja">
-          <img class="badge-google-ja" src="https://play.google.com/intl/ja/badges/static/images/badges/ja_badge_web_generic.png" alt="Google Playで手に入れよう">
         </a>
       </nav>
 
-      <p class="hero-note" data-i18n="en">Free on Google Play. For adults aged 18 and over.</p>
-      <p class="hero-note" data-i18n="ja" lang="ja">Google Playで無料。18歳以上の方が対象です。</p>
+      <p class="hero-note">Free on Google Play. For adults aged 18 and over.</p>
     </div>
     <div class="hero-art">
       <img src="assets/images/app-icon-hero.webp" alt="Solo + Us app icon" width="512" height="512">
@@ -491,10 +85,8 @@
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"></path><line x1="4" y1="4" x2="20" y2="20"></line></svg>
         </div>
         <div>
-          <strong data-i18n="en">No account</strong>
-          <strong data-i18n="ja" lang="ja">アカウント登録不要</strong>
-          <span class="sub" data-i18n="en">Nothing to sign up for.</span>
-          <span class="sub" data-i18n="ja" lang="ja">登録なしで、すぐ使えます。</span>
+          <strong>No account</strong>
+          <span class="sub">Nothing to sign up for.</span>
         </div>
       </li>
       <li>
@@ -502,10 +94,8 @@
           <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"></rect><path d="M11 18.5h2"></path></svg>
         </div>
         <div>
-          <strong data-i18n="en">Stays on your device</strong>
-          <strong data-i18n="ja" lang="ja">端末の中だけに保存</strong>
-          <span class="sub" data-i18n="en">No server, no sync.</span>
-          <span class="sub" data-i18n="ja" lang="ja">サーバーとの同期はありません。</span>
+          <strong>Encrypted on your device</strong>
+          <span class="sub">No server to sync with.</span>
         </div>
       </li>
       <li>
@@ -513,10 +103,8 @@
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><line x1="6.3" y1="6.3" x2="17.7" y2="17.7"></line></svg>
         </div>
         <div>
-          <strong data-i18n="en">No ads</strong>
-          <strong data-i18n="ja" lang="ja">広告なし</strong>
-          <span class="sub" data-i18n="en">No analytics or advertising SDK.</span>
-          <span class="sub" data-i18n="ja" lang="ja">解析・広告のSDKもなし。</span>
+          <strong>No ads</strong>
+          <span class="sub">No analytics or advertising SDK.</span>
         </div>
       </li>
     </ul>
@@ -525,14 +113,11 @@
   <section aria-label="Recording">
     <div class="showcase">
       <div>
-        <h2 data-i18n="en">One tap to record,<br>all of it yours.</h2>
-        <h2 data-i18n="ja" lang="ja"><span class="ph">ワンタップで記録。</span><span class="ph">記録はすべて、あなたのもの。</span></h2>
-        <p data-i18n="en">Choose Solo or Partnered and it is logged, with Undo right there. Details are optional and never asked for while recording, and the date and time can be edited afterwards.</p>
-        <p data-i18n="ja" lang="ja">ソロかパートナーとを選ぶだけで記録できます。間違えてもその場で取り消せます。詳細項目は任意で、記録のときに尋ねられません。日時はあとから変更できます。</p>
+        <h2>One tap to record,<br>all of it yours.</h2>
+        <p>Choose Solo or Partnered and it is logged, with Undo right there. Details are optional and never asked for while recording, and the date and time can be edited afterwards.</p>
       </div>
       <div class="phone">
-        <img data-i18n="en" loading="lazy" src="assets/images/shot-en-today.webp" width="540" height="1212" alt="The Today screen of Solo + Us, showing this month's totals and recent entries">
-        <img data-i18n="ja" lang="ja" loading="lazy" src="assets/images/shot-ja-today.webp" width="540" height="1212" alt="Solo + Us の「今日」画面。今月の件数と最近の記録が表示されている">
+        <img loading="lazy" src="assets/images/shot-en-today.webp" width="540" height="1212" alt="The Today screen of Solo + Us, showing this month's totals and recent entries">
       </div>
     </div>
   </section>
@@ -542,105 +127,91 @@
       <div class="icon-box" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6l1-8z"></path></svg>
       </div>
-      <h3 data-i18n="en">Record in seconds</h3>
-      <h3 data-i18n="ja" lang="ja">数秒で記録</h3>
-      <p data-i18n="en">One tap for Solo or Partnered, with Undo right there and the date and time editable afterwards.</p>
-      <p data-i18n="ja" lang="ja">ソロかパートナーとを1回タップするだけ。間違えてもその場で取り消せ、日時はあとから変更できます。</p>
+      <h3>Record in seconds</h3>
+      <p>One tap for Solo or Partnered, with Undo right there and the date and time editable afterwards.</p>
     </article>
 
     <article class="feature-card">
       <div class="icon-box" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M4 7h8M16 7h4M4 17h4M12 17h8"></path><circle cx="14" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>
       </div>
-      <h3 data-i18n="en">Track only what you want</h3>
-      <h3 data-i18n="ja" lang="ja">記録する項目は自分で選ぶ</h3>
-      <p data-i18n="en">Protection, orgasm, duration, mood before and after, and a free-text note. All optional, and never asked for while recording.</p>
-      <p data-i18n="ja" lang="ja">避妊、オーガズム、所要時間、前後の気分、自由記入のメモなどから選べます。すべて任意で、記録のときに尋ねられません。</p>
+      <h3>Track only what you want</h3>
+      <p>Protection, orgasm, duration, mood before and after, and a free-text note. All optional, and never asked for while recording.</p>
     </article>
 
     <article class="feature-card">
       <div class="icon-box" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-7"></path></svg>
       </div>
-      <h3 data-i18n="en">See your patterns</h3>
-      <h3 data-i18n="ja" lang="ja">流れが見える</h3>
-      <p data-i18n="en">A month at a glance, a calendar view, and totals with your average interval between entries.</p>
-      <p data-i18n="ja" lang="ja">今月の件数、カレンダーでの月表示、合計と記録の平均間隔を確認できます。</p>
-    </article>
-
-    <article class="feature-card">
-      <div class="icon-box" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"></path><path d="M9 12l2 2 4-4"></path></svg>
-      </div>
-      <h3 data-i18n="en">Encrypted on your device</h3>
-      <h3 data-i18n="ja" lang="ja">暗号化して端末内に保存</h3>
-      <p data-i18n="en">Your records live in an encrypted database on your phone. There is no account to create and no server to sync with.</p>
-      <p data-i18n="ja" lang="ja">記録は、端末内の暗号化されたデータベースに保存されます。アカウント登録も、サーバーとの同期もありません。</p>
-    </article>
-
-    <article class="feature-card">
-      <div class="icon-box" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
-      </div>
-      <h3 data-i18n="en">Locked and out of sight</h3>
-      <h3 data-i18n="ja" lang="ja">ロックして、見えないように</h3>
-      <p data-i18n="en">App Lock with your device's fingerprint, face or passcode, a hidden preview in Recent Apps, and optional screenshot blocking.</p>
-      <p data-i18n="ja" lang="ja">端末の指紋 / 顔 / パスコードによるアプリロック、アプリ履歴でのプレビュー非表示、スクリーンショットのブロック（任意）。</p>
+      <h3>See your patterns</h3>
+      <p>A month at a glance, a calendar view, and totals with your average interval between entries.</p>
     </article>
 
     <article class="feature-card">
       <div class="icon-box" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"></path><path d="M5 19h14"></path></svg>
       </div>
-      <h3 data-i18n="en">Your data is yours</h3>
-      <h3 data-i18n="ja" lang="ja">データはあなたのもの</h3>
-      <p data-i18n="en">Export a full JSON backup or a CSV for your own analysis, and import a backup to restore.</p>
-      <p data-i18n="ja" lang="ja">JSON で完全なバックアップを、CSV で分析用の書き出しができ、バックアップからの復元にも対応しています。</p>
+      <h3>Your data is yours</h3>
+      <p>Export a full JSON backup or a CSV for your own analysis, and import a backup to restore.</p>
+    </article>
+
+    <article class="feature-card wide">
+      <div class="icon-box" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"></path></svg>
+      </div>
+      <h3>Sync to Health Connect<span class="pill">Optional</span></h3>
+      <p>Save your log to Health Connect as sexual activity entries, alongside your other health data. It is off by default, and you turn it on in Settings.</p>
+      <p>Only the date, time and whether protection was used are saved, and solo and partnered records are not distinguished. Other apps can read these entries if you allow them to in Health Connect.</p>
+    </article>
+
+    <article class="feature-card">
+      <div class="icon-box" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"></path><path d="M9 12l2 2 4-4"></path></svg>
+      </div>
+      <h3>Encrypted local database</h3>
+      <p>Your records are stored on your device in an encrypted database. There is no account to create and no server to sync with.</p>
+    </article>
+
+    <article class="feature-card">
+      <div class="icon-box" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      </div>
+      <h3>Locked and out of sight</h3>
+      <p>App Lock with your device's fingerprint, face or passcode, a hidden preview in Recent Apps, and optional screenshot blocking.</p>
     </article>
   </section>
 
   <section aria-label="Screenshots">
     <div class="section-head">
-      <h2 data-i18n="en">A look inside</h2>
-      <h2 data-i18n="ja" lang="ja">画面を見てみる</h2>
-      <p data-i18n="en">Real screens from the app.</p>
-      <p data-i18n="ja" lang="ja">実際のアプリ画面です。</p>
+      <h2>A look inside</h2>
+      <p>Real screens from the app.</p>
     </div>
     <div class="gallery">
       <figure>
         <div class="phone">
-          <img data-i18n="en" loading="lazy" src="assets/images/shot-en-calendar.webp" width="540" height="1212" alt="The Calendar screen, with a dot on each day that has an entry">
-          <img data-i18n="ja" lang="ja" loading="lazy" src="assets/images/shot-ja-calendar.webp" width="540" height="1212" alt="「カレンダー」画面。記録のある日に印が付いている">
+          <img loading="lazy" src="assets/images/shot-en-calendar.webp" width="540" height="1212" alt="The Calendar screen, with a dot on each day that has an entry">
         </div>
         <figcaption>
-          <strong data-i18n="en">Calendar</strong>
-          <strong data-i18n="ja" lang="ja">カレンダー</strong>
-          <span data-i18n="en">A month at a glance.</span>
-          <span data-i18n="ja" lang="ja">1か月をひと目で。</span>
+          <strong>Calendar</strong>
+          <span>A month at a glance.</span>
         </figcaption>
       </figure>
       <figure>
         <div class="phone">
-          <img data-i18n="en" loading="lazy" src="assets/images/shot-en-insights.webp" width="540" height="1212" alt="The Insights screen, showing totals and the average interval between entries">
-          <img data-i18n="ja" lang="ja" loading="lazy" src="assets/images/shot-ja-insights.webp" width="540" height="1212" alt="「サマリー」画面。合計と記録の平均間隔が表示されている">
+          <img loading="lazy" src="assets/images/shot-en-insights.webp" width="540" height="1212" alt="The Insights screen, showing totals and the average interval between entries">
         </div>
         <figcaption>
-          <strong data-i18n="en">Insights</strong>
-          <strong data-i18n="ja" lang="ja">サマリー</strong>
-          <span data-i18n="en">Totals and your average interval.</span>
-          <span data-i18n="ja" lang="ja">合計と、記録の平均間隔。</span>
+          <strong>Insights</strong>
+          <span>Totals and your average interval.</span>
         </figcaption>
       </figure>
       <figure>
         <div class="phone">
-          <img data-i18n="en" loading="lazy" src="assets/images/shot-en-settings.webp" width="540" height="1212" alt="The Settings screen, with App Lock, Hide App Preview and Block Screenshots under Privacy">
-          <img data-i18n="ja" lang="ja" loading="lazy" src="assets/images/shot-ja-settings.webp" width="540" height="1212" alt="「設定」画面。プライバシーの項目にアプリロックなどが並んでいる">
+          <img loading="lazy" src="assets/images/shot-en-settings.webp" width="540" height="1212" alt="The Settings screen, with App Lock, Hide App Preview and Block Screenshots under Privacy">
         </div>
         <figcaption>
-          <strong data-i18n="en">Settings</strong>
-          <strong data-i18n="ja" lang="ja">設定</strong>
-          <span data-i18n="en">App Lock and privacy controls.</span>
-          <span data-i18n="ja" lang="ja">アプリロックとプライバシーの設定。</span>
+          <strong>Settings</strong>
+          <span>App Lock and privacy controls.</span>
         </figcaption>
       </figure>
     </div>
@@ -648,41 +219,28 @@
 
   <section aria-label="Other features">
     <div class="section-head">
-      <h2 data-i18n="en">Also included</h2>
-      <h2 data-i18n="ja" lang="ja">そのほかの特長</h2>
+      <h2>Also included</h2>
     </div>
     <div class="chips">
-      <span class="chip" data-i18n="en">No account required</span>
-      <span class="chip" data-i18n="ja" lang="ja">アカウント登録不要</span>
-      <span class="chip" data-i18n="en">No ads</span>
-      <span class="chip" data-i18n="ja" lang="ja">広告なし</span>
-      <span class="chip" data-i18n="en">Encrypted local database</span>
-      <span class="chip" data-i18n="ja" lang="ja">暗号化されたローカルデータベース</span>
-      <span class="chip" data-i18n="en">Export JSON or CSV</span>
-      <span class="chip" data-i18n="ja" lang="ja">JSON・CSV で書き出し</span>
-      <span class="chip" data-i18n="en">Restore from a backup</span>
-      <span class="chip" data-i18n="ja" lang="ja">バックアップから復元</span>
-      <span class="chip" data-i18n="en">Light / dark theme</span>
-      <span class="chip" data-i18n="ja" lang="ja">ライト / ダークテーマ</span>
-      <span class="chip" data-i18n="en">English / Japanese</span>
-      <span class="chip" data-i18n="ja" lang="ja">日本語 / 英語対応</span>
-      <span class="chip" data-i18n="en">For adults aged 18 and over</span>
-      <span class="chip" data-i18n="ja" lang="ja">18歳以上が対象</span>
+      <span class="chip">No account required</span>
+      <span class="chip">No ads</span>
+      <span class="chip">Encrypted local database</span>
+      <span class="chip">Optional Health Connect sync</span>
+      <span class="chip">Export JSON or CSV</span>
+      <span class="chip">Restore from a backup</span>
+      <span class="chip">Light / dark theme</span>
+      <span class="chip">English / Japanese</span>
+      <span class="chip">For adults aged 18 and over</span>
     </div>
   </section>
 
-  <section aria-label="Get the app">
+  <section aria-label="Download">
     <div class="cta">
-      <h2 data-i18n="en">Ready to start your private log?</h2>
-      <h2 data-i18n="ja" lang="ja">自分だけの記録を、はじめよう</h2>
-      <p data-i18n="en">Free on Google Play.</p>
-      <p data-i18n="ja" lang="ja">Google Playで無料ダウンロードできます。</p>
-      <nav class="store-badges" aria-label="Get the app">
-        <a data-i18n="en" href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus&amp;hl=en">
+      <h2>Ready to start your private log?</h2>
+      <p>Free on Google Play.</p>
+      <nav class="store-badges" aria-label="Download Solo + Us">
+        <a href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus">
           <img class="badge-google" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play">
-        </a>
-        <a data-i18n="ja" lang="ja" href="https://play.google.com/store/apps/details?id=com.yskms.soloplusus&amp;hl=ja">
-          <img class="badge-google-ja" src="https://play.google.com/intl/ja/badges/static/images/badges/ja_badge_web_generic.png" alt="Google Playで手に入れよう">
         </a>
       </nav>
     </div>
@@ -694,37 +252,24 @@
       <span>Solo + Us</span>
     </div>
     <nav aria-label="Links">
-      <a data-i18n="en" href="./privacy-policy.html">Privacy Policy</a>
-      <a data-i18n="ja" lang="ja" href="./privacy-policy.html#ja">プライバシーポリシー</a>
-      <a data-i18n="en" href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">Support</a>
-      <a data-i18n="ja" lang="ja" href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">お問い合わせ</a>
+      <a href="./privacy-policy.html">Privacy Policy</a>
+      <a href="https://github.com/yskms/solo-plus-us/issues" target="_blank" rel="noopener">Support</a>
       <a href="https://github.com/yskms/solo-plus-us" target="_blank" rel="noopener">GitHub</a>
     </nav>
     <div class="copyright">
-      <p data-i18n="en">© 2026 yskms.studio. Your records stay on your device. We include no analytics or advertising SDK.</p>
-      <p data-i18n="ja" lang="ja">© 2026 yskms.studio. 記録は端末内に保存されます。Analytics・広告SDKは導入していません。</p>
+      <p>© 2026 yskms.studio. Your records are stored on your device in an encrypted database. We include no analytics or advertising SDK.</p>
     </div>
   </footer>
 </main>
 
 <script>
+  // 日本語のブラウザには「日本語版はこちら」のリンクを出す。自動では振り分けない（クローラーにも影響しない）
   (function () {
-    var html = document.documentElement;
-    function setLang(lang, remember) {
-      html.setAttribute('data-lang', lang);
-      html.setAttribute('lang', lang);
-      document.querySelectorAll('[data-lang-btn]').forEach(function (btn) {
-        btn.setAttribute('aria-pressed', btn.getAttribute('data-lang-btn') === lang ? 'true' : 'false');
-      });
-      if (remember) {
-        try { localStorage.setItem('solo-plus-us-lang', lang); } catch (e) {}
-      }
+    var lang = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+    if (/^ja/i.test(lang)) {
+      var hint = document.querySelector('.ja-hint');
+      if (hint) hint.hidden = false;
     }
-    document.querySelectorAll('[data-lang-btn]').forEach(function (btn) {
-      btn.addEventListener('click', function () { setLang(btn.getAttribute('data-lang-btn'), true); });
-    });
-    // 言語はヘッドの script が決めて data-lang に入れてある。ボタンの表示だけを合わせる（保存はしない）
-    setLang(html.getAttribute('data-lang') || 'en', false);
   })();
 </script>
 </body>

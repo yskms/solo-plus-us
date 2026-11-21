@@ -460,7 +460,11 @@ Health Connect は触れない（この版で変わらない）。**詳しい説
 | メールアドレス | yskms.studio@gmail.com（プライバシーポリシー §10 と揃える） |
 | プライバシーポリシー | https://yskms.github.io/solo-plus-us/privacy-policy.html |
 
-**ウェブサイト（`public/index.html`）の画像の作り直し。** ページに載せている画像は、上のスクリーンショットを
+**ウェブサイト（`public/index.html` と、日本語の `public/ja/index.html`）の文面。** 詳しい説明（HC 版）と
+食い違わせない。「Everything stays on your device」「端末の中だけ」は使わず、HC 同期（任意）の説明を載せる。
+日本語の HC は、掲載文に揃えてカタカナ。詳しい説明の HC・プライバシーの段落を直したときは、両ページも直す。
+
+**ウェブサイトの画像の作り直し。** ページに載せている画像は、上のスクリーンショットを
 Web 用に縮小した webp で、`public/assets/images/` に置いてある（`shot-{en,ja}-{today,calendar,insights,settings}.webp`、
 幅 540px）。ストアのスクリーンショットを差し替えたら、リポジトリのルートで次を実行して作り直す。
 なお、今の画像は設定画面に「Version 0.1.0」が写っている（2026-09-23 撮影。ページ上では小さく、読めない大きさ）。
