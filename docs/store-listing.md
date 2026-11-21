@@ -460,6 +460,18 @@ Health Connect は触れない（この版で変わらない）。**詳しい説
 | メールアドレス | yskms.studio@gmail.com（プライバシーポリシー §10 と揃える） |
 | プライバシーポリシー | https://yskms.github.io/solo-plus-us/privacy-policy.html |
 
+**ウェブサイト（`public/index.html`）の画像の作り直し。** ページに載せている画像は、上のスクリーンショットを
+Web 用に縮小した webp で、`public/assets/images/` に置いてある（`shot-{en,ja}-{today,calendar,insights,settings}.webp`、
+幅 540px）。ストアのスクリーンショットを差し替えたら、リポジトリのルートで次を実行して作り直す。
+なお、今の画像は設定画面に「Version 0.1.0」が写っている（2026-09-23 撮影。ページ上では小さく、読めない大きさ）。
+
+```bash
+for lang in en ja; do for n in 01-today 02-calendar 03-insights 04-settings; do
+  cwebp -quiet -q 82 -m 6 -resize 540 0 assets/store-screenshots/$lang/$n.png \
+    -o public/assets/images/shot-$lang-${n#*-}.webp
+done; done
+```
+
 ### 書くときに守ったこと
 
 - **2026-10-31 に方針を変えた。性行為・自慰行為は名指しで書く。** 変更前は、機能説明に

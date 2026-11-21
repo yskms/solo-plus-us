@@ -199,6 +199,15 @@ HTML コメントはそのまま配信されて誰でもソースで読めるの
   `operatingSystem` の `"iOS, Android"` は、iOS が公開されてから `/ios/` に足す（ルートには足さない）
 - og・JSON-LD の description は meta description と同じ文にしておく（両ページとも、片方だけ
   直さない）
+- **ルート（Android 用）は EN / 日本語の切替式**（Filto の紹介ページと同じ作り。`/ja/` は作っていない）。
+  表示言語は `?lang=` > 前回の選択 > ブラウザの言語の順で決める。localStorage のキー
+  `solo-plus-us-lang` は、`yskms.github.io` の全リポジトリが同じオリジンで localStorage を共有するため
+  （Filto は `filto-lang`）、他ページと被らない名前にしてある。変えない。プライバシーポリシーは
+  併記のまま（切替式だと「英語しか無い」と誤解されたため）。EN / JA は両方が DOM にあり、使わない側は
+  `display: none` なので、`p:last-child` のような「最後の子」の指定は効かない（余白は個別に付ける）
+- ルートの画像（`public/assets/images/`）は、`assets/store-screenshots/` を縮小した webp のコピー。
+  ストアのスクリーンショットを差し替えたら作り直す（コマンド: `docs/store-listing.md`
+  「掲載情報のその他の項目」）
 - Google Play のバッジは `/ios/` にも載せたままでよい（ユーザーが許容済み。理由と、外す条件は
   `docs/app-store-listing.md`）
 
