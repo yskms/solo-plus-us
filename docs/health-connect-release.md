@@ -136,6 +136,7 @@ Solo + Us は、端末の中だけで使う私的な記録アプリです。利�
 - `plugins/withHealthConnectPermissionsRationale.js` の `RATIONALE_TEXT_JA`（権限画面の説明。`public/privacy-policy.html` §4 と用語を揃える、と同ファイルのコメントにある）
 - `public/privacy-policy.html` の `#doc-ja`（約16行。GitHub Pages へのデプロイが要る。Play のストアに載せるポリシーと、Health Connect の権限画面から開くポリシーは同一であること、が公式の要件）
 - `docs/store-listing.md` の日本語の HC の段落の引用「Health Connect と同期」→「ヘルスコネクトと同期」（掲載情報の更新も要る）
+- `public/ja/index.html` の HC カードの引用（同上。GitHub Pages へのデプロイが要る）
 - **英語は変えない**（英語の公式名は Health Connect）。日本語でも「Health Connect」を併記するのは見出しだけでよい
 - **一部だけカタカナにしない**（混在を避ける）。それまでに新しく日本語の文言を足すときも、既存の「Health Connect」に揃える。統一は、この作業でまとめて行う
 - 確認: `npm run check-i18n`、`tsc`、`jest`。複数形キー（`_other`）は触らなければ影響しない。実機（日本語表示）で、同期をオンにする確認ダイアログと設定画面の文言を目視する

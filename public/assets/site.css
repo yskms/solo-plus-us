@@ -116,9 +116,12 @@ html[lang="ja"] body { word-break: auto-phrase; line-break: strict; }
 .lang-btn[aria-current="page"] { background: var(--solo); color: var(--on-solo); }
 .lang-btn:focus-visible { outline: 2px solid var(--solo); outline-offset: 2px; }
 
-/* 日本語のブラウザで英語ページを開いたときだけ、script が hidden を外す（自動の振り分けはしない） */
+/*
+ * 日本語のブラウザで英語ページを開いたときだけ、script が hidden を外す（自動の振り分けはしない）。
+ * absolute なので、ページ先頭にだけ出て、スクロールすると流れる（右上の言語の切替は fixed のまま）。
+ */
 .ja-hint {
-  position: fixed;
+  position: absolute;
   top: 18px;
   left: 18px;
   z-index: 50;
